@@ -2,12 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
-
-async function handleLogout() {
-  await supabase.auth.signOut();
-  document.cookie = "user-email=; path=/; max-age=0";
-  router.push("/login");
-}
+import { useParams } from "next/navigation";
 
 const STANDARD_TEMPLATE = [
   "Fill out post event sheet",
@@ -62,29 +57,22 @@ const STANDARD_TEMPLATE = [
   "Check toes and setup",
 ];
 
-type Props = {
-  params: Promise<{ carId: string }>;
-};
-
 type EditableJob = {
   id: number;
   text: string;
 };
 
-function makeJobs() {
+function makeJobs(): EditableJob[] {
   return STANDARD_TEMPLATE.map((text, index) => ({
     id: index + 1,
     text,
   }));
 }
 
-export default async function ChiefJobListEditorPage({ params }: Props) {
-  const { carId } = await params;
+export default function ChiefJobListEditorPage() {
+  const params = useParams();
+  const carId = String(params.carId ?? "");
 
-  return <ChiefJobListEditor carId={carId} />;
-}
-
-function ChiefJobListEditor({ carId }: { carId: string }) {
   const [standardJobs, setStandardJobs] = useState<EditableJob[]>(makeJobs());
   const [specialJobs, setSpecialJobs] = useState<EditableJob[]>([]);
   const [newStandardJob, setNewStandardJob] = useState("");
@@ -102,13 +90,14 @@ function ChiefJobListEditor({ carId }: { carId: string }) {
   }
 
   function addStandardJob() {
-    if (!newStandardJob.trim()) return;
+    const cleanText = newStandardJob.trim();
+    if (!cleanText) return;
 
     setStandardJobs((current) => [
       ...current,
       {
         id: Date.now(),
-        text: newStandardJob.trim(),
+        text: cleanText,
       },
     ]);
 
@@ -130,13 +119,14 @@ function ChiefJobListEditor({ carId }: { carId: string }) {
   }
 
   function addSpecialJob() {
-    if (!newSpecialJob.trim()) return;
+    const cleanText = newSpecialJob.trim();
+    if (!cleanText) return;
 
     setSpecialJobs((current) => [
       ...current,
       {
         id: Date.now(),
-        text: newSpecialJob.trim(),
+        text: cleanText,
       },
     ]);
 
