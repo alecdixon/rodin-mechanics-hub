@@ -1,8 +1,8 @@
 "use client";
 
-import { useState } from "react";
-import Link from "next/link";
+import { useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
+import { supabase } from "@/lib/supabase";
 
 const STANDARD_TEMPLATE = [
   "Fill out post event sheet",
@@ -44,6 +44,7 @@ const STANDARD_TEMPLATE = [
   "Check DRS system for leaks (turn car on and check pressure)",
   "Check DRS compressor mount is secure",
   "Check gear actuator bearings for play",
+  "Check DRS actuator bearings for play",
   "Bleed brakes",
   "Bleed clutch",
   "Check fire extinguisher bracket, test battery and loom",
@@ -57,185 +58,242 @@ const STANDARD_TEMPLATE = [
   "Check toes and setup",
 ];
 
-type EditableJob = {
-  id: number;
-  text: string;
+type Job = {
+  car_id: number;
+  job_id: number;
+  job_text: string;
+  section: "standard" | "special";
+  done: boolean;
+  updated_by: string | null;
+  updated_at: string;
 };
 
-function makeJobs(): EditableJob[] {
+function createStandardRows(carId: number): Job[] {
   return STANDARD_TEMPLATE.map((text, index) => ({
-    id: index + 1,
-    text,
+    car_id: carId,
+    job_id: index + 1,
+    job_text: text,
+    section: "standard",
+    done: false,
+    updated_by: null,
+    updated_at: new Date().toISOString(),
   }));
 }
 
-export default function ChiefJobListEditorPage() {
+export default function MechanicJobListPage() {
   const params = useParams();
-  const carId = String(params.carId ?? "");
+  const carId = Number(params.carId);
 
-  const [standardJobs, setStandardJobs] = useState<EditableJob[]>(makeJobs());
-  const [specialJobs, setSpecialJobs] = useState<EditableJob[]>([]);
-  const [newStandardJob, setNewStandardJob] = useState("");
-  const [newSpecialJob, setNewSpecialJob] = useState("");
-  const [releasedAt, setReleasedAt] = useState<string | null>(null);
+  const [jobs, setJobs] = useState<Job[]>([]);
+  const [userEmail, setUserEmail] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [savingJobId, setSavingJobId] = useState<number | null>(null);
+  const [errorMessage, setErrorMessage] = useState("");
 
-  function updateStandardJob(id: number, text: string) {
-    setStandardJobs((current) =>
-      current.map((job) => (job.id === id ? { ...job, text } : job)),
+  useEffect(() => {
+    async function loadJobs() {
+      if (!carId) return;
+
+      setLoading(true);
+      setErrorMessage("");
+
+      const { data: userData } = await supabase.auth.getUser();
+      const email = userData.user?.email?.trim().toLowerCase() ?? "";
+      setUserEmail(email);
+
+      const templateRows = createStandardRows(carId);
+
+      const { error: upsertError } = await supabase
+        .from("job_progress")
+        .upsert(templateRows, {
+          onConflict: "car_id,job_id,section",
+          ignoreDuplicates: true,
+        });
+
+      if (upsertError) {
+        setErrorMessage(upsertError.message);
+        setLoading(false);
+        return;
+      }
+
+      const { data, error } = await supabase
+        .from("job_progress")
+        .select("*")
+        .eq("car_id", carId)
+        .order("section", { ascending: false })
+        .order("job_id", { ascending: true });
+
+      if (error) {
+        setErrorMessage(error.message);
+        setLoading(false);
+        return;
+      }
+
+      setJobs((data ?? []) as Job[]);
+      setLoading(false);
+    }
+
+    loadJobs();
+  }, [carId]);
+
+  const standardJobs = useMemo(
+    () => jobs.filter((job) => job.section === "standard"),
+    [jobs],
+  );
+
+  const specialJobs = useMemo(
+    () => jobs.filter((job) => job.section === "special"),
+    [jobs],
+  );
+
+  const totalJobs = jobs.length;
+  const completedJobs = jobs.filter((job) => job.done).length;
+
+  const progress = totalJobs
+    ? Math.round((completedJobs / totalJobs) * 100)
+    : 0;
+
+  async function toggleJob(job: Job) {
+    const newDoneState = !job.done;
+
+    setSavingJobId(job.job_id);
+
+    setJobs((current) =>
+      current.map((item) =>
+        item.car_id === job.car_id &&
+        item.job_id === job.job_id &&
+        item.section === job.section
+          ? {
+              ...item,
+              done: newDoneState,
+              updated_by: userEmail,
+              updated_at: new Date().toISOString(),
+            }
+          : item,
+      ),
     );
+
+    const { error } = await supabase
+      .from("job_progress")
+      .update({
+        done: newDoneState,
+        updated_by: userEmail,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("car_id", job.car_id)
+      .eq("job_id", job.job_id)
+      .eq("section", job.section);
+
+    if (error) {
+      setErrorMessage(error.message);
+
+      setJobs((current) =>
+        current.map((item) =>
+          item.car_id === job.car_id &&
+          item.job_id === job.job_id &&
+          item.section === job.section
+            ? { ...item, done: job.done }
+            : item,
+        ),
+      );
+    }
+
+    setSavingJobId(null);
   }
 
-  function removeStandardJob(id: number) {
-    setStandardJobs((current) => current.filter((job) => job.id !== id));
-  }
-
-  function addStandardJob() {
-    const cleanText = newStandardJob.trim();
-    if (!cleanText) return;
-
-    setStandardJobs((current) => [
-      ...current,
-      {
-        id: Date.now(),
-        text: cleanText,
-      },
-    ]);
-
-    setNewStandardJob("");
-  }
-
-  function resetStandardTemplate() {
-    setStandardJobs(makeJobs());
-  }
-
-  function updateSpecialJob(id: number, text: string) {
-    setSpecialJobs((current) =>
-      current.map((job) => (job.id === id ? { ...job, text } : job)),
+  if (loading) {
+    return (
+      <main className="min-h-screen bg-[#0d0f12] p-6 text-zinc-100">
+        <div className="rounded-3xl border border-zinc-800 bg-[#14181d] p-6">
+          Loading Car {carId} job list...
+        </div>
+      </main>
     );
-  }
-
-  function removeSpecialJob(id: number) {
-    setSpecialJobs((current) => current.filter((job) => job.id !== id));
-  }
-
-  function addSpecialJob() {
-    const cleanText = newSpecialJob.trim();
-    if (!cleanText) return;
-
-    setSpecialJobs((current) => [
-      ...current,
-      {
-        id: Date.now(),
-        text: cleanText,
-      },
-    ]);
-
-    setNewSpecialJob("");
-  }
-
-  function releaseJobList() {
-    setReleasedAt(new Date().toLocaleString());
   }
 
   return (
     <main className="min-h-screen bg-[#0d0f12] p-6 text-zinc-100">
-      <div className="mb-8 flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <Link
-            href="/dashboard"
-            className="text-sm text-red-400 hover:text-red-300"
-          >
-            ← Back to dashboard
-          </Link>
+      <div className="mb-8">
+        <p className="text-xs uppercase tracking-[0.3em] text-red-400">
+          Mechanic Job List
+        </p>
 
-          <p className="mt-6 text-xs uppercase tracking-[0.3em] text-red-400">
-            Chief Mechanic Control
-          </p>
+        <h1 className="mt-3 text-4xl font-semibold">Car {carId} Job List</h1>
 
-          <h1 className="mt-3 text-4xl font-semibold">
-            Car {carId} Job List Editor
-          </h1>
-
-          <p className="mt-3 max-w-3xl text-sm text-zinc-400">
-            Edit the standard list, add urgent special jobs, then release the
-            list to the mechanic device for this car.
-          </p>
-        </div>
-
-        <button
-          onClick={releaseJobList}
-          className="rounded-xl bg-red-700 px-6 py-3 text-sm font-semibold hover:bg-red-600"
-        >
-          Release to Car {carId}
-        </button>
+        <p className="mt-3 max-w-2xl text-sm text-zinc-400">
+          Tick jobs off as they are completed. Progress is saved live to the
+          chief mechanic dashboard.
+        </p>
       </div>
 
-      {releasedAt && (
-        <div className="mb-6 rounded-2xl border border-green-800/60 bg-green-950/20 p-4 text-sm text-green-300">
-          Job list released to Car {carId} at {releasedAt}. Database saving will
-          be connected in the next backend step.
+      {errorMessage && (
+        <div className="mb-6 rounded-2xl border border-red-900 bg-red-950/40 p-4 text-sm text-red-200">
+          {errorMessage}
         </div>
       )}
 
       <section className="mb-6 rounded-3xl border border-zinc-800 bg-[#14181d] p-6 shadow-xl">
         <div className="mb-5 flex flex-wrap items-center justify-between gap-4">
           <div>
-            <h2 className="text-2xl font-semibold">Standard Jobs</h2>
+            <h2 className="text-2xl font-semibold">Progress</h2>
             <p className="mt-1 text-sm text-zinc-500">
-              This is the base job list released to the mechanic.
+              {completedJobs} of {totalJobs} jobs complete.
             </p>
           </div>
 
-          <button
-            onClick={resetStandardTemplate}
-            className="rounded-xl border border-zinc-700 bg-[#0d0f12] px-4 py-3 text-sm hover:border-red-500"
-          >
-            Reset Template
-          </button>
+          <div className="rounded-2xl border border-zinc-700 bg-[#0d0f12] px-5 py-3 text-2xl font-semibold">
+            {progress}%
+          </div>
         </div>
 
-        <div className="mb-5 flex gap-3">
-          <input
-            value={newStandardJob}
-            onChange={(event) => setNewStandardJob(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === "Enter") addStandardJob();
-            }}
-            placeholder="Add standard job..."
-            className="flex-1 rounded-xl border border-zinc-700 bg-[#0d0f12] px-4 py-3 text-sm outline-none focus:border-red-500"
+        <div className="h-3 overflow-hidden rounded-full bg-zinc-800">
+          <div
+            className="h-full rounded-full bg-red-700 transition-all"
+            style={{ width: `${progress}%` }}
           />
+        </div>
+      </section>
 
-          <button
-            onClick={addStandardJob}
-            className="rounded-xl bg-[#222832] px-5 py-3 text-sm font-semibold hover:bg-[#2a313b]"
-          >
-            Add
-          </button>
+      <section className="mb-6 rounded-3xl border border-zinc-800 bg-[#14181d] p-6 shadow-xl">
+        <div className="mb-5">
+          <h2 className="text-2xl font-semibold">Standard Jobs</h2>
+          <p className="mt-1 text-sm text-zinc-500">
+            Released preparation list for this car.
+          </p>
         </div>
 
         <div className="space-y-2">
           {standardJobs.map((job, index) => (
-            <div
-              key={job.id}
-              className="grid grid-cols-[42px_1fr_auto] items-center gap-3 rounded-xl border border-zinc-800 bg-[#0d0f12] p-3"
+            <button
+              key={`${job.section}-${job.job_id}`}
+              onClick={() => toggleJob(job)}
+              disabled={savingJobId === job.job_id}
+              className={`grid w-full grid-cols-[42px_44px_1fr] items-center gap-3 rounded-xl border p-4 text-left transition disabled:opacity-60 ${
+                job.done
+                  ? "border-green-800/60 bg-green-950/20"
+                  : "border-zinc-800 bg-[#0d0f12] hover:border-red-500/70"
+              }`}
             >
               <span className="text-sm text-zinc-500">{index + 1}</span>
 
-              <input
-                value={job.text}
-                onChange={(event) =>
-                  updateStandardJob(job.id, event.target.value)
-                }
-                className="w-full rounded-lg border border-transparent bg-transparent px-2 py-2 text-sm outline-none focus:border-zinc-700 focus:bg-[#14181d]"
-              />
-
-              <button
-                onClick={() => removeStandardJob(job.id)}
-                className="rounded-lg border border-zinc-700 px-3 py-2 text-xs text-zinc-400 hover:border-red-500 hover:text-red-300"
+              <span
+                className={`grid h-8 w-8 place-items-center rounded-lg border ${
+                  job.done
+                    ? "border-green-500 bg-green-600 text-white"
+                    : "border-zinc-600 bg-[#111418] text-transparent"
+                }`}
               >
-                Remove
-              </button>
-            </div>
+                ✓
+              </span>
+
+              <span
+                className={`text-sm leading-6 ${
+                  job.done ? "text-zinc-500 line-through" : "text-zinc-100"
+                }`}
+              >
+                {job.job_text}
+              </span>
+            </button>
           ))}
         </div>
       </section>
@@ -244,58 +302,47 @@ export default function ChiefJobListEditorPage() {
         <div className="mb-5">
           <h2 className="text-2xl font-semibold text-red-200">Special Jobs</h2>
           <p className="mt-1 text-sm text-zinc-400">
-            Add urgent or car-specific jobs. Mechanics can complete them, but
-            cannot edit them.
+            Urgent or car-specific jobs released by the chief mechanic.
           </p>
-        </div>
-
-        <div className="mb-5 flex gap-3">
-          <input
-            value={newSpecialJob}
-            onChange={(event) => setNewSpecialJob(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === "Enter") addSpecialJob();
-            }}
-            placeholder="Add urgent special job..."
-            className="flex-1 rounded-xl border border-red-900/50 bg-[#0d0f12] px-4 py-3 text-sm outline-none focus:border-red-500"
-          />
-
-          <button
-            onClick={addSpecialJob}
-            className="rounded-xl bg-red-700 px-5 py-3 text-sm font-semibold hover:bg-red-600"
-          >
-            Add Special
-          </button>
         </div>
 
         {specialJobs.length === 0 ? (
           <div className="rounded-2xl border border-dashed border-red-900/50 bg-[#0d0f12] p-6 text-sm text-zinc-500">
-            No special jobs added for this car.
+            No special jobs currently released for this car.
           </div>
         ) : (
           <div className="space-y-2">
             {specialJobs.map((job, index) => (
-              <div
-                key={job.id}
-                className="grid grid-cols-[42px_1fr_auto] items-center gap-3 rounded-xl border border-red-900/40 bg-[#0d0f12] p-3"
+              <button
+                key={`${job.section}-${job.job_id}`}
+                onClick={() => toggleJob(job)}
+                disabled={savingJobId === job.job_id}
+                className={`grid w-full grid-cols-[42px_44px_1fr] items-center gap-3 rounded-xl border p-4 text-left transition disabled:opacity-60 ${
+                  job.done
+                    ? "border-green-800/60 bg-green-950/20"
+                    : "border-red-900/40 bg-[#0d0f12] hover:border-red-500/70"
+                }`}
               >
                 <span className="text-sm text-red-300">{index + 1}</span>
 
-                <input
-                  value={job.text}
-                  onChange={(event) =>
-                    updateSpecialJob(job.id, event.target.value)
-                  }
-                  className="w-full rounded-lg border border-transparent bg-transparent px-2 py-2 text-sm text-red-100 outline-none focus:border-red-900/70 focus:bg-[#14181d]"
-                />
-
-                <button
-                  onClick={() => removeSpecialJob(job.id)}
-                  className="rounded-lg border border-red-900/60 px-3 py-2 text-xs text-zinc-400 hover:border-red-500 hover:text-red-300"
+                <span
+                  className={`grid h-8 w-8 place-items-center rounded-lg border ${
+                    job.done
+                      ? "border-green-500 bg-green-600 text-white"
+                      : "border-red-900/60 bg-[#111418] text-transparent"
+                  }`}
                 >
-                  Remove
-                </button>
-              </div>
+                  ✓
+                </span>
+
+                <span
+                  className={`text-sm leading-6 ${
+                    job.done ? "text-zinc-500 line-through" : "text-red-100"
+                  }`}
+                >
+                  {job.job_text}
+                </span>
+              </button>
             ))}
           </div>
         )}

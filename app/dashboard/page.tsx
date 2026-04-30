@@ -6,10 +6,17 @@ import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import { getAssignedCar, getUserRole } from "@/lib/userAccess";
 
-const CARS = [
-  { id: 1, name: "GB3-01", progress: 72, status: "In Progress" },
-  { id: 2, name: "GB3-02", progress: 38, status: "Open Jobs" },
-  { id: 3, name: "GB3-03", progress: 100, status: "Complete" },
+type CarProgress = {
+  id: number;
+  name: string;
+  progress: number;
+  status: string;
+};
+
+const CAR_META = [
+  { id: 1, name: "GB3-01" },
+  { id: 2, name: "GB3-02" },
+  { id: 3, name: "GB3-03" },
 ];
 
 function ProgressDial({ progress }: { progress: number }) {
@@ -37,37 +44,85 @@ function ProgressDial({ progress }: { progress: number }) {
 export default function DashboardPage() {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
+  const [cars, setCars] = useState<CarProgress[]>([]);
 
   useEffect(() => {
-    async function checkAccess() {
+    async function init() {
       const { data } = await supabase.auth.getUser();
       const email = data.user?.email ?? "";
 
       const role = getUserRole(email);
 
-      // 🚫 Mechanics should NEVER be here
       if (role === "mechanic") {
         const carId = getAssignedCar(email);
         router.replace(`/car/${carId}`);
         return;
       }
 
-      // 🚫 Unknown users
       if (role !== "chief") {
         router.replace("/login");
         return;
       }
 
+      await loadProgress();
+
       setLoading(false);
     }
 
-    checkAccess();
+    async function loadProgress() {
+      const { data, error } = await supabase
+        .from("job_progress")
+        .select("*");
+
+      if (error || !data) {
+        console.error(error);
+        return;
+      }
+
+      const carMap: Record<number, { total: number; done: number }> = {};
+
+      data.forEach((row: any) => {
+        if (!carMap[row.car_id]) {
+          carMap[row.car_id] = { total: 0, done: 0 };
+        }
+
+        carMap[row.car_id].total++;
+
+        if (row.done) {
+          carMap[row.car_id].done++;
+        }
+      });
+
+      const computedCars: CarProgress[] = CAR_META.map((car) => {
+        const stats = carMap[car.id] || { total: 0, done: 0 };
+
+        const progress =
+          stats.total > 0
+            ? Math.round((stats.done / stats.total) * 100)
+            : 0;
+
+        let status = "Open Jobs";
+        if (progress === 100) status = "Complete";
+        else if (progress > 0) status = "In Progress";
+
+        return {
+          id: car.id,
+          name: car.name,
+          progress,
+          status,
+        };
+      });
+
+      setCars(computedCars);
+    }
+
+    init();
   }, [router]);
 
   if (loading) {
     return (
       <main className="min-h-screen flex items-center justify-center bg-[#0d0f12] text-zinc-400">
-        Checking access...
+        Loading dashboard...
       </main>
     );
   }
@@ -86,22 +141,14 @@ export default function DashboardPage() {
             </h1>
 
             <p className="mt-2 max-w-2xl text-sm text-zinc-400">
-              Chief mechanic overview for car preparation, job progress and
-              event workshop control.
+              Live overview of car preparation progress.
             </p>
           </div>
-
-          <Link
-            href="/dashboard/settings"
-            className="rounded-xl border border-zinc-700 bg-[#1b2026] px-5 py-3 text-sm font-medium text-zinc-200 hover:border-red-500 hover:bg-[#222832]"
-          >
-            Settings
-          </Link>
         </div>
       </header>
 
       <section className="grid grid-cols-1 gap-6 md:grid-cols-3">
-        {CARS.map((car) => (
+        {cars.map((car) => (
           <Link
             key={car.id}
             href={`/car/${car.id}`}
@@ -111,7 +158,7 @@ export default function DashboardPage() {
               <ProgressDial progress={car.progress} />
 
               <div className="mt-6 text-center">
-                <h2 className="text-2xl font-semibold tracking-tight">
+                <h2 className="text-2xl font-semibold">
                   {car.name}
                 </h2>
 
