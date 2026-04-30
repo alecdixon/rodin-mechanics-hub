@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
+import { getLoginRedirect, getUserRole } from "@/lib/userAccess";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -18,8 +19,10 @@ export default function LoginPage() {
     setLoading(true);
     setErrorMessage("");
 
+    const cleanEmail = email.trim().toLowerCase();
+
     const { data, error } = await supabase.auth.signInWithPassword({
-      email: email.trim().toLowerCase(),
+      email: cleanEmail,
       password,
     });
 
@@ -30,30 +33,19 @@ export default function LoginPage() {
       return;
     }
 
-    const userEmail = data.user?.email?.toLowerCase() ?? "";
-    document.cookie = `user-email=${userEmail}; path=/`;
+    const userEmail = data.user?.email?.trim().toLowerCase() ?? cleanEmail;
+    const role = getUserRole(userEmail);
 
-    const chiefEmails = ["dan.crain@rodinmotorsport.com"];
-
-    const mechanicCars: Record<string, number> = {
-      "simon.crain@rodinmotorsport.com": 1,
-      "olli.moss@rodinmotorsport.com": 2,
-      "jack.carter@rodinmotorsport.com": 3,
-    };
-
-    if (chiefEmails.includes(userEmail)) {
-      router.push("/dashboard");
+    if (role === "unknown") {
+      await supabase.auth.signOut();
+      document.cookie = "user-email=; path=/; max-age=0";
+      setErrorMessage("Your account is not assigned to a role yet.");
       return;
     }
 
-    const assignedCar = mechanicCars[userEmail];
+    document.cookie = `user-email=${userEmail}; path=/; max-age=86400`;
 
-    if (assignedCar) {
-      router.push(`/car/${assignedCar}`);
-      return;
-    }
-
-    setErrorMessage("Your account is not assigned to a role yet.");
+    router.push(getLoginRedirect(userEmail));
   }
 
   return (
@@ -85,6 +77,7 @@ export default function LoginPage() {
               value={email}
               onChange={(event) => setEmail(event.target.value)}
               className="w-full rounded-xl border border-zinc-700 bg-[#0d0f12] px-4 py-3 text-zinc-100 outline-none focus:border-red-500"
+              required
             />
           </div>
 
@@ -98,6 +91,7 @@ export default function LoginPage() {
               value={password}
               onChange={(event) => setPassword(event.target.value)}
               className="w-full rounded-xl border border-zinc-700 bg-[#0d0f12] px-4 py-3 text-zinc-100 outline-none focus:border-red-500"
+              required
             />
           </div>
 

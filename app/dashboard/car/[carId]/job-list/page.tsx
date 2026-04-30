@@ -3,6 +3,14 @@
 import { useState } from "react";
 import Link from "next/link";
 
+const router = useRouter();
+
+async function handleLogout() {
+  await supabase.auth.signOut();
+  document.cookie = "user-email=; path=/; max-age=0";
+  router.push("/login");
+}
+
 const STANDARD_TEMPLATE = [
   "Fill out post event sheet",
   "Check chassis for damage",
