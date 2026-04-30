@@ -67,6 +67,7 @@ type JobRow = {
   job_text: string;
   section: JobSection;
   done: boolean;
+  notes: string | null;
   updated_by: string | null;
   updated_at: string | null;
 };
@@ -86,6 +87,7 @@ function makeTemplateRows(carId: number): JobRow[] {
     job_text: text,
     section: "standard",
     done: false,
+    notes: null,
     updated_by: null,
     updated_at: new Date().toISOString(),
   }));
@@ -99,7 +101,13 @@ export default function MechanicJobListPage() {
   const [releaseInfo, setReleaseInfo] = useState<JobRelease | null>(null);
   const [userEmail, setUserEmail] = useState("");
   const [loading, setLoading] = useState(true);
+
   const [savingKey, setSavingKey] = useState<string | null>(null);
+  const [openNoteKey, setOpenNoteKey] = useState<string | null>(null);
+  const [draftNotes, setDraftNotes] = useState<Record<string, string>>({});
+  const [savingNoteKey, setSavingNoteKey] = useState<string | null>(null);
+
+  const [message, setMessage] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
 
   useEffect(() => {
@@ -107,6 +115,7 @@ export default function MechanicJobListPage() {
       if (!carId) return;
 
       setLoading(true);
+      setMessage("");
       setErrorMessage("");
 
       const { data: userData } = await supabase.auth.getUser();
@@ -134,7 +143,9 @@ export default function MechanicJobListPage() {
         .maybeSingle();
 
       if (releaseError) {
-        setErrorMessage(`Failed to load release details: ${releaseError.message}`);
+        setErrorMessage(
+          `Failed to load release details: ${releaseError.message}`,
+        );
       } else {
         setReleaseInfo((releaseData as JobRelease) ?? null);
       }
@@ -152,7 +163,16 @@ export default function MechanicJobListPage() {
         return;
       }
 
-      setJobs((data ?? []) as JobRow[]);
+      const cleanJobs = (data ?? []) as JobRow[];
+      setJobs(cleanJobs);
+
+      const initialNotes: Record<string, string> = {};
+      cleanJobs.forEach((job) => {
+        const key = `${job.section}-${job.job_id}`;
+        initialNotes[key] = job.notes ?? "";
+      });
+      setDraftNotes(initialNotes);
+
       setLoading(false);
     }
 
@@ -179,6 +199,7 @@ export default function MechanicJobListPage() {
     const now = new Date().toISOString();
 
     setSavingKey(saveKey);
+    setMessage("");
     setErrorMessage("");
 
     setJobs((current) =>
@@ -224,6 +245,261 @@ export default function MechanicJobListPage() {
     setSavingKey(null);
   }
 
+  function openNote(job: JobRow) {
+    const key = `${job.section}-${job.job_id}`;
+
+    setDraftNotes((current) => ({
+      ...current,
+      [key]: current[key] ?? job.notes ?? "",
+    }));
+
+    setOpenNoteKey(openNoteKey === key ? null : key);
+    setMessage("");
+    setErrorMessage("");
+  }
+
+  async function saveNote(job: JobRow) {
+    const key = `${job.section}-${job.job_id}`;
+    const note = (draftNotes[key] ?? "").trim();
+    const now = new Date().toISOString();
+
+    setSavingNoteKey(key);
+    setMessage("");
+    setErrorMessage("");
+
+    const { error } = await supabase
+      .from("job_progress")
+      .update({
+        notes: note || null,
+        updated_by: userEmail,
+        updated_at: now,
+      })
+      .eq("car_id", job.car_id)
+      .eq("job_id", job.job_id)
+      .eq("section", job.section);
+
+    if (error) {
+      setErrorMessage(`Note save failed: ${error.message}`);
+      setSavingNoteKey(null);
+      return;
+    }
+
+    setJobs((current) =>
+      current.map((item) =>
+        item.car_id === job.car_id &&
+        item.job_id === job.job_id &&
+        item.section === job.section
+          ? {
+              ...item,
+              notes: note || null,
+              updated_by: userEmail,
+              updated_at: now,
+            }
+          : item,
+      ),
+    );
+
+    setOpenNoteKey(null);
+    setSavingNoteKey(null);
+    setMessage("Note saved.");
+  }
+
+  async function clearNote(job: JobRow) {
+    const key = `${job.section}-${job.job_id}`;
+    const confirmed = window.confirm("Clear this note?");
+    if (!confirmed) return;
+
+    setSavingNoteKey(key);
+    setMessage("");
+    setErrorMessage("");
+
+    const now = new Date().toISOString();
+
+    const { error } = await supabase
+      .from("job_progress")
+      .update({
+        notes: null,
+        updated_by: userEmail,
+        updated_at: now,
+      })
+      .eq("car_id", job.car_id)
+      .eq("job_id", job.job_id)
+      .eq("section", job.section);
+
+    if (error) {
+      setErrorMessage(`Note clear failed: ${error.message}`);
+      setSavingNoteKey(null);
+      return;
+    }
+
+    setDraftNotes((current) => ({
+      ...current,
+      [key]: "",
+    }));
+
+    setJobs((current) =>
+      current.map((item) =>
+        item.car_id === job.car_id &&
+        item.job_id === job.job_id &&
+        item.section === job.section
+          ? {
+              ...item,
+              notes: null,
+              updated_by: userEmail,
+              updated_at: now,
+            }
+          : item,
+      ),
+    );
+
+    setOpenNoteKey(null);
+    setSavingNoteKey(null);
+    setMessage("Note cleared.");
+  }
+
+  function JobCard({
+    job,
+    index,
+    variant,
+  }: {
+    job: JobRow;
+    index: number;
+    variant: "standard" | "special";
+  }) {
+    const key = `${job.section}-${job.job_id}`;
+    const isSaving = savingKey === key;
+    const isNoteOpen = openNoteKey === key;
+    const isSavingNote = savingNoteKey === key;
+    const hasNote = Boolean(job.notes?.trim());
+
+    const cardClass =
+      variant === "special"
+        ? job.done
+          ? "border-green-800/60 bg-green-950/20"
+          : "border-red-900/40 bg-[#0d0f12] hover:border-red-500/70"
+        : job.done
+          ? "border-green-800/60 bg-green-950/20"
+          : "border-zinc-800 bg-[#0d0f12] hover:border-red-500/70";
+
+    const checkBorder =
+      variant === "special"
+        ? "border-red-900/60"
+        : "border-zinc-600";
+
+    const numberClass = variant === "special" ? "text-red-300" : "text-zinc-500";
+    const textClass = job.done
+      ? "text-zinc-500 line-through"
+      : variant === "special"
+        ? "text-red-100"
+        : "text-zinc-100";
+
+    return (
+      <div
+        key={key}
+        className={`rounded-xl border p-4 transition ${cardClass}`}
+      >
+        <div className="grid grid-cols-[42px_44px_1fr_auto] items-center gap-3">
+          <span className={`text-sm ${numberClass}`}>{index + 1}</span>
+
+          <button
+            type="button"
+            onClick={() => toggleJob(job)}
+            disabled={isSaving}
+            className={`grid h-8 w-8 place-items-center rounded-lg border transition disabled:opacity-60 ${
+              job.done
+                ? "border-green-500 bg-green-600 text-white"
+                : `${checkBorder} bg-[#111418] text-transparent hover:border-red-500`
+            }`}
+          >
+            ✓
+          </button>
+
+          <span className={`text-sm leading-6 ${textClass}`}>
+            {job.job_text}
+          </span>
+
+          <button
+            type="button"
+            onClick={() => openNote(job)}
+            className={`rounded-lg border px-3 py-2 text-xs font-semibold transition ${
+              hasNote
+                ? "border-red-700 bg-red-950/30 text-red-200 hover:border-red-500"
+                : "border-zinc-700 text-zinc-300 hover:border-red-500 hover:text-red-300"
+            }`}
+          >
+            {hasNote ? "Edit Note" : "Add Note"}
+          </button>
+        </div>
+
+        {hasNote && !isNoteOpen && (
+          <div className="mt-4 rounded-xl border border-zinc-800 bg-[#111418] p-4 text-sm leading-6 text-zinc-300">
+            <span className="font-semibold text-red-300">Note: </span>
+            {job.notes}
+          </div>
+        )}
+
+        {isNoteOpen && (
+          <div className="mt-4 rounded-xl border border-zinc-800 bg-[#111418] p-4">
+            <label className="block text-xs font-semibold uppercase tracking-[0.22em] text-zinc-500">
+              Mechanic Note For This Task
+            </label>
+
+            <textarea
+              value={draftNotes[key] ?? ""}
+              onChange={(event) =>
+                setDraftNotes((current) => ({
+                  ...current,
+                  [key]: event.target.value,
+                }))
+              }
+              placeholder="Add a note for the chief mechanic..."
+              rows={4}
+              className="mt-3 w-full resize-none rounded-xl border border-zinc-700 bg-[#0d0f12] px-4 py-3 text-sm text-zinc-100 outline-none focus:border-red-500"
+            />
+
+            <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
+              <p className="text-xs text-zinc-500">
+                This note will appear on the chief mechanic viewer against this
+                exact task.
+              </p>
+
+              <div className="flex flex-wrap gap-2">
+                {hasNote && (
+                  <button
+                    type="button"
+                    onClick={() => clearNote(job)}
+                    disabled={isSavingNote}
+                    className="rounded-lg border border-zinc-700 px-4 py-2 text-xs font-semibold text-zinc-300 hover:border-red-500 hover:text-red-300 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    Clear
+                  </button>
+                )}
+
+                <button
+                  type="button"
+                  onClick={() => setOpenNoteKey(null)}
+                  disabled={isSavingNote}
+                  className="rounded-lg border border-zinc-700 px-4 py-2 text-xs font-semibold text-zinc-300 hover:border-zinc-500 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => saveNote(job)}
+                  disabled={isSavingNote}
+                  className="rounded-lg bg-red-700 px-4 py-2 text-xs font-semibold text-white hover:bg-red-600 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {isSavingNote ? "Saving..." : "Save Note"}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }
+
   if (loading) {
     return (
       <main className="min-h-screen bg-[#0d0f12] p-6 text-zinc-100">
@@ -247,13 +523,19 @@ export default function MechanicJobListPage() {
           </h1>
 
           <p className="mt-3 max-w-2xl text-sm text-zinc-400">
-            Tick jobs off as they are completed. Progress autosaves to Supabase
-            and feeds the chief mechanic dashboard.
+            Tick jobs off as they are completed. Add notes where the chief
+            mechanic needs extra information.
           </p>
         </div>
 
         <LogoutButton />
       </div>
+
+      {message && (
+        <div className="mb-6 rounded-2xl border border-green-800 bg-green-950/20 p-4 text-sm text-green-300">
+          {message}
+        </div>
+      )}
 
       {errorMessage && (
         <div className="mb-6 rounded-2xl border border-red-900 bg-red-950/40 p-4 text-sm text-red-200">
@@ -324,45 +606,14 @@ export default function MechanicJobListPage() {
         </div>
 
         <div className="space-y-2">
-          {standardJobs.map((job, index) => {
-            const key = `${job.section}-${job.job_id}`;
-            const isSaving = savingKey === key;
-
-            return (
-              <button
-                key={key}
-                onClick={() => toggleJob(job)}
-                disabled={isSaving}
-                className={`grid w-full grid-cols-[42px_44px_1fr] items-center gap-3 rounded-xl border p-4 text-left transition disabled:opacity-60 ${
-                  job.done
-                    ? "border-green-800/60 bg-green-950/20"
-                    : "border-zinc-800 bg-[#0d0f12] hover:border-red-500/70"
-                }`}
-              >
-                <span className="text-sm text-zinc-500">{index + 1}</span>
-
-                <span
-                  className={`grid h-8 w-8 place-items-center rounded-lg border ${
-                    job.done
-                      ? "border-green-500 bg-green-600 text-white"
-                      : "border-zinc-600 bg-[#111418] text-transparent"
-                  }`}
-                >
-                  ✓
-                </span>
-
-                <span
-                  className={`text-sm leading-6 ${
-                    job.done
-                      ? "text-zinc-500 line-through"
-                      : "text-zinc-100"
-                  }`}
-                >
-                  {job.job_text}
-                </span>
-              </button>
-            );
-          })}
+          {standardJobs.map((job, index) => (
+            <JobCard
+              key={`${job.section}-${job.job_id}`}
+              job={job}
+              index={index}
+              variant="standard"
+            />
+          ))}
         </div>
       </section>
 
@@ -383,45 +634,14 @@ export default function MechanicJobListPage() {
           </div>
         ) : (
           <div className="space-y-2">
-            {specialJobs.map((job, index) => {
-              const key = `${job.section}-${job.job_id}`;
-              const isSaving = savingKey === key;
-
-              return (
-                <button
-                  key={key}
-                  onClick={() => toggleJob(job)}
-                  disabled={isSaving}
-                  className={`grid w-full grid-cols-[42px_44px_1fr] items-center gap-3 rounded-xl border p-4 text-left transition disabled:opacity-60 ${
-                    job.done
-                      ? "border-green-800/60 bg-green-950/20"
-                      : "border-red-900/40 bg-[#0d0f12] hover:border-red-500/70"
-                  }`}
-                >
-                  <span className="text-sm text-red-300">{index + 1}</span>
-
-                  <span
-                    className={`grid h-8 w-8 place-items-center rounded-lg border ${
-                      job.done
-                        ? "border-green-500 bg-green-600 text-white"
-                        : "border-red-900/60 bg-[#111418] text-transparent"
-                    }`}
-                  >
-                    ✓
-                  </span>
-
-                  <span
-                    className={`text-sm leading-6 ${
-                      job.done
-                        ? "text-zinc-500 line-through"
-                        : "text-red-100"
-                    }`}
-                  >
-                    {job.job_text}
-                  </span>
-                </button>
-              );
-            })}
+            {specialJobs.map((job, index) => (
+              <JobCard
+                key={`${job.section}-${job.job_id}`}
+                job={job}
+                index={index}
+                variant="special"
+              />
+            ))}
           </div>
         )}
       </section>
