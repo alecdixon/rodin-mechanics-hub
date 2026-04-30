@@ -151,7 +151,7 @@ export default function DashboardPage() {
         {cars.map((car) => (
           <Link
             key={car.id}
-            href={`/car/${car.id}`}
+            href={`/car/${car.id}/job-list`}
             className="group rounded-3xl border border-zinc-800 bg-[#14181d] p-7 shadow-lg transition hover:-translate-y-1 hover:border-red-500/70 hover:bg-[#181d23]"
           >
             <div className="flex flex-col items-center">
