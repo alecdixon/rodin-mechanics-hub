@@ -357,15 +357,11 @@ export default function MechanicJobListPage() {
     setMessage("Note cleared.");
   }
 
-  function JobCard({
-    job,
-    index,
-    variant,
-  }: {
-    job: JobRow;
-    index: number;
-    variant: "standard" | "special";
-  }) {
+  function renderJobCard(
+    job: JobRow,
+    index: number,
+    variant: "standard" | "special",
+  ) {
     const key = `${job.section}-${job.job_id}`;
     const isSaving = savingKey === key;
     const isNoteOpen = openNoteKey === key;
@@ -382,11 +378,11 @@ export default function MechanicJobListPage() {
           : "border-zinc-800 bg-[#0d0f12] hover:border-red-500/70";
 
     const checkBorder =
-      variant === "special"
-        ? "border-red-900/60"
-        : "border-zinc-600";
+      variant === "special" ? "border-red-900/60" : "border-zinc-600";
 
-    const numberClass = variant === "special" ? "text-red-300" : "text-zinc-500";
+    const numberClass =
+      variant === "special" ? "text-red-300" : "text-zinc-500";
+
     const textClass = job.done
       ? "text-zinc-500 line-through"
       : variant === "special"
@@ -606,14 +602,9 @@ export default function MechanicJobListPage() {
         </div>
 
         <div className="space-y-2">
-          {standardJobs.map((job, index) => (
-            <JobCard
-              key={`${job.section}-${job.job_id}`}
-              job={job}
-              index={index}
-              variant="standard"
-            />
-          ))}
+          {standardJobs.map((job, index) =>
+            renderJobCard(job, index, "standard"),
+          )}
         </div>
       </section>
 
@@ -634,14 +625,9 @@ export default function MechanicJobListPage() {
           </div>
         ) : (
           <div className="space-y-2">
-            {specialJobs.map((job, index) => (
-              <JobCard
-                key={`${job.section}-${job.job_id}`}
-                job={job}
-                index={index}
-                variant="special"
-              />
-            ))}
+            {specialJobs.map((job, index) =>
+              renderJobCard(job, index, "special"),
+            )}
           </div>
         )}
       </section>
