@@ -73,6 +73,7 @@ function DetailField({
       <p className="text-xs font-semibold uppercase tracking-[0.22em] text-zinc-500">
         {label}
       </p>
+
       <p className="mt-3 text-lg font-semibold text-zinc-100">
         {cleanValue(value)}
       </p>
@@ -97,6 +98,8 @@ export default function ChiefCarViewerPage() {
   const [dateFilter, setDateFilter] = useState("");
   const [trackFilter, setTrackFilter] = useState("all");
   const [errorMessage, setErrorMessage] = useState("");
+  const [message, setMessage] = useState("");
+  const [clearingNoteKey, setClearingNoteKey] = useState<string | null>(null);
 
   useEffect(() => {
     async function loadViewer() {
@@ -109,6 +112,7 @@ export default function ChiefCarViewerPage() {
       }
 
       setLoading(true);
+      setMessage("");
       setErrorMessage("");
 
       const { data: releaseData, error: releaseError } = await supabase
@@ -169,6 +173,59 @@ export default function ChiefCarViewerPage() {
     if (carId) loadViewer();
   }, [carId, router]);
 
+  async function clearJobNote(job: JobRow) {
+    const confirmed = window.confirm(
+      `Clear this mechanic note?\n\nTask:\n${job.job_text}`,
+    );
+
+    if (!confirmed) return;
+
+    const key = `${job.section}-${job.job_id}`;
+    const now = new Date().toISOString();
+
+    setClearingNoteKey(key);
+    setMessage("");
+    setErrorMessage("");
+
+    const { data: userData } = await supabase.auth.getUser();
+    const email = userData.user?.email ?? "chief";
+
+    const { error } = await supabase
+      .from("job_progress")
+      .update({
+        notes: null,
+        updated_by: email,
+        updated_at: now,
+      })
+      .eq("car_id", job.car_id)
+      .eq("job_id", job.job_id)
+      .eq("section", job.section);
+
+    if (error) {
+      setErrorMessage(`Failed to clear note: ${error.message}`);
+      setClearingNoteKey(null);
+      return;
+    }
+
+    setJobs((current) =>
+      current.map((item) =>
+        item.car_id === job.car_id &&
+        item.job_id === job.job_id &&
+        item.section === job.section
+          ? {
+              ...item,
+              notes: null,
+              updated_by: email,
+              updated_at: now,
+            }
+          : item,
+      ),
+    );
+
+    setMessage("Mechanic note cleared.");
+    setClearingNoteKey(null);
+  }
+
   const completedJobs = jobs.filter((job) => job.done).length;
   const totalJobs = jobs.length;
   const progress = totalJobs ? Math.round((completedJobs / totalJobs) * 100) : 0;
@@ -204,7 +261,9 @@ export default function ChiefCarViewerPage() {
   const filteredPostEventRows = useMemo(() => {
     return postEventRows.filter((sheet) => {
       const sheetDate = sheet.created_at ? sheet.created_at.slice(0, 10) : "";
+
       const matchesDate = dateFilter ? sheetDate === dateFilter : true;
+
       const matchesTrack =
         trackFilter === "all"
           ? true
@@ -258,6 +317,12 @@ export default function ChiefCarViewerPage() {
           <LogoutButton />
         </div>
       </div>
+
+      {message && (
+        <div className="mb-6 rounded-2xl border border-green-800 bg-green-950/20 p-4 text-sm text-green-300">
+          {message}
+        </div>
+      )}
 
       {errorMessage && (
         <div className="mb-6 rounded-2xl border border-red-900 bg-red-950/40 p-4 text-sm text-red-200">
@@ -353,6 +418,7 @@ export default function ChiefCarViewerPage() {
 
                   <div className="mt-1 flex flex-wrap gap-3 text-xs uppercase tracking-widest text-zinc-500">
                     <span>{job.section}</span>
+
                     {job.notes?.trim() && (
                       <span className="text-red-300">Has Note</span>
                     )}
@@ -382,11 +448,13 @@ export default function ChiefCarViewerPage() {
 
                 <div className="mt-1 flex flex-wrap gap-3 text-xs text-zinc-500">
                   <span>Updated by {job.updated_by ?? "unknown"}</span>
+
                   <span>
                     {job.updated_at
                       ? new Date(job.updated_at).toLocaleString("en-GB")
                       : ""}
                   </span>
+
                   {job.notes?.trim() && (
                     <span className="font-semibold text-red-300">
                       Has Note
@@ -465,6 +533,7 @@ export default function ChiefCarViewerPage() {
                 className="mt-2 w-full rounded-xl border border-zinc-700 bg-[#0d0f12] px-4 py-3 text-sm text-zinc-100 outline-none focus:border-red-500"
               >
                 <option value="all">All tracks</option>
+
                 {trackOptions.map((track) => (
                   <option key={track} value={track}>
                     {track}
@@ -520,6 +589,7 @@ export default function ChiefCarViewerPage() {
 
                     <div className="rounded-xl border border-zinc-700 bg-[#111418] px-3 py-2 text-right">
                       <p className="text-xs text-zinc-500">Saved</p>
+
                       <p className="text-sm font-semibold text-zinc-200">
                         {niceDate(sheet.created_at)}
                       </p>
@@ -582,38 +652,54 @@ export default function ChiefCarViewerPage() {
           </div>
         ) : (
           <div className="max-h-[520px] space-y-3 overflow-y-auto pr-2">
-            {mechanicJobNotes.map((job) => (
-              <div
-                key={`${job.section}-${job.job_id}`}
-                className="rounded-2xl border border-red-900/40 bg-[#0d0f12] p-4"
-              >
-                <div className="flex flex-wrap items-start justify-between gap-3">
-                  <div>
-                    <p className="text-xs font-semibold uppercase tracking-[0.22em] text-red-400">
-                      {job.section} job #{job.job_id}
+            {mechanicJobNotes.map((job) => {
+              const noteKey = `${job.section}-${job.job_id}`;
+              const isClearing = clearingNoteKey === noteKey;
+
+              return (
+                <div
+                  key={noteKey}
+                  className="rounded-2xl border border-red-900/40 bg-[#0d0f12] p-4"
+                >
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <p className="text-xs font-semibold uppercase tracking-[0.22em] text-red-400">
+                        {job.section} job #{job.job_id}
+                      </p>
+
+                      <h3 className="mt-2 text-base font-semibold text-zinc-100">
+                        {job.job_text}
+                      </h3>
+                    </div>
+
+                    <div className="rounded-xl border border-zinc-800 bg-[#111418] px-3 py-2 text-xs text-zinc-400">
+                      {job.updated_at
+                        ? new Date(job.updated_at).toLocaleString("en-GB")
+                        : "No timestamp"}
+                    </div>
+                  </div>
+
+                  <div className="mt-4 rounded-xl border border-zinc-800 bg-[#14181d] p-4 text-sm leading-6 text-zinc-200">
+                    {job.notes}
+                  </div>
+
+                  <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
+                    <p className="text-xs text-zinc-500">
+                      Added by {job.updated_by || "unknown"}
                     </p>
 
-                    <h3 className="mt-2 text-base font-semibold text-zinc-100">
-                      {job.job_text}
-                    </h3>
-                  </div>
-
-                  <div className="rounded-xl border border-zinc-800 bg-[#111418] px-3 py-2 text-xs text-zinc-400">
-                    {job.updated_at
-                      ? new Date(job.updated_at).toLocaleString("en-GB")
-                      : "No timestamp"}
+                    <button
+                      type="button"
+                      onClick={() => clearJobNote(job)}
+                      disabled={isClearing}
+                      className="rounded-lg border border-red-900/70 px-4 py-2 text-xs font-semibold text-red-300 transition hover:border-red-500 hover:bg-red-950/40 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      {isClearing ? "Clearing..." : "Clear Note"}
+                    </button>
                   </div>
                 </div>
-
-                <div className="mt-4 rounded-xl border border-zinc-800 bg-[#14181d] p-4 text-sm leading-6 text-zinc-200">
-                  {job.notes}
-                </div>
-
-                <p className="mt-3 text-xs text-zinc-500">
-                  Added by {job.updated_by || "unknown"}
-                </p>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </section>
@@ -651,10 +737,12 @@ export default function ChiefCarViewerPage() {
               <DetailField label="Chassis" value={selectedSheet.chassis} />
               <DetailField label="Driver" value={selectedSheet.driver} />
               <DetailField label="Engine No." value={selectedSheet.engine_no} />
+
               <DetailField
                 label="Hours Remaining"
                 value={selectedSheet.hours_remaining}
               />
+
               <DetailField label="Gearbox No." value={selectedSheet.gearbox_no} />
             </div>
 
@@ -667,10 +755,12 @@ export default function ChiefCarViewerPage() {
                     : null
                 }
               />
+
               <DetailField
                 label="Diff Break-Off"
                 value={selectedSheet.diff_break_off}
               />
+
               <DetailField
                 label="Diff Dynamic"
                 value={selectedSheet.diff_dynamic}
