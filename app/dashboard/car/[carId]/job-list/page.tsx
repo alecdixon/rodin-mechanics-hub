@@ -3,8 +3,6 @@
 import { useState } from "react";
 import Link from "next/link";
 
-const router = useRouter();
-
 async function handleLogout() {
   await supabase.auth.signOut();
   document.cookie = "user-email=; path=/; max-age=0";
