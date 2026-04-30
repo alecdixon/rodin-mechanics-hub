@@ -1,26 +1,70 @@
+"use client";
+
 import Link from "next/link";
+import { useEffect, useState } from "react";
+import { useParams, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
-import { getUserRole } from "@/lib/userAccess";
+import { getAssignedCar, getUserRole } from "@/lib/userAccess";
 
 type Props = {
   children: React.ReactNode;
-  params: Promise<{ carId: string }>;
 };
 
-export default async function CarLayout({ children, params }: Props) {
-  const { carId } = await params;
+export default function CarLayout({ children }: Props) {
+  const router = useRouter();
+  const params = useParams();
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const carId = String(params.carId ?? "");
 
-  const role = getUserRole(user?.email);
+  const [loading, setLoading] = useState(true);
+  const [role, setRole] = useState<"chief" | "mechanic" | "unknown">(
+    "unknown",
+  );
+
+  useEffect(() => {
+    async function checkAccess() {
+      const { data } = await supabase.auth.getUser();
+      const email = data.user?.email ?? "";
+
+      const userRole = getUserRole(email);
+      const assignedCar = getAssignedCar(email);
+
+      if (userRole === "chief") {
+        setRole("chief");
+        setLoading(false);
+        return;
+      }
+
+      if (userRole === "mechanic") {
+        if (String(assignedCar) !== carId) {
+          router.replace(`/car/${assignedCar}`);
+          return;
+        }
+
+        setRole("mechanic");
+        setLoading(false);
+        return;
+      }
+
+      router.replace("/login");
+    }
+
+    checkAccess();
+  }, [carId, router]);
 
   const navItems = [
     { name: "Job List", href: `/car/${carId}/job-list` },
     { name: "Clutch Measurement", href: `/car/${carId}/clutch-measurement` },
     { name: "Post Event", href: `/car/${carId}/post-event` },
   ];
+
+  if (loading) {
+    return (
+      <main className="flex min-h-screen items-center justify-center bg-black text-zinc-400">
+        Checking access...
+      </main>
+    );
+  }
 
   return (
     <div className="flex min-h-screen bg-black text-white">
@@ -30,7 +74,7 @@ export default async function CarLayout({ children, params }: Props) {
             href="/dashboard"
             className="text-sm text-red-400 hover:text-red-300"
           >
-            ← Dashboard
+            ← Chief Dashboard
           </Link>
         ) : (
           <p className="text-sm text-neutral-500">Car Workspace</p>
@@ -40,7 +84,14 @@ export default async function CarLayout({ children, params }: Props) {
           <p className="text-xs uppercase tracking-[0.35em] text-red-500">
             Rodin Motorsport
           </p>
+
           <h2 className="mt-2 text-xl font-bold">Car {carId}</h2>
+
+          {role === "chief" && (
+            <p className="mt-2 rounded-full border border-red-900/50 bg-red-950/30 px-3 py-1 text-xs text-red-300">
+              Chief mechanic access
+            </p>
+          )}
         </div>
 
         <nav className="mt-8 space-y-2">
@@ -53,6 +104,15 @@ export default async function CarLayout({ children, params }: Props) {
               {item.name}
             </Link>
           ))}
+
+          {role === "chief" && (
+            <Link
+              href={`/dashboard/car/${carId}/job-list`}
+              className="mt-6 block rounded-lg border border-red-800 bg-red-950/30 px-4 py-3 text-sm font-semibold text-red-200 hover:border-red-500"
+            >
+              Edit Job List
+            </Link>
+          )}
         </nav>
       </aside>
 
