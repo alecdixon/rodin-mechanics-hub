@@ -7,13 +7,25 @@ import { supabase } from "@/lib/supabase";
 import { getAssignedCar, getUserRole } from "@/lib/userAccess";
 import LogoutButton from "@/app/components/LogoutButton";
 
+type DashboardCar = {
+  id: number;
+  name: string;
+  colour: string | null;
+  active: boolean;
+  sort_order: number | null;
+  created_at?: string | null;
+};
+
 type CarProgress = {
   id: number;
   name: string;
+  colour: string;
   progress: number;
   status: string;
   total: number;
   completed: number;
+  active: boolean;
+  sort_order: number;
 };
 
 type CalendarEvent = {
@@ -40,20 +52,22 @@ type CsvCalendarRow = {
   colour: string | null;
 };
 
-const CAR_META = [
-  { id: 1, name: "GB3-01" },
-  { id: 2, name: "GB3-02" },
-  { id: 3, name: "GB3-03" },
-];
+const DEFAULT_CAR_COLOUR = "#b91c1c";
 
-function ProgressDial({ progress }: { progress: number }) {
+function ProgressDial({
+  progress,
+  colour,
+}: {
+  progress: number;
+  colour: string;
+}) {
   const angle = progress * 3.6;
 
   return (
     <div
       className="grid h-36 w-36 place-items-center rounded-full shadow-inner"
       style={{
-        background: `conic-gradient(#b91c1c ${angle}deg, #2a2f36 ${angle}deg)`,
+        background: `conic-gradient(${colour} ${angle}deg, #2a2f36 ${angle}deg)`,
       }}
     >
       <div className="grid h-28 w-28 place-items-center rounded-full bg-[#111418]">
@@ -143,7 +157,7 @@ function parseCalendarCsv(csvText: string): CsvCalendarRow[] {
       event_type: row.event_type || null,
       location: row.location || null,
       notes: row.notes || null,
-      colour: row.colour || "#b91c1c",
+      colour: row.colour || DEFAULT_CAR_COLOUR,
     };
   });
 }
@@ -154,24 +168,45 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
   const [cars, setCars] = useState<CarProgress[]>([]);
   const [calendarEvents, setCalendarEvents] = useState<CalendarEvent[]>([]);
+
   const [calendarLoading, setCalendarLoading] = useState(false);
   const [importingCalendar, setImportingCalendar] = useState(false);
+
+  const [carSettingsOpen, setCarSettingsOpen] = useState(false);
+  const [savingCarId, setSavingCarId] = useState<number | null>(null);
+  const [addingCar, setAddingCar] = useState(false);
+
+  const [newCarId, setNewCarId] = useState("");
+  const [newCarName, setNewCarName] = useState("");
+  const [newCarColour, setNewCarColour] = useState(DEFAULT_CAR_COLOUR);
+
   const [message, setMessage] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
 
-  const loadProgress = useCallback(async () => {
-    const { data, error } = await supabase
+  const loadCarsAndProgress = useCallback(async () => {
+    const { data: carData, error: carError } = await supabase
+      .from("dashboard_cars")
+      .select("*")
+      .order("sort_order", { ascending: true })
+      .order("id", { ascending: true });
+
+    if (carError) {
+      setErrorMessage(carError.message);
+      return;
+    }
+
+    const { data: progressData, error: progressError } = await supabase
       .from("job_progress")
       .select("car_id,done");
 
-    if (error) {
-      setErrorMessage(error.message);
+    if (progressError) {
+      setErrorMessage(progressError.message);
       return;
     }
 
     const carMap: Record<number, { total: number; done: number }> = {};
 
-    (data ?? []).forEach((row: { car_id: number; done: boolean }) => {
+    (progressData ?? []).forEach((row: { car_id: number; done: boolean }) => {
       if (!carMap[row.car_id]) {
         carMap[row.car_id] = { total: 0, done: 0 };
       }
@@ -183,30 +218,34 @@ export default function DashboardPage() {
       }
     });
 
-    setCars(
-      CAR_META.map((car) => {
-        const stats = carMap[car.id] ?? { total: 0, done: 0 };
-        const progress = stats.total
-          ? Math.round((stats.done / stats.total) * 100)
-          : 0;
+    const cleanCars = ((carData ?? []) as DashboardCar[]).map((car) => {
+      const stats = carMap[car.id] ?? { total: 0, done: 0 };
 
-        const status =
-          progress === 100 && stats.total > 0
-            ? "Complete"
-            : progress > 0
-              ? "In Progress"
-              : "Open Jobs";
+      const progress = stats.total
+        ? Math.round((stats.done / stats.total) * 100)
+        : 0;
 
-        return {
-          id: car.id,
-          name: car.name,
-          progress,
-          status,
-          total: stats.total,
-          completed: stats.done,
-        };
-      }),
-    );
+      const status =
+        progress === 100 && stats.total > 0
+          ? "Complete"
+          : progress > 0
+            ? "In Progress"
+            : "Open Jobs";
+
+      return {
+        id: car.id,
+        name: car.name,
+        colour: car.colour || DEFAULT_CAR_COLOUR,
+        active: car.active,
+        sort_order: car.sort_order ?? car.id,
+        progress,
+        status,
+        total: stats.total,
+        completed: stats.done,
+      };
+    });
+
+    setCars(cleanCars);
   }, []);
 
   const loadCalendar = useCallback(async () => {
@@ -244,13 +283,13 @@ export default function DashboardPage() {
         return;
       }
 
-      await loadProgress();
+      await loadCarsAndProgress();
       await loadCalendar();
       setLoading(false);
     }
 
     checkAccess();
-  }, [loadProgress, loadCalendar, router]);
+  }, [loadCarsAndProgress, loadCalendar, router]);
 
   useEffect(() => {
     const channel = supabase
@@ -258,14 +297,20 @@ export default function DashboardPage() {
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "job_progress" },
-        () => loadProgress(),
+        () => loadCarsAndProgress(),
       )
       .subscribe();
 
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [loadProgress]);
+  }, [loadCarsAndProgress]);
+
+  const activeCars = useMemo(() => {
+    return cars
+      .filter((car) => car.active)
+      .sort((a, b) => a.sort_order - b.sort_order || a.id - b.id);
+  }, [cars]);
 
   const upcomingEvents = useMemo(() => {
     const today = new Date();
@@ -276,6 +321,94 @@ export default function DashboardPage() {
       return new Date(endDate) >= today;
     });
   }, [calendarEvents]);
+
+  async function updateCar(car: CarProgress, updates: Partial<DashboardCar>) {
+    setSavingCarId(car.id);
+    setMessage("");
+    setErrorMessage("");
+
+    const { error } = await supabase
+      .from("dashboard_cars")
+      .update(updates)
+      .eq("id", car.id);
+
+    if (error) {
+      setErrorMessage(error.message);
+      setSavingCarId(null);
+      return;
+    }
+
+    setCars((current) =>
+      current.map((item) =>
+        item.id === car.id
+          ? {
+              ...item,
+              name: updates.name ?? item.name,
+              colour: updates.colour ?? item.colour,
+              active:
+                typeof updates.active === "boolean"
+                  ? updates.active
+                  : item.active,
+              sort_order:
+                typeof updates.sort_order === "number"
+                  ? updates.sort_order
+                  : item.sort_order,
+            }
+          : item,
+      ),
+    );
+
+    setSavingCarId(null);
+    setMessage("Car settings saved.");
+  }
+
+  async function addCar() {
+    const id = Number(newCarId);
+    const name = newCarName.trim();
+
+    setMessage("");
+    setErrorMessage("");
+
+    if (!id || id < 1) {
+      setErrorMessage("Enter a valid car ID number.");
+      return;
+    }
+
+    if (!name) {
+      setErrorMessage("Enter a car name.");
+      return;
+    }
+
+    const existing = cars.find((car) => car.id === id);
+    if (existing) {
+      setErrorMessage(`Car ID ${id} already exists.`);
+      return;
+    }
+
+    setAddingCar(true);
+
+    const { error } = await supabase.from("dashboard_cars").insert({
+      id,
+      name,
+      colour: newCarColour || DEFAULT_CAR_COLOUR,
+      active: true,
+      sort_order: id,
+    });
+
+    if (error) {
+      setErrorMessage(error.message);
+      setAddingCar(false);
+      return;
+    }
+
+    setNewCarId("");
+    setNewCarName("");
+    setNewCarColour(DEFAULT_CAR_COLOUR);
+    setMessage(`Added ${name}.`);
+
+    await loadCarsAndProgress();
+    setAddingCar(false);
+  }
 
   async function handleCalendarCsvUpload(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
@@ -357,12 +490,22 @@ export default function DashboardPage() {
             </h1>
 
             <p className="mt-2 max-w-2xl text-sm text-zinc-400">
-              Live overview of car preparation progress, clutch measurements,
-              post-event records and the season calendar.
+              Live overview of car preparation progress, post-event records,
+              car settings and the season calendar.
             </p>
           </div>
 
-          <LogoutButton />
+          <div className="flex flex-wrap gap-3">
+            <button
+              type="button"
+              onClick={() => setCarSettingsOpen((current) => !current)}
+              className="rounded-xl border border-zinc-700 bg-[#1b2026] px-5 py-3 text-sm font-semibold text-zinc-200 hover:border-red-500 hover:bg-[#222832]"
+            >
+              {carSettingsOpen ? "Hide Car Settings" : "Manage Cars"}
+            </button>
+
+            <LogoutButton />
+          </div>
         </div>
       </header>
 
@@ -378,36 +521,238 @@ export default function DashboardPage() {
         </div>
       )}
 
-      <section className="grid grid-cols-1 gap-6 md:grid-cols-3">
-        {cars.map((car) => (
-          <Link
-            key={car.id}
-            href={`/dashboard/car/${car.id}/viewer`}
-            className="group rounded-3xl border border-zinc-800 bg-[#14181d] p-7 shadow-lg transition hover:-translate-y-1 hover:border-red-500/70 hover:bg-[#181d23]"
-          >
-            <div className="flex flex-col items-center">
-              <ProgressDial progress={car.progress} />
+      {carSettingsOpen && (
+        <section className="mb-8 rounded-3xl border border-zinc-800 bg-[#14181d] p-6 shadow-xl">
+          <div className="mb-6">
+            <p className="text-xs font-semibold uppercase tracking-[0.35em] text-red-400">
+              Dashboard Settings
+            </p>
 
-              <div className="mt-6 text-center">
-                <h2 className="text-2xl font-semibold tracking-tight">
-                  {car.name}
-                </h2>
+            <h2 className="mt-3 text-3xl font-semibold">Manage Cars</h2>
 
-                <div className="mt-3 inline-flex rounded-full border border-zinc-700 bg-[#0d0f12] px-3 py-1 text-xs text-zinc-300">
-                  {car.status}
+            <p className="mt-2 max-w-3xl text-sm text-zinc-400">
+              Change car names, dashboard colours, visibility and display order.
+              Hiding a car does not delete any historic job data.
+            </p>
+          </div>
+
+          <div className="space-y-3">
+            {cars.map((car) => (
+              <div
+                key={car.id}
+                className="grid gap-3 rounded-2xl border border-zinc-800 bg-[#0d0f12] p-4 lg:grid-cols-[80px_1fr_140px_120px_120px_auto]"
+              >
+                <div>
+                  <p className="text-xs uppercase tracking-[0.22em] text-zinc-500">
+                    ID
+                  </p>
+                  <p className="mt-2 text-lg font-semibold text-zinc-100">
+                    {car.id}
+                  </p>
                 </div>
 
-                <p className="mt-3 text-sm text-zinc-500">
-                  {car.completed} of {car.total || "—"} jobs complete
-                </p>
+                <label>
+                  <span className="text-xs uppercase tracking-[0.22em] text-zinc-500">
+                    Name
+                  </span>
+                  <input
+                    value={car.name}
+                    onChange={(event) =>
+                      setCars((current) =>
+                        current.map((item) =>
+                          item.id === car.id
+                            ? { ...item, name: event.target.value }
+                            : item,
+                        ),
+                      )
+                    }
+                    className="mt-2 w-full rounded-xl border border-zinc-700 bg-[#111418] px-4 py-3 text-sm text-zinc-100 outline-none focus:border-red-500"
+                  />
+                </label>
 
-                <p className="mt-4 text-sm text-zinc-500 group-hover:text-zinc-300">
-                  Open car viewer →
-                </p>
+                <label>
+                  <span className="text-xs uppercase tracking-[0.22em] text-zinc-500">
+                    Colour
+                  </span>
+                  <input
+                    type="color"
+                    value={car.colour}
+                    onChange={(event) =>
+                      setCars((current) =>
+                        current.map((item) =>
+                          item.id === car.id
+                            ? { ...item, colour: event.target.value }
+                            : item,
+                        ),
+                      )
+                    }
+                    className="mt-2 h-[46px] w-full rounded-xl border border-zinc-700 bg-[#111418] p-1"
+                  />
+                </label>
+
+                <label>
+                  <span className="text-xs uppercase tracking-[0.22em] text-zinc-500">
+                    Order
+                  </span>
+                  <input
+                    type="number"
+                    value={car.sort_order}
+                    onChange={(event) =>
+                      setCars((current) =>
+                        current.map((item) =>
+                          item.id === car.id
+                            ? {
+                                ...item,
+                                sort_order: Number(event.target.value),
+                              }
+                            : item,
+                        ),
+                      )
+                    }
+                    className="mt-2 w-full rounded-xl border border-zinc-700 bg-[#111418] px-4 py-3 text-sm text-zinc-100 outline-none focus:border-red-500"
+                  />
+                </label>
+
+                <label>
+                  <span className="text-xs uppercase tracking-[0.22em] text-zinc-500">
+                    Active
+                  </span>
+                  <select
+                    value={car.active ? "active" : "hidden"}
+                    onChange={(event) =>
+                      setCars((current) =>
+                        current.map((item) =>
+                          item.id === car.id
+                            ? {
+                                ...item,
+                                active: event.target.value === "active",
+                              }
+                            : item,
+                        ),
+                      )
+                    }
+                    className="mt-2 w-full rounded-xl border border-zinc-700 bg-[#111418] px-4 py-3 text-sm text-zinc-100 outline-none focus:border-red-500"
+                  >
+                    <option value="active">Active</option>
+                    <option value="hidden">Hidden</option>
+                  </select>
+                </label>
+
+                <div className="flex items-end">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      updateCar(car, {
+                        name: car.name.trim() || `Car ${car.id}`,
+                        colour: car.colour || DEFAULT_CAR_COLOUR,
+                        active: car.active,
+                        sort_order: car.sort_order,
+                      })
+                    }
+                    disabled={savingCarId === car.id}
+                    className="w-full rounded-xl bg-red-700 px-5 py-3 text-sm font-semibold text-white hover:bg-red-600 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {savingCarId === car.id ? "Saving..." : "Save"}
+                  </button>
+                </div>
               </div>
+            ))}
+          </div>
+
+          <div className="mt-6 rounded-2xl border border-red-900/40 bg-[#181315] p-5">
+            <h3 className="text-xl font-semibold text-red-100">Add Car</h3>
+
+            <p className="mt-1 text-sm text-zinc-400">
+              Use a unique numeric car ID. This ID is what links the car card to
+              its job list and mechanic page.
+            </p>
+
+            <div className="mt-4 grid gap-3 md:grid-cols-[160px_1fr_160px_auto]">
+              <input
+                type="number"
+                value={newCarId}
+                onChange={(event) => setNewCarId(event.target.value)}
+                placeholder="Car ID"
+                className="rounded-xl border border-red-900/50 bg-[#0d0f12] px-4 py-3 text-sm text-zinc-100 outline-none focus:border-red-500"
+              />
+
+              <input
+                value={newCarName}
+                onChange={(event) => setNewCarName(event.target.value)}
+                placeholder="Car name, e.g. GB3-04"
+                className="rounded-xl border border-red-900/50 bg-[#0d0f12] px-4 py-3 text-sm text-zinc-100 outline-none focus:border-red-500"
+              />
+
+              <input
+                type="color"
+                value={newCarColour}
+                onChange={(event) => setNewCarColour(event.target.value)}
+                className="h-[46px] rounded-xl border border-red-900/50 bg-[#0d0f12] p-1"
+              />
+
+              <button
+                type="button"
+                onClick={addCar}
+                disabled={addingCar}
+                className="rounded-xl bg-red-700 px-5 py-3 text-sm font-semibold text-white hover:bg-red-600 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {addingCar ? "Adding..." : "Add Car"}
+              </button>
             </div>
-          </Link>
-        ))}
+          </div>
+        </section>
+      )}
+
+      <section className="grid grid-cols-1 gap-6 md:grid-cols-3">
+        {activeCars.length === 0 ? (
+          <div className="rounded-3xl border border-dashed border-zinc-700 bg-[#14181d] p-7 text-sm text-zinc-500 md:col-span-3">
+            No active cars. Open Manage Cars and set at least one car to Active.
+          </div>
+        ) : (
+          activeCars.map((car) => (
+            <Link
+              key={car.id}
+              href={`/dashboard/car/${car.id}/viewer`}
+              className="group rounded-3xl border border-zinc-800 bg-[#14181d] p-7 shadow-lg transition hover:-translate-y-1 hover:bg-[#181d23]"
+              style={{
+                borderColor: "#27272a",
+              }}
+              onMouseEnter={(event) => {
+                event.currentTarget.style.borderColor = car.colour;
+              }}
+              onMouseLeave={(event) => {
+                event.currentTarget.style.borderColor = "#27272a";
+              }}
+            >
+              <div className="flex flex-col items-center">
+                <ProgressDial progress={car.progress} colour={car.colour} />
+
+                <div className="mt-6 text-center">
+                  <h2 className="text-2xl font-semibold tracking-tight">
+                    {car.name}
+                  </h2>
+
+                  <div
+                    className="mt-3 inline-flex rounded-full border bg-[#0d0f12] px-3 py-1 text-xs text-zinc-300"
+                    style={{
+                      borderColor: car.colour,
+                    }}
+                  >
+                    {car.status}
+                  </div>
+
+                  <p className="mt-3 text-sm text-zinc-500">
+                    {car.completed} of {car.total || "—"} jobs complete
+                  </p>
+
+                  <p className="mt-4 text-sm text-zinc-500 group-hover:text-zinc-300">
+                    Open car viewer →
+                  </p>
+                </div>
+              </div>
+            </Link>
+          ))
+        )}
       </section>
 
       <section className="mt-8 rounded-3xl border border-zinc-800 bg-[#14181d] p-6 shadow-xl">
@@ -417,9 +762,7 @@ export default function DashboardPage() {
               Season Calendar
             </p>
 
-            <h2 className="mt-3 text-3xl font-semibold">
-              Imported Calendar
-            </h2>
+            <h2 className="mt-3 text-3xl font-semibold">Imported Calendar</h2>
 
             <p className="mt-2 max-w-3xl text-sm text-zinc-400">
               Upload a CSV calendar to show race weekends, tests and important
@@ -479,7 +822,7 @@ export default function DashboardPage() {
                         <span
                           className="h-3 w-3 rounded-full"
                           style={{
-                            backgroundColor: event.colour || "#b91c1c",
+                            backgroundColor: event.colour || DEFAULT_CAR_COLOUR,
                           }}
                         />
 
@@ -525,15 +868,11 @@ export default function DashboardPage() {
                 Upcoming
               </p>
 
-              <h3 className="mt-3 text-2xl font-semibold">
-                Next Events
-              </h3>
+              <h3 className="mt-3 text-2xl font-semibold">Next Events</h3>
 
               <div className="mt-5 space-y-3">
                 {upcomingEvents.length === 0 ? (
-                  <p className="text-sm text-zinc-500">
-                    No upcoming events.
-                  </p>
+                  <p className="text-sm text-zinc-500">No upcoming events.</p>
                 ) : (
                   upcomingEvents.slice(0, 5).map((event) => (
                     <div
