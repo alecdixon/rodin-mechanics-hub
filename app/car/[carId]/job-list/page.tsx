@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { useEffect, useMemo, useState } from "react";
+import { useParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 
 const STANDARD_JOBS = [
@@ -57,129 +57,225 @@ const STANDARD_JOBS = [
   "Check toes and setup",
 ];
 
-const SPECIAL_JOBS: string[] = [];
+type JobSection = "standard" | "special";
 
-type Job = {
-  id: number;
-  text: string;
+type JobRow = {
+  id?: string;
+  car_id: number;
+  job_id: number;
+  job_text: string;
+  section: JobSection;
   done: boolean;
+  updated_by: string | null;
+  updated_at: string | null;
 };
 
-function makeJobs(items: string[]): Job[] {
-  return items.map((text, index) => ({
-    id: index + 1,
-    text,
+function makeTemplateRows(carId: number): JobRow[] {
+  return STANDARD_JOBS.map((text, index) => ({
+    car_id: carId,
+    job_id: index + 1,
+    job_text: text,
+    section: "standard",
     done: false,
+    updated_by: null,
+    updated_at: new Date().toISOString(),
   }));
 }
 
-export default function JobListPage() {
-  const router = useRouter();
+export default function MechanicJobListPage() {
   const params = useParams();
+  const carId = Number(params.carId);
 
-  const carId = params.carId as string;
+  const [jobs, setJobs] = useState<JobRow[]>([]);
+  const [userEmail, setUserEmail] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [savingKey, setSavingKey] = useState<string | null>(null);
+  const [errorMessage, setErrorMessage] = useState("");
 
-  const [standardJobs, setStandardJobs] = useState<Job[]>(
-    makeJobs(STANDARD_JOBS),
+  useEffect(() => {
+    async function loadJobs() {
+      if (!carId) return;
+
+      setLoading(true);
+      setErrorMessage("");
+
+      const { data: userData } = await supabase.auth.getUser();
+      const email = userData.user?.email?.trim().toLowerCase() ?? "";
+      setUserEmail(email);
+
+      const templateRows = makeTemplateRows(carId);
+
+      const { error: upsertError } = await supabase
+        .from("job_progress")
+        .upsert(templateRows, {
+          onConflict: "car_id,job_id,section",
+          ignoreDuplicates: true,
+        });
+
+      if (upsertError) {
+        setErrorMessage(`Failed to create job rows: ${upsertError.message}`);
+        setLoading(false);
+        return;
+      }
+
+      const { data, error } = await supabase
+        .from("job_progress")
+        .select("*")
+        .eq("car_id", carId)
+        .order("section", { ascending: false })
+        .order("job_id", { ascending: true });
+
+      if (error) {
+        setErrorMessage(`Failed to load job list: ${error.message}`);
+        setLoading(false);
+        return;
+      }
+
+      setJobs((data ?? []) as JobRow[]);
+      setLoading(false);
+    }
+
+    loadJobs();
+  }, [carId]);
+
+  const standardJobs = useMemo(
+    () => jobs.filter((job) => job.section === "standard"),
+    [jobs],
   );
 
-  const [specialJobs, setSpecialJobs] = useState<Job[]>(
-    makeJobs(SPECIAL_JOBS),
+  const specialJobs = useMemo(
+    () => jobs.filter((job) => job.section === "special"),
+    [jobs],
   );
 
-  async function handleLogout() {
-    await supabase.auth.signOut();
-    document.cookie = "user-email=; path=/; max-age=0";
-    router.push("/login");
-  }
-
-  const totalJobs = standardJobs.length + specialJobs.length;
-
-  const completedJobs =
-    standardJobs.filter((job) => job.done).length +
-    specialJobs.filter((job) => job.done).length;
-
+  const totalJobs = jobs.length;
+  const completedJobs = jobs.filter((job) => job.done).length;
   const progress = totalJobs
     ? Math.round((completedJobs / totalJobs) * 100)
     : 0;
 
-  function toggleStandardJob(id: number) {
-    setStandardJobs((current) =>
-      current.map((job) =>
-        job.id === id ? { ...job, done: !job.done } : job,
+  async function toggleJob(job: JobRow) {
+    const newDone = !job.done;
+    const saveKey = `${job.section}-${job.job_id}`;
+
+    setSavingKey(saveKey);
+    setErrorMessage("");
+
+    setJobs((current) =>
+      current.map((item) =>
+        item.car_id === job.car_id &&
+        item.job_id === job.job_id &&
+        item.section === job.section
+          ? {
+              ...item,
+              done: newDone,
+              updated_by: userEmail,
+              updated_at: new Date().toISOString(),
+            }
+          : item,
       ),
     );
+
+    const { error } = await supabase
+      .from("job_progress")
+      .update({
+        done: newDone,
+        updated_by: userEmail,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("car_id", job.car_id)
+      .eq("job_id", job.job_id)
+      .eq("section", job.section);
+
+    if (error) {
+      setErrorMessage(`Autosave failed: ${error.message}`);
+
+      setJobs((current) =>
+        current.map((item) =>
+          item.car_id === job.car_id &&
+          item.job_id === job.job_id &&
+          item.section === job.section
+            ? { ...item, done: job.done }
+            : item,
+        ),
+      );
+    }
+
+    setSavingKey(null);
   }
 
-  function toggleSpecialJob(id: number) {
-    setSpecialJobs((current) =>
-      current.map((job) =>
-        job.id === id ? { ...job, done: !job.done } : job,
-      ),
+  if (loading) {
+    return (
+      <main className="min-h-screen bg-[#0d0f12] p-6 text-zinc-100">
+        <div className="rounded-3xl border border-zinc-800 bg-[#14181d] p-6">
+          Loading Car {carId} job list...
+        </div>
+      </main>
     );
   }
 
   return (
-    <main className="min-h-screen bg-[#0d0f12] px-6 py-8 text-zinc-100">
-      <div className="mx-auto max-w-5xl">
-        <div className="mb-8 flex flex-wrap items-start justify-between gap-4">
+    <main className="min-h-screen bg-[#0d0f12] p-6 text-zinc-100">
+      <div className="mb-8">
+        <p className="text-xs uppercase tracking-[0.3em] text-red-400">
+          Mechanic Job List
+        </p>
+
+        <h1 className="mt-3 text-4xl font-semibold">Car {carId} Job List</h1>
+
+        <p className="mt-3 max-w-2xl text-sm text-zinc-400">
+          Tick jobs off as they are completed. Progress autosaves to Supabase
+          and feeds the chief mechanic dashboard.
+        </p>
+      </div>
+
+      {errorMessage && (
+        <div className="mb-6 rounded-2xl border border-red-900 bg-red-950/40 p-4 text-sm text-red-200">
+          {errorMessage}
+        </div>
+      )}
+
+      <section className="mb-6 rounded-3xl border border-zinc-800 bg-[#14181d] p-6 shadow-xl">
+        <div className="mb-5 flex flex-wrap items-center justify-between gap-4">
           <div>
-            <p className="text-xs uppercase tracking-[0.3em] text-red-400">
-              Mechanic Job List
-            </p>
-
-            <h1 className="mt-3 text-4xl font-semibold">Car {carId} Job List</h1>
-
-            <p className="mt-3 max-w-2xl text-sm text-zinc-400">
-              Complete the released job list for this car. The chief mechanic can
-              view progress across all cars.
+            <h2 className="text-2xl font-semibold">Progress</h2>
+            <p className="mt-1 text-sm text-zinc-500">
+              {completedJobs} of {totalJobs} jobs complete.
             </p>
           </div>
 
-          <button
-            onClick={handleLogout}
-            className="rounded-xl border border-zinc-700 px-4 py-2 text-sm text-zinc-300 hover:border-red-500 hover:text-white"
-          >
-            Logout
-          </button>
+          <div className="rounded-2xl border border-zinc-700 bg-[#0d0f12] px-5 py-3 text-2xl font-semibold">
+            {progress}%
+          </div>
         </div>
 
-        <section className="mb-6 rounded-3xl border border-zinc-800 bg-[#14181d] p-6 shadow-xl">
-          <div className="mb-5 flex flex-wrap items-center justify-between gap-4">
-            <div>
-              <h2 className="text-2xl font-semibold">Progress</h2>
-              <p className="mt-1 text-sm text-zinc-500">
-                {completedJobs} of {totalJobs} jobs complete.
-              </p>
-            </div>
+        <div className="h-3 overflow-hidden rounded-full bg-zinc-800">
+          <div
+            className="h-full rounded-full bg-red-700 transition-all"
+            style={{ width: `${progress}%` }}
+          />
+        </div>
+      </section>
 
-            <div className="rounded-2xl border border-zinc-700 bg-[#0d0f12] px-5 py-3 text-2xl font-semibold">
-              {progress}%
-            </div>
-          </div>
+      <section className="mb-6 rounded-3xl border border-zinc-800 bg-[#14181d] p-6 shadow-xl">
+        <div className="mb-5">
+          <h2 className="text-2xl font-semibold">Standard Jobs</h2>
+          <p className="mt-1 text-sm text-zinc-500">
+            Released preparation list for this car.
+          </p>
+        </div>
 
-          <div className="h-3 overflow-hidden rounded-full bg-zinc-800">
-            <div
-              className="h-full rounded-full bg-red-700 transition-all"
-              style={{ width: `${progress}%` }}
-            />
-          </div>
-        </section>
+        <div className="space-y-2">
+          {standardJobs.map((job, index) => {
+            const key = `${job.section}-${job.job_id}`;
+            const isSaving = savingKey === key;
 
-        <section className="mb-6 rounded-3xl border border-zinc-800 bg-[#14181d] p-6 shadow-xl">
-          <div className="mb-5">
-            <h2 className="text-2xl font-semibold">Standard Jobs</h2>
-            <p className="mt-1 text-sm text-zinc-500">
-              Released standard preparation list.
-            </p>
-          </div>
-
-          <div className="space-y-2">
-            {standardJobs.map((job, index) => (
+            return (
               <button
-                key={job.id}
-                onClick={() => toggleStandardJob(job.id)}
-                className={`grid w-full grid-cols-[42px_44px_1fr] items-center gap-3 rounded-xl border p-4 text-left transition ${
+                key={key}
+                onClick={() => toggleJob(job)}
+                disabled={isSaving}
+                className={`grid w-full grid-cols-[42px_44px_1fr] items-center gap-3 rounded-xl border p-4 text-left transition disabled:opacity-60 ${
                   job.done
                     ? "border-green-800/60 bg-green-950/20"
                     : "border-zinc-800 bg-[#0d0f12] hover:border-red-500/70"
@@ -202,34 +298,38 @@ export default function JobListPage() {
                     job.done ? "text-zinc-500 line-through" : "text-zinc-100"
                   }`}
                 >
-                  {job.text}
+                  {job.job_text}
                 </span>
               </button>
-            ))}
-          </div>
-        </section>
+            );
+          })}
+        </div>
+      </section>
 
-        <section className="rounded-3xl border border-red-900/50 bg-[#181315] p-6 shadow-xl">
-          <div className="mb-5">
-            <h2 className="text-2xl font-semibold text-red-200">
-              Special Jobs
-            </h2>
-            <p className="mt-1 text-sm text-zinc-400">
-              Urgent or car-specific jobs released by the chief mechanic.
-            </p>
-          </div>
+      <section className="rounded-3xl border border-red-900/50 bg-[#181315] p-6 shadow-xl">
+        <div className="mb-5">
+          <h2 className="text-2xl font-semibold text-red-200">Special Jobs</h2>
+          <p className="mt-1 text-sm text-zinc-400">
+            Urgent or car-specific jobs released by the chief mechanic.
+          </p>
+        </div>
 
-          {specialJobs.length === 0 ? (
-            <div className="rounded-2xl border border-dashed border-red-900/50 bg-[#0d0f12] p-6 text-sm text-zinc-500">
-              No special jobs currently released for this car.
-            </div>
-          ) : (
-            <div className="space-y-2">
-              {specialJobs.map((job, index) => (
+        {specialJobs.length === 0 ? (
+          <div className="rounded-2xl border border-dashed border-red-900/50 bg-[#0d0f12] p-6 text-sm text-zinc-500">
+            No special jobs currently released for this car.
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {specialJobs.map((job, index) => {
+              const key = `${job.section}-${job.job_id}`;
+              const isSaving = savingKey === key;
+
+              return (
                 <button
-                  key={job.id}
-                  onClick={() => toggleSpecialJob(job.id)}
-                  className={`grid w-full grid-cols-[42px_44px_1fr] items-center gap-3 rounded-xl border p-4 text-left transition ${
+                  key={key}
+                  onClick={() => toggleJob(job)}
+                  disabled={isSaving}
+                  className={`grid w-full grid-cols-[42px_44px_1fr] items-center gap-3 rounded-xl border p-4 text-left transition disabled:opacity-60 ${
                     job.done
                       ? "border-green-800/60 bg-green-950/20"
                       : "border-red-900/40 bg-[#0d0f12] hover:border-red-500/70"
@@ -252,14 +352,14 @@ export default function JobListPage() {
                       job.done ? "text-zinc-500 line-through" : "text-red-100"
                     }`}
                   >
-                    {job.text}
+                    {job.job_text}
                   </span>
                 </button>
-              ))}
-            </div>
-          )}
-        </section>
-      </div>
+              );
+            })}
+          </div>
+        )}
+      </section>
     </main>
   );
 }
