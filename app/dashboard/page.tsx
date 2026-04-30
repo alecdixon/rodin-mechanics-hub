@@ -149,30 +149,29 @@ export default function DashboardPage() {
 
       <section className="grid grid-cols-1 gap-6 md:grid-cols-3">
         {cars.map((car) => (
-          <Link
-            key={car.id}
-            href={`/car/${car.id}/job-list`}
-            className="group rounded-3xl border border-zinc-800 bg-[#14181d] p-7 shadow-lg transition hover:-translate-y-1 hover:border-red-500/70 hover:bg-[#181d23]"
-          >
+            <button
+                key={car.id}
+                type="button"
+                onClick={() => router.push(`/car/${car.id}/job-list`)}
+                className="group rounded-3xl border border-zinc-800 bg-[#14181d] p-7 text-left shadow-lg transition hover:-translate-y-1 hover:border-red-500/70 hover:bg-[#181d23]"
+        >
             <div className="flex flex-col items-center">
-              <ProgressDial progress={car.progress} />
+            <ProgressDial progress={car.progress} />
 
-              <div className="mt-6 text-center">
-                <h2 className="text-2xl font-semibold">
-                  {car.name}
-                </h2>
+            <div className="mt-6 text-center">
+                <h2 className="text-2xl font-semibold">{car.name}</h2>
 
                 <div className="mt-3 inline-flex rounded-full border border-zinc-700 bg-[#0d0f12] px-3 py-1 text-xs text-zinc-300">
-                  {car.status}
+                    {car.status}
                 </div>
 
                 <p className="mt-4 text-sm text-zinc-500 group-hover:text-zinc-300">
-                  Open car workspace →
-                </p>
-              </div>
+                        Open car workspace →
+                    </p>
+                </div>
             </div>
-          </Link>
-        ))}
+        </button>
+    ))}
       </section>
     </main>
   );
