@@ -14,6 +14,7 @@ type JobRow = {
   job_text: string;
   section: "standard" | "special";
   done: boolean;
+  notes: string | null;
   updated_by: string | null;
   updated_at: string | null;
 };
@@ -182,6 +183,16 @@ export default function ChiefCarViewerPage() {
     [jobs],
   );
 
+  const mechanicJobNotes = useMemo(() => {
+    return jobs
+      .filter((job) => job.notes && job.notes.trim().length > 0)
+      .sort((a, b) => {
+        const aTime = a.updated_at ? new Date(a.updated_at).getTime() : 0;
+        const bTime = b.updated_at ? new Date(b.updated_at).getTime() : 0;
+        return bTime - aTime;
+      });
+  }, [jobs]);
+
   const trackOptions = useMemo(() => {
     const tracks = postEventRows
       .map((sheet) => sheet.track_name?.trim())
@@ -231,8 +242,8 @@ export default function ChiefCarViewerPage() {
           </h1>
 
           <p className="mt-3 max-w-3xl text-sm text-zinc-400">
-            Read-only overview of current job progress, clutch measurements and
-            post-event records.
+            Read-only overview of current job progress, clutch measurements,
+            mechanic notes and post-event records.
           </p>
         </div>
 
@@ -340,8 +351,11 @@ export default function ChiefCarViewerPage() {
                 >
                   <div className="text-zinc-100">{job.job_text}</div>
 
-                  <div className="mt-1 text-xs uppercase tracking-widest text-zinc-500">
-                    {job.section}
+                  <div className="mt-1 flex flex-wrap gap-3 text-xs uppercase tracking-widest text-zinc-500">
+                    <span>{job.section}</span>
+                    {job.notes?.trim() && (
+                      <span className="text-red-300">Has Note</span>
+                    )}
                   </div>
                 </div>
               ))
@@ -366,11 +380,18 @@ export default function ChiefCarViewerPage() {
                   {job.job_text}
                 </div>
 
-                <div className="mt-1 text-xs text-zinc-500">
-                  Updated by {job.updated_by ?? "unknown"}{" "}
-                  {job.updated_at
-                    ? `at ${new Date(job.updated_at).toLocaleString("en-GB")}`
-                    : ""}
+                <div className="mt-1 flex flex-wrap gap-3 text-xs text-zinc-500">
+                  <span>Updated by {job.updated_by ?? "unknown"}</span>
+                  <span>
+                    {job.updated_at
+                      ? new Date(job.updated_at).toLocaleString("en-GB")
+                      : ""}
+                  </span>
+                  {job.notes?.trim() && (
+                    <span className="font-semibold text-red-300">
+                      Has Note
+                    </span>
+                  )}
                 </div>
               </div>
             ))
@@ -532,6 +553,69 @@ export default function ChiefCarViewerPage() {
             )}
           </div>
         </div>
+      </section>
+
+      <section className="mt-6 rounded-3xl border border-red-900/50 bg-[#181315] p-6 shadow-xl">
+        <div className="mb-5 flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.3em] text-red-400">
+              Mechanic Feedback
+            </p>
+
+            <h2 className="mt-2 text-2xl font-semibold text-red-100">
+              Job Notes
+            </h2>
+
+            <p className="mt-1 text-sm text-zinc-400">
+              Notes added by mechanics against specific tasks.
+            </p>
+          </div>
+
+          <div className="rounded-2xl border border-red-900/50 bg-[#0d0f12] px-4 py-3 text-sm font-semibold text-red-300">
+            {mechanicJobNotes.length} notes
+          </div>
+        </div>
+
+        {mechanicJobNotes.length === 0 ? (
+          <div className="rounded-2xl border border-dashed border-red-900/50 bg-[#0d0f12] p-6 text-sm text-zinc-500">
+            No mechanic notes added yet.
+          </div>
+        ) : (
+          <div className="max-h-[520px] space-y-3 overflow-y-auto pr-2">
+            {mechanicJobNotes.map((job) => (
+              <div
+                key={`${job.section}-${job.job_id}`}
+                className="rounded-2xl border border-red-900/40 bg-[#0d0f12] p-4"
+              >
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-[0.22em] text-red-400">
+                      {job.section} job #{job.job_id}
+                    </p>
+
+                    <h3 className="mt-2 text-base font-semibold text-zinc-100">
+                      {job.job_text}
+                    </h3>
+                  </div>
+
+                  <div className="rounded-xl border border-zinc-800 bg-[#111418] px-3 py-2 text-xs text-zinc-400">
+                    {job.updated_at
+                      ? new Date(job.updated_at).toLocaleString("en-GB")
+                      : "No timestamp"}
+                  </div>
+                </div>
+
+                <div className="mt-4 rounded-xl border border-zinc-800 bg-[#14181d] p-4 text-sm leading-6 text-zinc-200">
+                  {job.notes}
+                </div>
+
+                <p className="mt-3 text-xs text-zinc-500">
+                  Added by {job.updated_by || "unknown"}
+                </p>
+              </div>
+            ))}
+          </div>
+        )}
       </section>
 
       {selectedSheet && (
