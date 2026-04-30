@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
-import { getLoginRedirect, getUserRole } from "@/lib/userAccess";
+import { getAssignedCar, getUserRole } from "@/lib/userAccess";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -36,16 +36,30 @@ export default function LoginPage() {
     const userEmail = data.user?.email?.trim().toLowerCase() ?? cleanEmail;
     const role = getUserRole(userEmail);
 
-    if (role === "unknown") {
-      await supabase.auth.signOut();
-      document.cookie = "user-email=; path=/; max-age=0";
-      setErrorMessage("Your account is not assigned to a role yet.");
+    if (role === "chief") {
+      document.cookie = `user-email=${userEmail}; path=/; max-age=86400`;
+      router.replace("/dashboard");
       return;
     }
 
-    document.cookie = `user-email=${userEmail}; path=/; max-age=86400`;
+    if (role === "mechanic") {
+      const assignedCar = getAssignedCar(userEmail);
 
-    router.push(getLoginRedirect(userEmail));
+      if (!assignedCar) {
+        await supabase.auth.signOut();
+        document.cookie = "user-email=; path=/; max-age=0";
+        setErrorMessage("Your account is not assigned to a car yet.");
+        return;
+      }
+
+      document.cookie = `user-email=${userEmail}; path=/; max-age=86400`;
+      router.replace(`/car/${assignedCar}`);
+      return;
+    }
+
+    await supabase.auth.signOut();
+    document.cookie = "user-email=; path=/; max-age=0";
+    setErrorMessage("Your account is not assigned to a role yet.");
   }
 
   return (

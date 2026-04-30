@@ -1,4 +1,6 @@
 import Link from "next/link";
+import { supabase } from "@/lib/supabase";
+import { getUserRole } from "@/lib/userAccess";
 
 type Props = {
   children: React.ReactNode;
@@ -7,6 +9,12 @@ type Props = {
 
 export default async function CarLayout({ children, params }: Props) {
   const { carId } = await params;
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  const role = getUserRole(user?.email);
 
   const navItems = [
     { name: "Job List", href: `/car/${carId}/job-list` },
@@ -17,9 +25,16 @@ export default async function CarLayout({ children, params }: Props) {
   return (
     <div className="flex min-h-screen bg-black text-white">
       <aside className="w-64 border-r border-neutral-800 bg-neutral-950 p-5">
-        <Link href="/dashboard" className="text-sm text-red-400 hover:text-red-300">
-          ← Dashboard
-        </Link>
+        {role === "chief" ? (
+          <Link
+            href="/dashboard"
+            className="text-sm text-red-400 hover:text-red-300"
+          >
+            ← Dashboard
+          </Link>
+        ) : (
+          <p className="text-sm text-neutral-500">Car Workspace</p>
+        )}
 
         <div className="mt-6">
           <p className="text-xs uppercase tracking-[0.35em] text-red-500">

@@ -1,4 +1,10 @@
+"use client";
+
+import { useEffect, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { supabase } from "@/lib/supabase";
+import { getAssignedCar, getUserRole } from "@/lib/userAccess";
 
 const CARS = [
   { id: 1, name: "GB3-01", progress: 72, status: "In Progress" },
@@ -29,6 +35,43 @@ function ProgressDial({ progress }: { progress: number }) {
 }
 
 export default function DashboardPage() {
+  const router = useRouter();
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    async function checkAccess() {
+      const { data } = await supabase.auth.getUser();
+      const email = data.user?.email ?? "";
+
+      const role = getUserRole(email);
+
+      // 🚫 Mechanics should NEVER be here
+      if (role === "mechanic") {
+        const carId = getAssignedCar(email);
+        router.replace(`/car/${carId}`);
+        return;
+      }
+
+      // 🚫 Unknown users
+      if (role !== "chief") {
+        router.replace("/login");
+        return;
+      }
+
+      setLoading(false);
+    }
+
+    checkAccess();
+  }, [router]);
+
+  if (loading) {
+    return (
+      <main className="min-h-screen flex items-center justify-center bg-[#0d0f12] text-zinc-400">
+        Checking access...
+      </main>
+    );
+  }
+
   return (
     <main className="min-h-screen bg-[#0d0f12] p-6 text-zinc-100">
       <header className="mb-8 rounded-3xl border border-zinc-800 bg-[#14181d] p-6 shadow-xl">
