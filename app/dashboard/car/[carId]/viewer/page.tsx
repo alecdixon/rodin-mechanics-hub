@@ -46,19 +46,159 @@ type PostEventSheet = {
 
 type GenericRecord = Record<string, unknown>;
 
+type ClutchRecord = GenericRecord & {
+  id?: string | number;
+  car_id?: number;
+  created_at?: string | null;
+  created_by?: string | null;
+  updated_at?: string | null;
+  updated_by?: string | null;
+  submitted_by?: string | null;
+  pdf_path?: string | null;
+  pdf_url?: string | null;
+  driven_plates?: unknown;
+  intermediate_plates?: unknown;
+};
+
+type PlateRow = {
+  no?: string | number;
+  a?: string | number;
+  b?: string | number;
+  c?: string | number;
+};
+
+const CLUTCH_PDF_BUCKET = "clutch-measurement-pdfs";
+
 function niceDate(value: string | null | undefined) {
   if (!value) return "No date";
-  return new Date(value).toLocaleDateString("en-GB");
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) return value;
+
+  return date.toLocaleDateString("en-GB");
 }
 
 function niceDateTime(value: string | null | undefined) {
   if (!value) return "No timestamp";
-  return new Date(value).toLocaleString("en-GB");
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) return value;
+
+  return date.toLocaleString("en-GB");
 }
 
-function cleanValue(value: string | null | undefined) {
-  if (!value || !value.trim()) return "—";
-  return value;
+function cleanValue(value: unknown) {
+  if (value === null || value === undefined || value === "") return "—";
+
+  if (typeof value === "boolean") {
+    return value ? "Yes" : "No";
+  }
+
+  if (typeof value === "number") {
+    return String(value);
+  }
+
+  if (typeof value === "string") {
+    return value.trim() || "—";
+  }
+
+  return JSON.stringify(value);
+}
+
+function formatLabel(key: string) {
+  return key
+    .replaceAll("_", " ")
+    .replaceAll("-", " ")
+    .replace(/\b\w/g, (char) => char.toUpperCase());
+}
+
+function getRecordValue(record: GenericRecord, keys: string[]) {
+  for (const key of keys) {
+    const value = record[key];
+
+    if (value !== null && value !== undefined && value !== "") {
+      return value;
+    }
+  }
+
+  return null;
+}
+
+function dateFromUnknown(value: unknown) {
+  if (!value || typeof value !== "string") return "No date";
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) return value;
+
+  return date.toLocaleDateString("en-GB");
+}
+
+function dateTimeFromUnknown(value: unknown) {
+  if (!value || typeof value !== "string") return "No timestamp";
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) return value;
+
+  return date.toLocaleString("en-GB");
+}
+
+function parsePlateRows(value: unknown): PlateRow[] {
+  if (!value) return [];
+
+  if (Array.isArray(value)) {
+    return value as PlateRow[];
+  }
+
+  if (typeof value === "string") {
+    try {
+      const parsed = JSON.parse(value);
+
+      if (Array.isArray(parsed)) {
+        return parsed as PlateRow[];
+      }
+
+      return [];
+    } catch {
+      return [];
+    }
+  }
+
+  return [];
+}
+
+function plateNumber(value: unknown) {
+  const numberValue = Number(value);
+  return Number.isNaN(numberValue) ? null : numberValue;
+}
+
+function plateMean(row: PlateRow) {
+  const values = [plateNumber(row.a), plateNumber(row.b), plateNumber(row.c)]
+    .filter((value): value is number => value !== null);
+
+  if (values.length === 0) return "—";
+
+  const total = values.reduce((sum, value) => sum + value, 0);
+  return (total / values.length).toFixed(3);
+}
+
+function shouldHideFromClutchSummary(key: string) {
+  return [
+    "id",
+    "car_id",
+    "created_at",
+    "created_by",
+    "updated_at",
+    "updated_by",
+    "submitted_by",
+    "pdf_path",
+    "pdf_url",
+    "driven_plates",
+    "intermediate_plates",
+  ].includes(key);
 }
 
 function DetailField({
@@ -66,7 +206,7 @@ function DetailField({
   value,
 }: {
   label: string;
-  value: string | null | undefined;
+  value: unknown;
 }) {
   return (
     <div className="rounded-2xl border border-zinc-800 bg-[#0d0f12] p-4">
@@ -74,9 +214,96 @@ function DetailField({
         {label}
       </p>
 
-      <p className="mt-3 text-lg font-semibold text-zinc-100">
+      <p className="mt-3 break-words text-lg font-semibold text-zinc-100">
         {cleanValue(value)}
       </p>
+    </div>
+  );
+}
+
+function PlateTable({
+  title,
+  value,
+}: {
+  title: string;
+  value: unknown;
+}) {
+  const rows = parsePlateRows(value);
+
+  return (
+    <div className="rounded-3xl border border-zinc-800 bg-[#0d0f12] p-5">
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+        <p className="text-xs font-semibold uppercase tracking-[0.3em] text-red-400">
+          {title}
+        </p>
+
+        <div className="rounded-xl border border-zinc-700 bg-black px-3 py-2 text-xs font-semibold text-zinc-300">
+          {rows.length} plate{rows.length === 1 ? "" : "s"}
+        </div>
+      </div>
+
+      {rows.length === 0 ? (
+        <div className="rounded-2xl border border-dashed border-zinc-700 bg-[#111418] p-5 text-sm text-zinc-500">
+          No plate data saved.
+        </div>
+      ) : (
+        <div className="overflow-hidden rounded-2xl border border-zinc-800">
+          <table className="w-full border-collapse text-sm">
+            <thead className="bg-[#14181d] text-xs uppercase tracking-[0.18em] text-zinc-500">
+              <tr>
+                <th className="border-b border-zinc-800 px-4 py-3 text-left">
+                  Plate
+                </th>
+
+                <th className="border-b border-zinc-800 px-4 py-3 text-left">
+                  A
+                </th>
+
+                <th className="border-b border-zinc-800 px-4 py-3 text-left">
+                  B
+                </th>
+
+                <th className="border-b border-zinc-800 px-4 py-3 text-left">
+                  C
+                </th>
+
+                <th className="border-b border-zinc-800 px-4 py-3 text-left">
+                  Mean
+                </th>
+              </tr>
+            </thead>
+
+            <tbody>
+              {rows.map((row, index) => (
+                <tr
+                  key={index}
+                  className="border-b border-zinc-800 last:border-b-0"
+                >
+                  <td className="px-4 py-3 font-semibold text-zinc-100">
+                    {cleanValue(row.no ?? index + 1)}
+                  </td>
+
+                  <td className="px-4 py-3 text-zinc-300">
+                    {cleanValue(row.a)}
+                  </td>
+
+                  <td className="px-4 py-3 text-zinc-300">
+                    {cleanValue(row.b)}
+                  </td>
+
+                  <td className="px-4 py-3 text-zinc-300">
+                    {cleanValue(row.c)}
+                  </td>
+
+                  <td className="px-4 py-3 font-semibold text-red-200">
+                    {plateMean(row)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   );
 }
@@ -89,14 +316,23 @@ export default function ChiefCarViewerPage() {
   const [loading, setLoading] = useState(true);
   const [jobs, setJobs] = useState<JobRow[]>([]);
   const [releaseInfo, setReleaseInfo] = useState<JobRelease | null>(null);
-  const [clutchRows, setClutchRows] = useState<GenericRecord[]>([]);
+  const [clutchRows, setClutchRows] = useState<ClutchRecord[]>([]);
   const [postEventRows, setPostEventRows] = useState<PostEventSheet[]>([]);
+
   const [selectedSheet, setSelectedSheet] = useState<PostEventSheet | null>(
     null,
   );
 
+  const [selectedClutchRecord, setSelectedClutchRecord] =
+    useState<ClutchRecord | null>(null);
+
   const [dateFilter, setDateFilter] = useState("");
   const [trackFilter, setTrackFilter] = useState("all");
+
+  const [clutchDateFilter, setClutchDateFilter] = useState("");
+  const [clutchSearchFilter, setClutchSearchFilter] = useState("");
+  const [openingPdfKey, setOpeningPdfKey] = useState<string | null>(null);
+
   const [errorMessage, setErrorMessage] = useState("");
   const [message, setMessage] = useState("");
   const [clearingNoteKey, setClearingNoteKey] = useState<string | null>(null);
@@ -144,13 +380,12 @@ export default function ChiefCarViewerPage() {
         .from("clutch_measurements")
         .select("*")
         .eq("car_id", carId)
-        .order("created_at", { ascending: false })
-        .limit(10);
+        .order("created_at", { ascending: false });
 
       if (clutch.error) {
-        console.error(clutch.error.message);
+        setErrorMessage(`Clutch measurements failed: ${clutch.error.message}`);
       } else {
-        setClutchRows((clutch.data ?? []) as GenericRecord[]);
+        setClutchRows((clutch.data ?? []) as ClutchRecord[]);
       }
 
       const postEvent = await supabase
@@ -172,6 +407,44 @@ export default function ChiefCarViewerPage() {
 
     if (carId) loadViewer();
   }, [carId, router]);
+
+  async function openClutchPdf(record: ClutchRecord, key: string) {
+    setMessage("");
+    setErrorMessage("");
+    setOpeningPdfKey(key);
+
+    if (record.pdf_url && typeof record.pdf_url === "string") {
+      window.open(record.pdf_url, "_blank", "noopener,noreferrer");
+      setOpeningPdfKey(null);
+      return;
+    }
+
+    if (record.pdf_path && typeof record.pdf_path === "string") {
+      const { data, error } = await supabase.storage
+        .from(CLUTCH_PDF_BUCKET)
+        .createSignedUrl(record.pdf_path, 60 * 10);
+
+      if (error || !data?.signedUrl) {
+        setErrorMessage(
+          error?.message ||
+            "Could not open the clutch measurement PDF. Check the storage bucket and saved PDF path.",
+        );
+
+        setOpeningPdfKey(null);
+        return;
+      }
+
+      window.open(data.signedUrl, "_blank", "noopener,noreferrer");
+      setOpeningPdfKey(null);
+      return;
+    }
+
+    setErrorMessage(
+      "No PDF is linked to this clutch measurement record yet.",
+    );
+
+    setOpeningPdfKey(null);
+  }
 
   async function clearJobNote(job: JobRow) {
     const confirmed = window.confirm(
@@ -273,6 +546,29 @@ export default function ChiefCarViewerPage() {
     });
   }, [postEventRows, dateFilter, trackFilter]);
 
+  const filteredClutchRows = useMemo(() => {
+    return clutchRows.filter((record) => {
+      const createdAt = getRecordValue(record, ["created_at"]);
+      const recordDate =
+        typeof createdAt === "string" ? createdAt.slice(0, 10) : "";
+
+      const matchesDate = clutchDateFilter
+        ? recordDate === clutchDateFilter
+        : true;
+
+      const searchableText = Object.values(record)
+        .map((value) => cleanValue(value))
+        .join(" ")
+        .toLowerCase();
+
+      const matchesSearch = clutchSearchFilter.trim()
+        ? searchableText.includes(clutchSearchFilter.trim().toLowerCase())
+        : true;
+
+      return matchesDate && matchesSearch;
+    });
+  }, [clutchRows, clutchDateFilter, clutchSearchFilter]);
+
   if (loading) {
     return (
       <main className="flex min-h-screen items-center justify-center bg-[#0d0f12] text-zinc-400">
@@ -285,14 +581,7 @@ export default function ChiefCarViewerPage() {
     <main className="min-h-screen bg-[#0d0f12] p-6 text-zinc-100">
       <div className="mb-8 flex flex-wrap items-start justify-between gap-4">
         <div>
-          <Link
-            href="/dashboard"
-            className="text-sm text-red-400 hover:text-red-300"
-          >
-            ← Back to chief dashboard
-          </Link>
-
-          <p className="mt-6 text-xs uppercase tracking-[0.3em] text-red-400">
+          <p className="text-xs uppercase tracking-[0.3em] text-red-400">
             Chief Viewer
           </p>
 
@@ -469,24 +758,191 @@ export default function ChiefCarViewerPage() {
 
       <section className="grid gap-6 lg:grid-cols-2">
         <div className="rounded-3xl border border-zinc-800 bg-[#14181d] p-6 shadow-xl">
-          <h2 className="text-2xl font-semibold">
-            Previous Clutch Measurements
-          </h2>
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div>
+              <h2 className="text-2xl font-semibold">
+                Previous Clutch Measurements
+              </h2>
 
-          <div className="mt-4 space-y-2">
-            {clutchRows.length === 0 ? (
-              <p className="text-sm text-zinc-500">
-                No clutch measurement records found.
+              <p className="mt-1 text-sm text-zinc-500">
+                Click a clutch record to open the full measurement data.
               </p>
+            </div>
+
+            <div className="rounded-2xl border border-zinc-700 bg-[#0d0f12] px-4 py-3 text-sm font-semibold text-red-300">
+              {filteredClutchRows.length} / {clutchRows.length}
+            </div>
+          </div>
+
+          <div className="mt-5 grid gap-3 md:grid-cols-2">
+            <label className="block">
+              <span className="text-xs font-semibold uppercase tracking-[0.22em] text-zinc-500">
+                Filter Date
+              </span>
+
+              <input
+                type="date"
+                value={clutchDateFilter}
+                onChange={(event) => setClutchDateFilter(event.target.value)}
+                className="mt-2 w-full rounded-xl border border-zinc-700 bg-[#0d0f12] px-4 py-3 text-sm text-zinc-100 outline-none focus:border-red-500"
+              />
+            </label>
+
+            <label className="block">
+              <span className="text-xs font-semibold uppercase tracking-[0.22em] text-zinc-500">
+                Search
+              </span>
+
+              <input
+                value={clutchSearchFilter}
+                onChange={(event) => setClutchSearchFilter(event.target.value)}
+                placeholder="Search clutch no, serial no, user..."
+                className="mt-2 w-full rounded-xl border border-zinc-700 bg-[#0d0f12] px-4 py-3 text-sm text-zinc-100 outline-none focus:border-red-500"
+              />
+            </label>
+          </div>
+
+          {(clutchDateFilter || clutchSearchFilter) && (
+            <button
+              onClick={() => {
+                setClutchDateFilter("");
+                setClutchSearchFilter("");
+              }}
+              className="mt-3 rounded-xl border border-zinc-700 px-4 py-2 text-xs font-semibold text-zinc-300 hover:border-red-500 hover:text-red-300"
+            >
+              Clear Filters
+            </button>
+          )}
+
+          <div className="mt-5 max-h-[520px] space-y-3 overflow-y-auto pr-2">
+            {filteredClutchRows.length === 0 ? (
+              <div className="rounded-2xl border border-dashed border-zinc-700 bg-[#0d0f12] p-6 text-sm text-zinc-500">
+                No clutch measurement records found.
+              </div>
             ) : (
-              clutchRows.map((row, index) => (
-                <pre
-                  key={index}
-                  className="overflow-auto rounded-xl border border-zinc-800 bg-[#0d0f12] p-3 text-xs text-zinc-300"
-                >
-                  {JSON.stringify(row, null, 2)}
-                </pre>
-              ))
+              filteredClutchRows.map((record, index) => {
+                const createdAt = getRecordValue(record, ["created_at"]);
+                const createdBy = getRecordValue(record, [
+                  "created_by",
+                  "updated_by",
+                  "submitted_by",
+                ]);
+
+                const carName = getRecordValue(record, ["car_name"]);
+                const serialNo = getRecordValue(record, ["serial_no"]);
+                const clutchNo = getRecordValue(record, ["clutch_no"]);
+                const measurementDate = getRecordValue(record, [
+                  "measurement_date",
+                ]);
+                const distanceKm = getRecordValue(record, ["distance_km"]);
+                const pdfKey = `viewer-clutch-${String(record.id ?? index)}`;
+
+                return (
+                  <div
+                    key={String(record.id ?? index)}
+                    className="rounded-2xl border border-zinc-800 bg-[#0d0f12] p-4 transition hover:border-red-500/70 hover:bg-[#15191f]"
+                  >
+                    <button
+                      type="button"
+                      onClick={() => setSelectedClutchRecord(record)}
+                      className="w-full text-left"
+                    >
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div>
+                          <p className="text-xs font-semibold uppercase tracking-[0.22em] text-red-400">
+                            Clutch Measurement
+                          </p>
+
+                          <h3 className="mt-2 text-xl font-semibold text-zinc-100">
+                            {cleanValue(carName) !== "—"
+                              ? `Car ${cleanValue(carName)}`
+                              : `Record ${index + 1}`}
+                          </h3>
+
+                          <p className="mt-1 text-sm text-zinc-400">
+                            Submitted by:{" "}
+                            <span className="font-semibold text-zinc-200">
+                              {cleanValue(createdBy)}
+                            </span>
+                          </p>
+                        </div>
+
+                        <div className="rounded-xl border border-zinc-700 bg-[#111418] px-3 py-2 text-right">
+                          <p className="text-xs text-zinc-500">Saved</p>
+
+                          <p className="text-sm font-semibold text-zinc-200">
+                            {dateFromUnknown(createdAt)}
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="mt-4 grid gap-2 text-sm text-zinc-400 sm:grid-cols-3">
+                        <p>
+                          Serial:{" "}
+                          <span className="font-semibold text-zinc-200">
+                            {cleanValue(serialNo)}
+                          </span>
+                        </p>
+
+                        <p>
+                          Clutch:{" "}
+                          <span className="font-semibold text-zinc-200">
+                            {cleanValue(clutchNo)}
+                          </span>
+                        </p>
+
+                        <p>
+                          Distance:{" "}
+                          <span className="font-semibold text-zinc-200">
+                            {cleanValue(distanceKm)} km
+                          </span>
+                        </p>
+
+                        <p>
+                          Measured:{" "}
+                          <span className="font-semibold text-zinc-200">
+                            {cleanValue(measurementDate)}
+                          </span>
+                        </p>
+
+                        <p>
+                          PDF:{" "}
+                          <span
+                            className={`font-semibold ${
+                              record.pdf_path || record.pdf_url
+                                ? "text-green-300"
+                                : "text-zinc-500"
+                            }`}
+                          >
+                            {record.pdf_path || record.pdf_url
+                              ? "Linked"
+                              : "Not linked"}
+                          </span>
+                        </p>
+                      </div>
+                    </button>
+
+                    <div className="mt-4 flex flex-wrap justify-end gap-3 border-t border-zinc-800 pt-4">
+                      <button
+                        type="button"
+                        onClick={() => setSelectedClutchRecord(record)}
+                        className="rounded-xl border border-zinc-700 px-4 py-2 text-xs font-semibold text-zinc-300 hover:border-red-500 hover:text-red-300"
+                      >
+                        View Data
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => openClutchPdf(record, pdfKey)}
+                        disabled={openingPdfKey === pdfKey}
+                        className="rounded-xl border border-red-900/60 bg-red-950/30 px-4 py-2 text-xs font-semibold text-red-200 hover:border-red-500 hover:bg-red-950/50 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        {openingPdfKey === pdfKey ? "Opening..." : "Open PDF"}
+                      </button>
+                    </div>
+                  </div>
+                );
+              })
             )}
           </div>
         </div>
@@ -703,6 +1159,122 @@ export default function ChiefCarViewerPage() {
           </div>
         )}
       </section>
+
+      {selectedClutchRecord && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4">
+          <div className="max-h-[90vh] w-full max-w-6xl overflow-y-auto rounded-3xl border border-zinc-800 bg-[#14181d] p-6 shadow-2xl">
+            <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.3em] text-red-400">
+                  Clutch Measurement
+                </p>
+
+                <h2 className="mt-3 text-4xl font-semibold text-zinc-100">
+                  Car {carId}
+                </h2>
+
+                <p className="mt-2 text-sm text-zinc-400">
+                  Saved{" "}
+                  <span className="font-semibold text-zinc-200">
+                    {dateTimeFromUnknown(
+                      getRecordValue(selectedClutchRecord, ["created_at"]),
+                    )}
+                  </span>{" "}
+                  by{" "}
+                  <span className="font-semibold text-zinc-200">
+                    {cleanValue(
+                      getRecordValue(selectedClutchRecord, [
+                        "created_by",
+                        "updated_by",
+                        "submitted_by",
+                      ]),
+                    )}
+                  </span>
+                </p>
+              </div>
+
+              <div className="flex flex-wrap gap-3">
+                <button
+                  type="button"
+                  onClick={() =>
+                    openClutchPdf(selectedClutchRecord, "clutch-modal")
+                  }
+                  disabled={openingPdfKey === "clutch-modal"}
+                  className="rounded-xl border border-red-900/60 bg-red-950/30 px-5 py-3 text-sm font-semibold text-red-200 transition hover:border-red-500 hover:bg-red-950/50 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {openingPdfKey === "clutch-modal" ? "Opening..." : "Open PDF"}
+                </button>
+
+                <button
+                  onClick={() => setSelectedClutchRecord(null)}
+                  className="rounded-xl border border-zinc-700 px-5 py-3 text-sm font-semibold text-zinc-200 hover:border-red-500 hover:text-red-300"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+
+            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
+              <DetailField
+                label="Car Name"
+                value={getRecordValue(selectedClutchRecord, ["car_name"])}
+              />
+
+              <DetailField
+                label="Serial No"
+                value={getRecordValue(selectedClutchRecord, ["serial_no"])}
+              />
+
+              <DetailField
+                label="Clutch No"
+                value={getRecordValue(selectedClutchRecord, ["clutch_no"])}
+              />
+
+              <DetailField
+                label="Measurement Date"
+                value={getRecordValue(selectedClutchRecord, [
+                  "measurement_date",
+                ])}
+              />
+
+              <DetailField
+                label="Distance KM"
+                value={getRecordValue(selectedClutchRecord, ["distance_km"])}
+              />
+            </div>
+
+            <div className="mt-6 grid gap-6 xl:grid-cols-2">
+              <PlateTable
+                title="Driven Plates"
+                value={selectedClutchRecord.driven_plates}
+              />
+
+              <PlateTable
+                title="Intermediate Plates"
+                value={selectedClutchRecord.intermediate_plates}
+              />
+            </div>
+
+            <div className="mt-6 rounded-3xl border border-zinc-800 bg-[#0d0f12] p-5">
+              <p className="mb-4 text-xs font-semibold uppercase tracking-[0.3em] text-red-400">
+                Measurement Summary
+              </p>
+
+              <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                {Object.entries(selectedClutchRecord)
+                  .filter(([key]) => !shouldHideFromClutchSummary(key))
+                  .map(([key, value]) => (
+                    <DetailField
+                      key={key}
+                      label={formatLabel(key)}
+                      value={value}
+                    />
+                  ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {selectedSheet && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4">
