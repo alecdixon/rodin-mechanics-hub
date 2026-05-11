@@ -124,7 +124,9 @@ export default function ChiefEveningJobListPage() {
       .maybeSingle();
 
     if (error) {
-      setErrorMessage(`Evening release details failed to load: ${error.message}`);
+      setErrorMessage(
+        `Evening release details failed to load: ${error.message}`,
+      );
       return;
     }
 
@@ -201,7 +203,9 @@ export default function ChiefEveningJobListPage() {
     );
 
     if (error) {
-      setErrorMessage(`Evening release details failed to save: ${error.message}`);
+      setErrorMessage(
+        `Evening release details failed to save: ${error.message}`,
+      );
       setSavingReleaseInfo(false);
       return false;
     }
@@ -241,7 +245,9 @@ export default function ChiefEveningJobListPage() {
       .eq("section", "standard");
 
     if (deleteError) {
-      setErrorMessage(`Could not replace standard evening jobs: ${deleteError.message}`);
+      setErrorMessage(
+        `Could not replace standard evening jobs: ${deleteError.message}`,
+      );
       setImporting(false);
       return;
     }
@@ -264,7 +270,9 @@ export default function ChiefEveningJobListPage() {
       .insert(rows);
 
     if (insertError) {
-      setErrorMessage(`Could not import evening template: ${insertError.message}`);
+      setErrorMessage(
+        `Could not import evening template: ${insertError.message}`,
+      );
       setImporting(false);
       return;
     }
@@ -347,21 +355,12 @@ export default function ChiefEveningJobListPage() {
       updated_at: now,
     };
 
-    const { data, error } = await supabase
+    const { error: insertError } = await supabase
       .from("evening_job_progress")
-      .insert(newRow)
-      .select();
+      .insert(newRow);
 
-    if (error) {
-      setErrorMessage(`Failed to add special evening job: ${error.message}`);
-      setAddingSpecialJob(false);
-      return;
-    }
-
-    if (!data || data.length === 0) {
-      setErrorMessage(
-        "Supabase did not return the inserted evening job. Check RLS insert/select policies.",
-      );
+    if (insertError) {
+      setErrorMessage(`Failed to add special evening job: ${insertError.message}`);
       setAddingSpecialJob(false);
       return;
     }
@@ -493,7 +492,9 @@ export default function ChiefEveningJobListPage() {
       .eq("car_id", carId);
 
     if (releaseError) {
-      setErrorMessage(`Could not clear evening release details: ${releaseError.message}`);
+      setErrorMessage(
+        `Could not clear evening release details: ${releaseError.message}`,
+      );
       setClearingJobs(false);
       return;
     }
