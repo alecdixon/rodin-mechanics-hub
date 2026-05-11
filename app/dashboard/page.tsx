@@ -55,6 +55,26 @@ type CsvCalendarRow = {
   colour: string | null;
 };
 
+type ClutchMeasurement = {
+  id: string | number;
+  car_id: number;
+  car_name?: string | null;
+  created_at: string | null;
+  original_stack_height?: number | string | null;
+  driven_plates?: unknown;
+  intermediate_plates?: unknown;
+};
+
+type ClutchWearPoint = {
+  id: string;
+  car_id: number;
+  carName: string;
+  colour: string;
+  date: string;
+  labelDate: string;
+  wear: number;
+};
+
 const DEFAULT_CAR_COLOUR = "#b91c1c";
 
 function ProgressDial({
@@ -93,6 +113,19 @@ function niceDate(value: string | null | undefined) {
   if (Number.isNaN(date.getTime())) return value;
 
   return date.toLocaleDateString("en-GB");
+}
+
+function shortDate(value: string | null | undefined) {
+  if (!value) return "—";
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) return "—";
+
+  return date.toLocaleDateString("en-GB", {
+    day: "2-digit",
+    month: "2-digit",
+  });
 }
 
 function splitCsvLine(line: string) {
@@ -170,6 +203,70 @@ function parseCalendarCsv(csvText: string): CsvCalendarRow[] {
   });
 }
 
+function parsePlateRows(
+  value: unknown,
+): { a?: unknown; b?: unknown; c?: unknown }[] {
+  if (!value) return [];
+
+  if (Array.isArray(value)) {
+    return value as { a?: unknown; b?: unknown; c?: unknown }[];
+  }
+
+  if (typeof value === "string") {
+    try {
+      const parsed = JSON.parse(value);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  }
+
+  return [];
+}
+
+function numeric(value: unknown) {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
+}
+
+function rowMean(row: { a?: unknown; b?: unknown; c?: unknown }) {
+  const values = [numeric(row.a), numeric(row.b), numeric(row.c)].filter(
+    (value): value is number => value !== null,
+  );
+
+  if (values.length === 0) return null;
+
+  return values.reduce((sum, value) => sum + value, 0) / values.length;
+}
+
+function calculateClutchStack(record: ClutchMeasurement) {
+  const driven = parsePlateRows(record.driven_plates);
+  const intermediate = parsePlateRows(record.intermediate_plates);
+
+  const drivenTotal = driven.reduce((sum, row) => {
+    const mean = rowMean(row);
+    return mean === null ? sum : sum + mean;
+  }, 0);
+
+  const intermediateTotal = intermediate.reduce((sum, row) => {
+    const mean = rowMean(row);
+    return mean === null ? sum : sum + mean;
+  }, 0);
+
+  const total = drivenTotal + intermediateTotal;
+
+  return total > 0 ? total : null;
+}
+
+function calculateClutchWear(record: ClutchMeasurement) {
+  const originalStack = numeric(record.original_stack_height);
+  const measuredStack = calculateClutchStack(record);
+
+  if (originalStack === null || measuredStack === null) return null;
+
+  return Math.max(0, originalStack - measuredStack);
+}
+
 function JobStatusPill({
   status,
   colour,
@@ -211,12 +308,261 @@ function CardLink({
   );
 }
 
+function ClutchWearChart({ points }: { points: ClutchWearPoint[] }) {
+  const width = 1000;
+  const height = 360;
+
+  const padding = {
+    top: 28,
+    right: 36,
+    bottom: 58,
+    left: 62,
+  };
+
+  const innerWidth = width - padding.left - padding.right;
+  const innerHeight = height - padding.top - padding.bottom;
+
+  const uniqueCars = Array.from(
+    new Map(points.map((point) => [point.car_id, point])).values(),
+  );
+
+  const dates = points.map((point) => new Date(point.date).getTime());
+  const minDate = dates.length ? Math.min(...dates) : Date.now();
+  const maxDate = dates.length ? Math.max(...dates) : Date.now();
+
+  const maxWear = points.length
+    ? Math.max(...points.map((point) => point.wear), 0.1)
+    : 1;
+
+  function xFor(date: string) {
+    const time = new Date(date).getTime();
+
+    if (maxDate === minDate) {
+      return padding.left + innerWidth / 2;
+    }
+
+    return padding.left + ((time - minDate) / (maxDate - minDate)) * innerWidth;
+  }
+
+  function yFor(wear: number) {
+    return padding.top + innerHeight - (wear / maxWear) * innerHeight;
+  }
+
+  const grouped = uniqueCars.map((car) => {
+    const carPoints = points.filter((point) => point.car_id === car.car_id);
+
+    const d = carPoints
+      .map((point, index) => {
+        const command = index === 0 ? "M" : "L";
+        return `${command} ${xFor(point.date)} ${yFor(point.wear)}`;
+      })
+      .join(" ");
+
+    return {
+      car,
+      points: carPoints,
+      d,
+    };
+  });
+
+  const gridLines = [0, 0.25, 0.5, 0.75, 1].map((ratio) => {
+    const value = maxWear * ratio;
+    const y = padding.top + innerHeight - ratio * innerHeight;
+
+    return {
+      y,
+      value,
+    };
+  });
+
+  const xLabels = points
+    .filter((_, index) => {
+      if (points.length <= 6) return true;
+      return index % Math.ceil(points.length / 6) === 0;
+    })
+    .slice(0, 7);
+
+  return (
+    <div className="rounded-3xl border border-zinc-800 bg-[#0d0f12] p-5">
+      <div className="mb-5 flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-[0.3em] text-red-400">
+            Clutch Analysis
+          </p>
+
+          <h3 className="mt-3 text-2xl font-semibold text-zinc-100">
+            Clutch Wear Trend
+          </h3>
+
+          <p className="mt-1 text-sm text-zinc-500">
+            Wear is calculated from original stack height minus measured stack
+            height, plotted against upload date.
+          </p>
+        </div>
+
+        <div className="rounded-2xl border border-zinc-700 bg-black px-4 py-3 text-sm font-semibold text-red-300">
+          {points.length} record{points.length === 1 ? "" : "s"}
+        </div>
+      </div>
+
+      {points.length === 0 ? (
+        <div className="grid min-h-[360px] place-items-center rounded-2xl border border-dashed border-zinc-700 bg-[#111418] p-8 text-center text-sm text-zinc-500">
+          No clutch wear data available yet. Submit clutch measurement sheets
+          with original stack height and plate measurements.
+        </div>
+      ) : (
+        <>
+          <div className="overflow-x-auto">
+            <svg
+              viewBox={`0 0 ${width} ${height}`}
+              className="min-w-[860px] rounded-2xl border border-zinc-800 bg-[#111418]"
+            >
+              {gridLines.map((line) => (
+                <g key={line.y}>
+                  <line
+                    x1={padding.left}
+                    y1={line.y}
+                    x2={width - padding.right}
+                    y2={line.y}
+                    stroke="#2a2f36"
+                    strokeWidth="1"
+                  />
+
+                  <text
+                    x={padding.left - 12}
+                    y={line.y + 4}
+                    textAnchor="end"
+                    fontSize="12"
+                    fill="#a1a1aa"
+                  >
+                    {line.value.toFixed(2)}
+                  </text>
+                </g>
+              ))}
+
+              <line
+                x1={padding.left}
+                y1={padding.top}
+                x2={padding.left}
+                y2={height - padding.bottom}
+                stroke="#52525b"
+                strokeWidth="1"
+              />
+
+              <line
+                x1={padding.left}
+                y1={height - padding.bottom}
+                x2={width - padding.right}
+                y2={height - padding.bottom}
+                stroke="#52525b"
+                strokeWidth="1"
+              />
+
+              <text
+                x={20}
+                y={height / 2}
+                transform={`rotate(-90 20 ${height / 2})`}
+                textAnchor="middle"
+                fontSize="13"
+                fill="#d4d4d8"
+              >
+                Clutch wear
+              </text>
+
+              <text
+                x={width / 2}
+                y={height - 14}
+                textAnchor="middle"
+                fontSize="13"
+                fill="#d4d4d8"
+              >
+                Upload date
+              </text>
+
+              {xLabels.map((point) => (
+                <g key={`${point.id}-x-label`}>
+                  <line
+                    x1={xFor(point.date)}
+                    y1={height - padding.bottom}
+                    x2={xFor(point.date)}
+                    y2={height - padding.bottom + 6}
+                    stroke="#52525b"
+                  />
+
+                  <text
+                    x={xFor(point.date)}
+                    y={height - padding.bottom + 24}
+                    textAnchor="middle"
+                    fontSize="12"
+                    fill="#a1a1aa"
+                  >
+                    {point.labelDate}
+                  </text>
+                </g>
+              ))}
+
+              {grouped.map((group) => (
+                <g key={group.car.car_id}>
+                  <path
+                    d={group.d}
+                    fill="none"
+                    stroke={group.car.colour}
+                    strokeWidth="3"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+
+                  {group.points.map((point) => (
+                    <g key={point.id}>
+                      <circle
+                        cx={xFor(point.date)}
+                        cy={yFor(point.wear)}
+                        r="5"
+                        fill={point.colour}
+                        stroke="#0d0f12"
+                        strokeWidth="2"
+                      />
+
+                      <title>
+                        {point.carName} · {point.labelDate} · {point.wear} wear
+                      </title>
+                    </g>
+                  ))}
+                </g>
+              ))}
+            </svg>
+          </div>
+
+          <div className="mt-5 flex flex-wrap gap-3">
+            {uniqueCars.map((car) => (
+              <div
+                key={car.car_id}
+                className="inline-flex items-center gap-2 rounded-full border border-zinc-700 bg-[#111418] px-3 py-2 text-xs font-semibold text-zinc-300"
+              >
+                <span
+                  className="h-2.5 w-2.5 rounded-full"
+                  style={{ backgroundColor: car.colour }}
+                />
+
+                {car.carName}
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 export default function DashboardPage() {
   const router = useRouter();
 
   const [loading, setLoading] = useState(true);
   const [cars, setCars] = useState<CarProgress[]>([]);
   const [calendarEvents, setCalendarEvents] = useState<CalendarEvent[]>([]);
+  const [clutchMeasurements, setClutchMeasurements] = useState<
+    ClutchMeasurement[]
+  >([]);
 
   const [calendarLoading, setCalendarLoading] = useState(false);
   const [importingCalendar, setImportingCalendar] = useState(false);
@@ -352,6 +698,20 @@ export default function DashboardPage() {
     setCalendarLoading(false);
   }, []);
 
+  const loadClutchMeasurements = useCallback(async () => {
+    const { data, error } = await supabase
+      .from("clutch_measurements")
+      .select("*")
+      .order("created_at", { ascending: true });
+
+    if (error) {
+      setErrorMessage(error.message);
+      return;
+    }
+
+    setClutchMeasurements((data ?? []) as ClutchMeasurement[]);
+  }, []);
+
   useEffect(() => {
     async function checkAccess() {
       const { data } = await supabase.auth.getUser();
@@ -371,11 +731,13 @@ export default function DashboardPage() {
 
       await loadCarsAndProgress();
       await loadCalendar();
+      await loadClutchMeasurements();
+
       setLoading(false);
     }
 
     checkAccess();
-  }, [loadCarsAndProgress, loadCalendar, router]);
+  }, [loadCarsAndProgress, loadCalendar, loadClutchMeasurements, router]);
 
   useEffect(() => {
     const channel = supabase
@@ -407,21 +769,58 @@ export default function DashboardPage() {
     };
   }, [loadCarsAndProgress]);
 
+  useEffect(() => {
+    const channel = supabase
+      .channel("dashboard-clutch-measurements")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "clutch_measurements" },
+        () => loadClutchMeasurements(),
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [loadClutchMeasurements]);
+
   const activeCars = useMemo(() => {
     return cars
       .filter((car) => car.active)
       .sort((a, b) => a.sort_order - b.sort_order || a.id - b.id);
   }, [cars]);
 
-  const upcomingEvents = useMemo(() => {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+  const clutchWearPoints = useMemo<ClutchWearPoint[]>(() => {
+    const carColourMap = new Map<number, { name: string; colour: string }>();
 
-    return calendarEvents.filter((event) => {
-      const endDate = event.end_date || event.start_date;
-      return new Date(endDate) >= today;
+    cars.forEach((car) => {
+      carColourMap.set(car.id, {
+        name: car.name,
+        colour: car.colour || DEFAULT_CAR_COLOUR,
+      });
     });
-  }, [calendarEvents]);
+
+    return clutchMeasurements
+      .map((record) => {
+        const wear = calculateClutchWear(record);
+
+        if (wear === null || !record.created_at) return null;
+
+        const carDetails = carColourMap.get(record.car_id);
+
+        return {
+          id: String(record.id),
+          car_id: record.car_id,
+          carName: carDetails?.name || record.car_name || `Car ${record.car_id}`,
+          colour: carDetails?.colour || DEFAULT_CAR_COLOUR,
+          date: record.created_at,
+          labelDate: shortDate(record.created_at),
+          wear: Number(wear.toFixed(3)),
+        };
+      })
+      .filter((point): point is ClutchWearPoint => point !== null)
+      .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+  }, [clutchMeasurements, cars]);
 
   async function updateCar(car: CarProgress, updates: Partial<DashboardCar>) {
     setSavingCarId(car.id);
@@ -592,8 +991,8 @@ export default function DashboardPage() {
             </h1>
 
             <p className="mt-2 max-w-2xl text-sm text-zinc-400">
-              Live overview of workshop progress, evening preparation,
-              post-event records, car settings and the season calendar.
+              Live overview of workshop progress, evening preparation, clutch
+              wear, car settings and the season calendar.
             </p>
           </div>
 
@@ -967,14 +1366,16 @@ export default function DashboardPage() {
         <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.35em] text-red-400">
-              Season Calendar
+              Season Overview
             </p>
 
-            <h2 className="mt-3 text-3xl font-semibold">Imported Calendar</h2>
+            <h2 className="mt-3 text-3xl font-semibold">
+              Clutch Wear & Calendar
+            </h2>
 
             <p className="mt-2 max-w-3xl text-sm text-zinc-400">
-              Upload a CSV calendar to show race weekends, tests and important
-              team events below the car overview.
+              Track clutch wear over time while keeping the full imported season
+              calendar visible on the right.
             </p>
           </div>
 
@@ -1000,108 +1401,81 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        <div className="mb-5 rounded-2xl border border-zinc-800 bg-[#0d0f12] p-4 text-sm text-zinc-400">
-          CSV format:{" "}
-          <span className="font-mono text-zinc-200">
-            event_name, track_name, start_date, end_date, event_type, location,
-            notes, colour
-          </span>
-        </div>
+        <div className="grid gap-6 lg:grid-cols-[1fr_360px]">
+          <ClutchWearChart points={clutchWearPoints} />
 
-        {calendarLoading ? (
-          <div className="rounded-2xl border border-zinc-800 bg-[#0d0f12] p-6 text-sm text-zinc-500">
-            Loading calendar...
-          </div>
-        ) : calendarEvents.length === 0 ? (
-          <div className="rounded-2xl border border-dashed border-zinc-700 bg-[#0d0f12] p-6 text-sm text-zinc-500">
-            No calendar events imported yet.
-          </div>
-        ) : (
-          <div className="grid gap-6 lg:grid-cols-[1fr_360px]">
-            <div className="max-h-[620px] space-y-3 overflow-y-auto pr-2">
-              {calendarEvents.map((event) => (
-                <div
-                  key={event.id}
-                  className="rounded-2xl border border-zinc-800 bg-[#0d0f12] p-5"
-                >
-                  <div className="flex flex-wrap items-start justify-between gap-4">
-                    <div>
-                      <div className="flex flex-wrap items-center gap-3">
-                        <span
-                          className="h-3 w-3 rounded-full"
-                          style={{
-                            backgroundColor: event.colour || DEFAULT_CAR_COLOUR,
-                          }}
-                        />
+          <aside className="rounded-2xl border border-zinc-800 bg-[#0d0f12] p-5">
+            <div className="mb-5 flex items-start justify-between gap-3">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.3em] text-red-400">
+                  Calendar
+                </p>
 
-                        <p className="text-xs font-semibold uppercase tracking-[0.25em] text-red-400">
-                          {event.event_type || "Event"}
-                        </p>
-                      </div>
+                <h3 className="mt-3 text-2xl font-semibold">All Events</h3>
 
-                      <h3 className="mt-3 text-2xl font-semibold text-zinc-100">
-                        {event.event_name}
-                      </h3>
+                <p className="mt-1 text-sm text-zinc-500">
+                  Full imported season calendar.
+                </p>
+              </div>
 
-                      <p className="mt-1 text-sm text-zinc-400">
-                        {event.track_name || "No track"}{" "}
-                        {event.location ? `· ${event.location}` : ""}
-                      </p>
-                    </div>
-
-                    <div className="rounded-xl border border-zinc-700 bg-[#111418] px-4 py-3 text-right text-sm">
-                      <p className="font-semibold text-zinc-100">
-                        {niceDate(event.start_date)}
-                      </p>
-
-                      {event.end_date && event.end_date !== event.start_date && (
-                        <p className="text-zinc-500">
-                          to {niceDate(event.end_date)}
-                        </p>
-                      )}
-                    </div>
-                  </div>
-
-                  {event.notes && (
-                    <p className="mt-4 rounded-xl border border-zinc-800 bg-[#14181d] p-4 text-sm leading-6 text-zinc-300">
-                      {event.notes}
-                    </p>
-                  )}
-                </div>
-              ))}
+              <div className="rounded-xl border border-zinc-700 bg-black px-3 py-2 text-xs font-semibold text-red-300">
+                {calendarEvents.length}
+              </div>
             </div>
 
-            <aside className="rounded-2xl border border-zinc-800 bg-[#0d0f12] p-5">
-              <p className="text-xs font-semibold uppercase tracking-[0.3em] text-red-400">
-                Upcoming
-              </p>
-
-              <h3 className="mt-3 text-2xl font-semibold">Next Events</h3>
-
-              <div className="mt-5 space-y-3">
-                {upcomingEvents.length === 0 ? (
-                  <p className="text-sm text-zinc-500">No upcoming events.</p>
-                ) : (
-                  upcomingEvents.slice(0, 5).map((event) => (
-                    <div
-                      key={event.id}
-                      className="rounded-xl border border-zinc-800 bg-[#14181d] p-4"
-                    >
-                      <p className="text-sm font-semibold text-zinc-100">
-                        {event.event_name}
-                      </p>
-
-                      <p className="mt-1 text-xs text-zinc-500">
-                        {niceDate(event.start_date)}
-                        {event.track_name ? ` · ${event.track_name}` : ""}
-                      </p>
-                    </div>
-                  ))
-                )}
+            {calendarLoading ? (
+              <div className="rounded-2xl border border-zinc-800 bg-[#14181d] p-6 text-sm text-zinc-500">
+                Loading calendar...
               </div>
-            </aside>
-          </div>
-        )}
+            ) : calendarEvents.length === 0 ? (
+              <div className="rounded-2xl border border-dashed border-zinc-700 bg-[#14181d] p-6 text-sm text-zinc-500">
+                No calendar events imported yet.
+              </div>
+            ) : (
+              <div className="max-h-[520px] space-y-3 overflow-y-auto pr-2">
+                {calendarEvents.map((event) => (
+                  <div
+                    key={event.id}
+                    className="rounded-xl border border-zinc-800 bg-[#14181d] p-4"
+                  >
+                    <div className="flex items-start gap-3">
+                      <span
+                        className="mt-1 h-2.5 w-2.5 shrink-0 rounded-full"
+                        style={{
+                          backgroundColor: event.colour || DEFAULT_CAR_COLOUR,
+                        }}
+                      />
+
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-semibold text-zinc-100">
+                          {event.event_name}
+                        </p>
+
+                        <p className="mt-1 text-xs text-zinc-500">
+                          {niceDate(event.start_date)}
+                          {event.end_date && event.end_date !== event.start_date
+                            ? ` to ${niceDate(event.end_date)}`
+                            : ""}
+                        </p>
+
+                        <p className="mt-1 truncate text-xs text-zinc-500">
+                          {event.track_name || "No track"}
+                          {event.location ? ` · ${event.location}` : ""}
+                        </p>
+
+                        {event.event_type && (
+                          <p className="mt-2 inline-flex rounded-full border border-zinc-700 bg-black px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.15em] text-zinc-400">
+                            {event.event_type}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </aside>
+        </div>
       </section>
     </main>
   );
