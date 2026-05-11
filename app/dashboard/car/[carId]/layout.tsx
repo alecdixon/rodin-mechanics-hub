@@ -10,13 +10,15 @@ type Props = {
   children: React.ReactNode;
 };
 
+type NavItem = {
+  href: string;
+  title: string;
+  description: string;
+};
+
 type NavGroup = {
   section: string;
-  items: {
-    href: string;
-    title: string;
-    description: string;
-  }[];
+  items: NavItem[];
 };
 
 function NavLink({
@@ -83,6 +85,16 @@ export default function ChiefCarLayout({ children }: Props) {
   }, [router]);
 
   const links: NavGroup[] = [
+    {
+      section: "Dashboard",
+      items: [
+        {
+          href: "/dashboard",
+          title: "Chief Dashboard",
+          description: "Return to the main car overview",
+        },
+      ],
+    },
     {
       section: "Overview",
       items: [
@@ -153,13 +165,14 @@ export default function ChiefCarLayout({ children }: Props) {
       <button
         type="button"
         onClick={() => setMenuOpen((current) => !current)}
-        className="fixed left-4 top-6 z-50 flex items-center gap-2 rounded-xl border border-zinc-700 bg-[#111418]/95 px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-zinc-400 shadow-lg backdrop-blur transition hover:border-red-500/70 hover:text-red-200"
+        className="fixed bottom-6 left-6 z-50 flex items-center gap-2 rounded-xl border border-zinc-700 bg-[#111418]/95 px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-zinc-400 shadow-lg backdrop-blur transition hover:border-red-500/70 hover:text-red-200"
       >
         <span
           className={`h-2 w-2 rounded-full ${
             menuOpen ? "bg-red-400" : "bg-zinc-500"
           }`}
         />
+
         {menuOpen ? "Close" : "Car Menu"}
       </button>
 
@@ -173,7 +186,7 @@ export default function ChiefCarLayout({ children }: Props) {
       )}
 
       <aside
-        className={`fixed left-0 top-0 z-50 h-screen w-[380px] max-w-[92vw] overflow-y-auto border-r border-zinc-800 bg-[#101419] p-6 shadow-2xl transition-transform duration-300 ${
+        className={`fixed left-0 top-0 z-50 h-screen w-[390px] max-w-[92vw] overflow-y-auto border-r border-zinc-800 bg-[#101419] p-6 shadow-2xl transition-transform duration-300 ${
           menuOpen ? "translate-x-0" : "-translate-x-full"
         }`}
       >
@@ -226,16 +239,6 @@ export default function ChiefCarLayout({ children }: Props) {
               </div>
             </section>
           ))}
-        </div>
-
-        <div className="mt-8 border-t border-zinc-800 pt-5">
-          <Link
-            href="/dashboard"
-            onClick={() => setMenuOpen(false)}
-            className="block rounded-xl border border-red-900/60 bg-red-950/30 px-4 py-3 text-center text-sm font-semibold text-red-200 transition hover:border-red-500 hover:bg-red-950/50"
-          >
-            Back to Chief Dashboard
-          </Link>
         </div>
       </aside>
 
