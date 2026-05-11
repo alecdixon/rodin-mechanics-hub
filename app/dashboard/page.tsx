@@ -77,39 +77,10 @@ type ClutchWearPoint = {
 
 const DEFAULT_CAR_COLOUR = "#b91c1c";
 
-function ProgressDial({
-  progress,
-  colour,
-}: {
-  progress: number;
-  colour: string;
-}) {
-  const angle = progress * 3.6;
-
-  return (
-    <div
-      className="grid h-36 w-36 place-items-center rounded-full shadow-inner"
-      style={{
-        background: `conic-gradient(${colour} ${angle}deg, #2a2f36 ${angle}deg)`,
-      }}
-    >
-      <div className="grid h-28 w-28 place-items-center rounded-full bg-[#111418]">
-        <div className="text-center">
-          <div className="text-3xl font-semibold">{progress}%</div>
-          <div className="text-xs uppercase tracking-widest text-zinc-500">
-            Jobs
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 function niceDate(value: string | null | undefined) {
   if (!value) return "—";
 
   const date = new Date(value);
-
   if (Number.isNaN(date.getTime())) return value;
 
   return date.toLocaleDateString("en-GB");
@@ -119,13 +90,21 @@ function shortDate(value: string | null | undefined) {
   if (!value) return "—";
 
   const date = new Date(value);
-
   if (Number.isNaN(date.getTime())) return "—";
 
   return date.toLocaleDateString("en-GB", {
     day: "2-digit",
     month: "2-digit",
   });
+}
+
+function dateOnlyKey(value: string | null | undefined) {
+  if (!value) return "";
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+
+  return date.toISOString().slice(0, 10);
 }
 
 function splitCsvLine(line: string) {
@@ -267,6 +246,34 @@ function calculateClutchWear(record: ClutchMeasurement) {
   return Math.max(0, originalStack - measuredStack);
 }
 
+function ProgressDial({
+  progress,
+  colour,
+}: {
+  progress: number;
+  colour: string;
+}) {
+  const angle = progress * 3.6;
+
+  return (
+    <div
+      className="grid h-36 w-36 place-items-center rounded-full shadow-inner"
+      style={{
+        background: `conic-gradient(${colour} ${angle}deg, #2a2f36 ${angle}deg)`,
+      }}
+    >
+      <div className="grid h-28 w-28 place-items-center rounded-full bg-[#111418]">
+        <div className="text-center">
+          <div className="text-3xl font-semibold">{progress}%</div>
+          <div className="text-xs uppercase tracking-widest text-zinc-500">
+            Jobs
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function JobStatusPill({
   status,
   colour,
@@ -326,22 +333,26 @@ function ClutchWearChart({ points }: { points: ClutchWearPoint[] }) {
     new Map(points.map((point) => [point.car_id, point])).values(),
   );
 
-  const dates = points.map((point) => new Date(point.date).getTime());
-  const minDate = dates.length ? Math.min(...dates) : Date.now();
-  const maxDate = dates.length ? Math.max(...dates) : Date.now();
+  const uniqueDateKeys = Array.from(
+    new Set(points.map((point) => point.date)),
+  ).sort();
+
+  const dateIndexMap = new Map(
+    uniqueDateKeys.map((date, index) => [date, index]),
+  );
 
   const maxWear = points.length
     ? Math.max(...points.map((point) => point.wear), 0.1)
     : 1;
 
   function xFor(date: string) {
-    const time = new Date(date).getTime();
+    const index = dateIndexMap.get(date) ?? 0;
 
-    if (maxDate === minDate) {
+    if (uniqueDateKeys.length <= 1) {
       return padding.left + innerWidth / 2;
     }
 
-    return padding.left + ((time - minDate) / (maxDate - minDate)) * innerWidth;
+    return padding.left + (index / (uniqueDateKeys.length - 1)) * innerWidth;
   }
 
   function yFor(wear: number) {
@@ -349,7 +360,9 @@ function ClutchWearChart({ points }: { points: ClutchWearPoint[] }) {
   }
 
   const grouped = uniqueCars.map((car) => {
-    const carPoints = points.filter((point) => point.car_id === car.car_id);
+    const carPoints = points
+      .filter((point) => point.car_id === car.car_id)
+      .sort((a, b) => a.date.localeCompare(b.date));
 
     const d = carPoints
       .map((point, index) => {
@@ -375,12 +388,10 @@ function ClutchWearChart({ points }: { points: ClutchWearPoint[] }) {
     };
   });
 
-  const xLabels = points
-    .filter((_, index) => {
-      if (points.length <= 6) return true;
-      return index % Math.ceil(points.length / 6) === 0;
-    })
-    .slice(0, 7);
+  const xLabels = uniqueDateKeys.map((date) => ({
+    date,
+    labelDate: shortDate(date),
+  }));
 
   return (
     <div className="rounded-3xl border border-zinc-800 bg-[#0d0f12] p-5">
@@ -396,7 +407,7 @@ function ClutchWearChart({ points }: { points: ClutchWearPoint[] }) {
 
           <p className="mt-1 text-sm text-zinc-500">
             Wear is calculated from original stack height minus measured stack
-            height, plotted against upload date.
+            height. Uploads from the same day are aligned on the same date.
           </p>
         </div>
 
@@ -480,7 +491,7 @@ function ClutchWearChart({ points }: { points: ClutchWearPoint[] }) {
               </text>
 
               {xLabels.map((point) => (
-                <g key={`${point.id}-x-label`}>
+                <g key={`${point.date}-x-label`}>
                   <line
                     x1={xFor(point.date)}
                     y1={height - padding.bottom}
@@ -612,6 +623,7 @@ export default function DashboardPage() {
     }
 
     const carMap: Record<number, { total: number; done: number }> = {};
+    const eveningCarMap: Record<number, { total: number; done: number }> = {};
 
     (progressData ?? []).forEach((row: { car_id: number; done: boolean }) => {
       if (!carMap[row.car_id]) {
@@ -624,8 +636,6 @@ export default function DashboardPage() {
         carMap[row.car_id].done += 1;
       }
     });
-
-    const eveningCarMap: Record<number, { total: number; done: number }> = {};
 
     (eveningProgressData ?? []).forEach(
       (row: { car_id: number; done: boolean }) => {
@@ -803,8 +813,9 @@ export default function DashboardPage() {
     return clutchMeasurements
       .map((record) => {
         const wear = calculateClutchWear(record);
+        const uploadDateOnly = dateOnlyKey(record.created_at);
 
-        if (wear === null || !record.created_at) return null;
+        if (wear === null || !uploadDateOnly) return null;
 
         const carDetails = carColourMap.get(record.car_id);
 
@@ -813,13 +824,13 @@ export default function DashboardPage() {
           car_id: record.car_id,
           carName: carDetails?.name || record.car_name || `Car ${record.car_id}`,
           colour: carDetails?.colour || DEFAULT_CAR_COLOUR,
-          date: record.created_at,
-          labelDate: shortDate(record.created_at),
+          date: uploadDateOnly,
+          labelDate: shortDate(uploadDateOnly),
           wear: Number(wear.toFixed(3)),
         };
       })
       .filter((point): point is ClutchWearPoint => point !== null)
-      .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+      .sort((a, b) => a.date.localeCompare(b.date));
   }, [clutchMeasurements, cars]);
 
   async function updateCar(car: CarProgress, updates: Partial<DashboardCar>) {
