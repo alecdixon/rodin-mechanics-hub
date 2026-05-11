@@ -24,6 +24,9 @@ type CarProgress = {
   status: string;
   total: number;
   completed: number;
+  eveningProgress: number;
+  eveningTotal: number;
+  eveningCompleted: number;
   active: boolean;
   sort_order: number;
 };
@@ -84,7 +87,12 @@ function ProgressDial({
 
 function niceDate(value: string | null | undefined) {
   if (!value) return "—";
-  return new Date(value).toLocaleDateString("en-GB");
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) return value;
+
+  return date.toLocaleDateString("en-GB");
 }
 
 function splitCsvLine(line: string) {
@@ -162,6 +170,47 @@ function parseCalendarCsv(csvText: string): CsvCalendarRow[] {
   });
 }
 
+function JobStatusPill({
+  status,
+  colour,
+}: {
+  status: string;
+  colour: string;
+}) {
+  return (
+    <div
+      className="mt-3 inline-flex rounded-full border bg-[#0d0f12] px-3 py-1 text-xs text-zinc-300"
+      style={{
+        borderColor: colour,
+      }}
+    >
+      {status}
+    </div>
+  );
+}
+
+function CardLink({
+  href,
+  title,
+  description,
+}: {
+  href: string;
+  title: string;
+  description: string;
+}) {
+  return (
+    <Link
+      href={href}
+      className="rounded-xl border border-zinc-700 bg-[#0d0f12] px-4 py-3 text-sm font-semibold text-zinc-200 transition hover:border-red-500 hover:bg-[#111418] hover:text-red-300"
+    >
+      {title}
+      <span className="mt-1 block text-xs font-normal leading-5 text-zinc-500">
+        {description}
+      </span>
+    </Link>
+  );
+}
+
 export default function DashboardPage() {
   const router = useRouter();
 
@@ -184,6 +233,8 @@ export default function DashboardPage() {
   const [errorMessage, setErrorMessage] = useState("");
 
   const loadCarsAndProgress = useCallback(async () => {
+    setErrorMessage("");
+
     const { data: carData, error: carError } = await supabase
       .from("dashboard_cars")
       .select("*")
@@ -204,6 +255,14 @@ export default function DashboardPage() {
       return;
     }
 
+    const { data: eveningProgressData, error: eveningProgressError } =
+      await supabase.from("evening_job_progress").select("car_id,done");
+
+    if (eveningProgressError) {
+      setErrorMessage(eveningProgressError.message);
+      return;
+    }
+
     const carMap: Record<number, { total: number; done: number }> = {};
 
     (progressData ?? []).forEach((row: { car_id: number; done: boolean }) => {
@@ -218,11 +277,32 @@ export default function DashboardPage() {
       }
     });
 
+    const eveningCarMap: Record<number, { total: number; done: number }> = {};
+
+    (eveningProgressData ?? []).forEach(
+      (row: { car_id: number; done: boolean }) => {
+        if (!eveningCarMap[row.car_id]) {
+          eveningCarMap[row.car_id] = { total: 0, done: 0 };
+        }
+
+        eveningCarMap[row.car_id].total += 1;
+
+        if (row.done) {
+          eveningCarMap[row.car_id].done += 1;
+        }
+      },
+    );
+
     const cleanCars = ((carData ?? []) as DashboardCar[]).map((car) => {
       const stats = carMap[car.id] ?? { total: 0, done: 0 };
+      const eveningStats = eveningCarMap[car.id] ?? { total: 0, done: 0 };
 
       const progress = stats.total
         ? Math.round((stats.done / stats.total) * 100)
+        : 0;
+
+      const eveningProgress = eveningStats.total
+        ? Math.round((eveningStats.done / eveningStats.total) * 100)
         : 0;
 
       const status =
@@ -242,6 +322,9 @@ export default function DashboardPage() {
         status,
         total: stats.total,
         completed: stats.done,
+        eveningProgress,
+        eveningTotal: eveningStats.total,
+        eveningCompleted: eveningStats.done,
       };
     });
 
@@ -250,6 +333,7 @@ export default function DashboardPage() {
 
   const loadCalendar = useCallback(async () => {
     setCalendarLoading(true);
+    setErrorMessage("");
 
     const { data, error } = await supabase
       .from("season_calendar")
@@ -297,6 +381,21 @@ export default function DashboardPage() {
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "job_progress" },
+        () => loadCarsAndProgress(),
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [loadCarsAndProgress]);
+
+  useEffect(() => {
+    const channel = supabase
+      .channel("dashboard-evening-job-progress")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "evening_job_progress" },
         () => loadCarsAndProgress(),
       )
       .subscribe();
@@ -380,6 +479,7 @@ export default function DashboardPage() {
     }
 
     const existing = cars.find((car) => car.id === id);
+
     if (existing) {
       setErrorMessage(`Car ID ${id} already exists.`);
       return;
@@ -490,8 +590,8 @@ export default function DashboardPage() {
             </h1>
 
             <p className="mt-2 max-w-2xl text-sm text-zinc-400">
-              Live overview of car preparation progress, post-event records,
-              car settings and the season calendar.
+              Live overview of workshop progress, evening preparation,
+              post-event records, car settings and the season calendar.
             </p>
           </div>
 
@@ -546,6 +646,7 @@ export default function DashboardPage() {
                   <p className="text-xs uppercase tracking-[0.22em] text-zinc-500">
                     ID
                   </p>
+
                   <p className="mt-2 text-lg font-semibold text-zinc-100">
                     {car.id}
                   </p>
@@ -555,6 +656,7 @@ export default function DashboardPage() {
                   <span className="text-xs uppercase tracking-[0.22em] text-zinc-500">
                     Name
                   </span>
+
                   <input
                     value={car.name}
                     onChange={(event) =>
@@ -574,6 +676,7 @@ export default function DashboardPage() {
                   <span className="text-xs uppercase tracking-[0.22em] text-zinc-500">
                     Colour
                   </span>
+
                   <input
                     type="color"
                     value={car.colour}
@@ -594,6 +697,7 @@ export default function DashboardPage() {
                   <span className="text-xs uppercase tracking-[0.22em] text-zinc-500">
                     Order
                   </span>
+
                   <input
                     type="number"
                     value={car.sort_order}
@@ -617,6 +721,7 @@ export default function DashboardPage() {
                   <span className="text-xs uppercase tracking-[0.22em] text-zinc-500">
                     Active
                   </span>
+
                   <select
                     value={car.active ? "active" : "hidden"}
                     onChange={(event) =>
@@ -723,26 +828,57 @@ export default function DashboardPage() {
                 event.currentTarget.style.borderColor = "#27272a";
               }}
             >
-              <div className="flex flex-col items-center border-b border-zinc-800 pb-6">
-                <ProgressDial progress={car.progress} colour={car.colour} />
+              <Link
+                href={`/dashboard/car/${car.id}/viewer`}
+                className="block rounded-2xl border border-transparent p-2 transition hover:border-zinc-700 hover:bg-[#0d0f12]"
+              >
+                <div className="flex flex-col items-center border-b border-zinc-800 pb-6">
+                  <ProgressDial progress={car.progress} colour={car.colour} />
 
-                <div className="mt-5 text-center">
-                  <h2 className="text-2xl font-semibold tracking-tight">
-                    {car.name}
-                  </h2>
+                  <div className="mt-5 text-center">
+                    <h2 className="text-2xl font-semibold tracking-tight">
+                      {car.name}
+                    </h2>
 
-                  <div
-                    className="mt-3 inline-flex rounded-full border bg-[#0d0f12] px-3 py-1 text-xs text-zinc-300"
-                    style={{
-                      borderColor: car.colour,
-                    }}
-                  >
-                    {car.status}
+                    <JobStatusPill status={car.status} colour={car.colour} />
+
+                    <p className="mt-3 text-sm text-zinc-500">
+                      {car.completed} of {car.total || "—"} workshop jobs
+                      complete
+                    </p>
+
+                    <p className="mt-3 text-xs font-semibold uppercase tracking-[0.2em] text-zinc-500">
+                      Open car hub →
+                    </p>
+                  </div>
+                </div>
+              </Link>
+
+              <div className="mt-5 rounded-2xl border border-zinc-800 bg-[#0d0f12] p-4">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-[0.25em] text-red-400">
+                      Evening Prep
+                    </p>
+
+                    <p className="mt-1 text-sm text-zinc-500">
+                      {car.eveningCompleted} of {car.eveningTotal || "—"}{" "}
+                      evening jobs complete
+                    </p>
                   </div>
 
-                  <p className="mt-3 text-sm text-zinc-500">
-                    {car.completed} of {car.total || "—"} workshop jobs complete
-                  </p>
+                  <div className="rounded-xl border border-zinc-700 bg-black px-3 py-2 text-lg font-bold text-zinc-100">
+                    {car.eveningProgress}%
+                  </div>
+                </div>
+
+                <div className="mt-4 h-2 overflow-hidden rounded-full bg-zinc-800">
+                  <div
+                    className="h-full rounded-full bg-red-700"
+                    style={{
+                      width: `${car.eveningProgress}%`,
+                    }}
+                  />
                 </div>
               </div>
 
@@ -753,25 +889,17 @@ export default function DashboardPage() {
                   </p>
 
                   <div className="grid gap-2">
-                    <Link
+                    <CardLink
                       href={`/dashboard/car/${car.id}/job-list`}
-                      className="rounded-xl border border-zinc-700 bg-[#0d0f12] px-4 py-3 text-sm font-semibold text-zinc-200 hover:border-red-500 hover:text-red-300"
-                    >
-                      Workshop Job List
-                      <span className="mt-1 block text-xs font-normal text-zinc-500">
-                        Set, check and modify the main workshop jobs
-                      </span>
-                    </Link>
+                      title="Workshop Job List"
+                      description="Set, check and modify the main workshop jobs"
+                    />
 
-                    <Link
+                    <CardLink
                       href={`/dashboard/car/${car.id}/evening-job-list`}
-                      className="rounded-xl border border-zinc-700 bg-[#0d0f12] px-4 py-3 text-sm font-semibold text-zinc-200 hover:border-red-500 hover:text-red-300"
-                    >
-                      Evening Prep Job List
-                      <span className="mt-1 block text-xs font-normal text-zinc-500">
-                        Set, check and modify evening prep jobs
-                      </span>
-                    </Link>
+                      title="Evening Prep Job List"
+                      description="Set, check and modify evening prep jobs"
+                    />
                   </div>
                 </div>
 
@@ -781,25 +909,17 @@ export default function DashboardPage() {
                   </p>
 
                   <div className="grid gap-2">
-                    <Link
+                    <CardLink
                       href={`/dashboard/car/${car.id}/clutch-measurement`}
-                      className="rounded-xl border border-zinc-700 bg-[#0d0f12] px-4 py-3 text-sm font-semibold text-zinc-200 hover:border-red-500 hover:text-red-300"
-                    >
-                      Clutch Measurement
-                      <span className="mt-1 block text-xs font-normal text-zinc-500">
-                        Review clutch data submitted for this car
-                      </span>
-                    </Link>
+                      title="Clutch Measurement"
+                      description="Review clutch data submitted for this car"
+                    />
 
-                    <Link
+                    <CardLink
                       href={`/dashboard/car/${car.id}/post-event`}
-                      className="rounded-xl border border-zinc-700 bg-[#0d0f12] px-4 py-3 text-sm font-semibold text-zinc-200 hover:border-red-500 hover:text-red-300"
-                    >
-                      Post Event Sheet
-                      <span className="mt-1 block text-xs font-normal text-zinc-500">
-                        Review post-event information and saved PDFs
-                      </span>
-                    </Link>
+                      title="Post Event Sheet"
+                      description="Review post-event information and saved PDFs"
+                    />
                   </div>
                 </div>
               </div>
