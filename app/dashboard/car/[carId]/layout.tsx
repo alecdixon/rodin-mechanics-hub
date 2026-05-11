@@ -180,12 +180,12 @@ export default function ChiefCarLayout({ children }: Props) {
 
           <button
             type="button"
-            onClick={() => setMenuOpen(false)}
-            className="rounded-xl border border-zinc-700 px-3 py-2 text-sm font-semibold text-zinc-300 hover:border-red-500 hover:text-red-300"
-          >
-            ✕
-          </button>
-        </div>
+            onClick={() => setMenuOpen((current) => !current)}
+            className="fixed left-4 top-1/2 z-50 flex -translate-y-1/2 items-center gap-2 rounded-full border border-zinc-700 bg-[#111418]/95 px-4 py-3 text-xs font-semibold uppercase tracking-[0.18em] text-zinc-300 shadow-xl backdrop-blur transition hover:border-red-500/70 hover:text-red-200"
+        >
+            <span className="h-2 w-2 rounded-full bg-red-500" />
+            {menuOpen ? "Close" : "Menu"}
+        </button>
 
         <div className="mt-8 space-y-6">
           {links.map((group) => (
