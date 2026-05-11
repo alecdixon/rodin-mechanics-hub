@@ -10,6 +10,15 @@ type Props = {
   children: React.ReactNode;
 };
 
+type NavGroup = {
+  section: string;
+  items: {
+    href: string;
+    title: string;
+    description: string;
+  }[];
+};
+
 function NavLink({
   href,
   title,
@@ -30,10 +39,11 @@ function NavLink({
       className={`block rounded-xl border px-4 py-3 text-sm font-semibold transition ${
         active
           ? "border-red-500 bg-red-950/30 text-red-100"
-          : "border-zinc-700 bg-[#0d0f12] text-zinc-100 hover:border-red-500 hover:bg-[#14181d] hover:text-red-300"
+          : "border-zinc-700 bg-[#0d0f12] text-zinc-100 hover:border-red-500/70 hover:bg-[#14181d] hover:text-red-200"
       }`}
     >
       {title}
+
       <span
         className={`mt-1 block text-xs font-normal leading-5 ${
           active ? "text-red-200/70" : "text-zinc-500"
@@ -72,7 +82,7 @@ export default function ChiefCarLayout({ children }: Props) {
     checkAccess();
   }, [router]);
 
-  const links = [
+  const links: NavGroup[] = [
     {
       section: "Overview",
       items: [
@@ -94,7 +104,7 @@ export default function ChiefCarLayout({ children }: Props) {
         {
           href: `/dashboard/car/${carId}/evening-job-list`,
           title: "Evening Prep Job List",
-          description: "Set, check and modify evening prep jobs",
+          description: "Set, check and modify evening preparation jobs",
         },
       ],
     },
@@ -124,7 +134,7 @@ export default function ChiefCarLayout({ children }: Props) {
         {
           href: `/car/${carId}/evening-job-list`,
           title: "Mechanic Evening View",
-          description: "Open the mechanic evening prep list",
+          description: "Open the mechanic evening preparation list",
         },
       ],
     },
@@ -143,8 +153,13 @@ export default function ChiefCarLayout({ children }: Props) {
       <button
         type="button"
         onClick={() => setMenuOpen((current) => !current)}
-        className="fixed left-0 top-1/2 z-50 -translate-y-1/2 rounded-r-2xl border border-l-0 border-red-900/60 bg-red-700 px-3 py-6 text-xs font-bold uppercase tracking-[0.25em] text-white shadow-xl transition hover:bg-red-600"
+        className="fixed left-4 top-6 z-50 flex items-center gap-2 rounded-xl border border-zinc-700 bg-[#111418]/95 px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-zinc-400 shadow-lg backdrop-blur transition hover:border-red-500/70 hover:text-red-200"
       >
+        <span
+          className={`h-2 w-2 rounded-full ${
+            menuOpen ? "bg-red-400" : "bg-zinc-500"
+          }`}
+        />
         {menuOpen ? "Close" : "Car Menu"}
       </button>
 
@@ -152,7 +167,7 @@ export default function ChiefCarLayout({ children }: Props) {
         <button
           type="button"
           aria-label="Close car navigation"
-          className="fixed inset-0 z-40 bg-black/50"
+          className="fixed inset-0 z-40 bg-black/50 backdrop-blur-[1px]"
           onClick={() => setMenuOpen(false)}
         />
       )}
@@ -173,19 +188,19 @@ export default function ChiefCarLayout({ children }: Props) {
             </h2>
 
             <p className="mt-2 text-sm leading-6 text-zinc-500">
-              Jump between all chief mechanic pages and mechanic views for this
-              car.
+              Navigate between all chief mechanic pages and mechanic views for
+              this car.
             </p>
           </div>
 
           <button
             type="button"
-            onClick={() => setMenuOpen((current) => !current)}
-            className="fixed left-4 top-1/2 z-50 flex -translate-y-1/2 items-center gap-2 rounded-full border border-zinc-700 bg-[#111418]/95 px-4 py-3 text-xs font-semibold uppercase tracking-[0.18em] text-zinc-300 shadow-xl backdrop-blur transition hover:border-red-500/70 hover:text-red-200"
-        >
-            <span className="h-2 w-2 rounded-full bg-red-500" />
-            {menuOpen ? "Close" : "Menu"}
-        </button>
+            onClick={() => setMenuOpen(false)}
+            className="rounded-xl border border-zinc-700 px-3 py-2 text-sm font-semibold text-zinc-300 transition hover:border-red-500/70 hover:text-red-200"
+          >
+            ✕
+          </button>
+        </div>
 
         <div className="mt-8 space-y-6">
           {links.map((group) => (
@@ -217,7 +232,7 @@ export default function ChiefCarLayout({ children }: Props) {
           <Link
             href="/dashboard"
             onClick={() => setMenuOpen(false)}
-            className="block rounded-xl border border-red-900/60 bg-red-950/30 px-4 py-3 text-center text-sm font-semibold text-red-200 hover:border-red-500 hover:bg-red-950/50"
+            className="block rounded-xl border border-red-900/60 bg-red-950/30 px-4 py-3 text-center text-sm font-semibold text-red-200 transition hover:border-red-500 hover:bg-red-950/50"
           >
             Back to Chief Dashboard
           </Link>
