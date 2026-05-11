@@ -39,7 +39,6 @@ function niceDate(value: string | null | undefined) {
   if (!value) return "No date set";
 
   const date = new Date(value);
-
   if (Number.isNaN(date.getTime())) return value;
 
   return date.toLocaleDateString("en-GB");
@@ -49,7 +48,6 @@ function niceDateTime(value: string | null | undefined) {
   if (!value) return "No timestamp";
 
   const date = new Date(value);
-
   if (Number.isNaN(date.getTime())) return value;
 
   return date.toLocaleString("en-GB");
@@ -99,13 +97,19 @@ export default function ChiefJobListEditorPage() {
   const [newSpecialJob, setNewSpecialJob] = useState("");
 
   const [loading, setLoading] = useState(true);
-  const [importing, setImporting] = useState(false);
+  const [updatingTemplate, setUpdatingTemplate] = useState(false);
   const [savingReleaseInfo, setSavingReleaseInfo] = useState(false);
   const [addingSpecialJob, setAddingSpecialJob] = useState(false);
-  const [clearingJobs, setClearingJobs] = useState(false);
+  const [clearingStandardJobs, setClearingStandardJobs] = useState(false);
+  const [clearingAllJobs, setClearingAllJobs] = useState(false);
+  const [removingJobKey, setRemovingJobKey] = useState<string | null>(null);
 
   const [message, setMessage] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
+
+  function jobKey(job: JobRow) {
+    return job.id || `${job.car_id}-${job.section}-${job.job_id}`;
+  }
 
   async function loadJobs() {
     const { data, error } = await supabase
@@ -197,6 +201,7 @@ export default function ChiefJobListEditorPage() {
     if (carId) {
       loadEverything();
     }
+
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [carId]);
 
@@ -239,7 +244,7 @@ export default function ChiefJobListEditorPage() {
     return true;
   }
 
-  async function importTemplate() {
+  async function updateFromTemplate() {
     setMessage("");
     setErrorMessage("");
 
@@ -253,12 +258,12 @@ export default function ChiefJobListEditorPage() {
     }
 
     const confirmed = window.confirm(
-      `Import "${selectedTemplate.name}" to Car ${carId}?\n\nThis will replace the STANDARD workshop jobs for this car, but it will keep special jobs.`,
+      `Update Car ${carId} from "${selectedTemplate.name}"?\n\nThis will create or update the STANDARD workshop jobs for this car. Special jobs will be kept.`,
     );
 
     if (!confirmed) return;
 
-    setImporting(true);
+    setUpdatingTemplate(true);
 
     const now = new Date().toISOString();
 
@@ -281,8 +286,10 @@ export default function ChiefJobListEditorPage() {
     );
 
     if (upsertError) {
-      setErrorMessage(`Could not import workshop template: ${upsertError.message}`);
-      setImporting(false);
+      setErrorMessage(
+        `Could not update workshop list from template: ${upsertError.message}`,
+      );
+      setUpdatingTemplate(false);
       return;
     }
 
@@ -295,17 +302,48 @@ export default function ChiefJobListEditorPage() {
 
     if (cleanupError) {
       setErrorMessage(
-        `Template imported, but old extra jobs could not be removed: ${cleanupError.message}`,
+        `Template updated, but old extra jobs could not be removed: ${cleanupError.message}`,
       );
       await loadJobs();
-      setImporting(false);
+      setUpdatingTemplate(false);
       return;
     }
 
-    await saveReleaseInfo(`Imported "${selectedTemplate.name}" to Car ${carId}.`);
+    await saveReleaseInfo(
+      `Updated Car ${carId} workshop list from "${selectedTemplate.name}".`,
+    );
+
+    await loadJobs();
+    setUpdatingTemplate(false);
+  }
+
+  async function clearStandardJobs() {
+    const confirmed = window.confirm(
+      `Clear STANDARD workshop jobs for Car ${carId}?\n\nThis removes only the template workshop jobs. Special jobs and release details will be kept.`,
+    );
+
+    if (!confirmed) return;
+
+    setMessage("");
+    setErrorMessage("");
+    setClearingStandardJobs(true);
+
+    const { error } = await supabase
+      .from("job_progress")
+      .delete()
+      .eq("car_id", carId)
+      .eq("section", "standard");
+
+    if (error) {
+      setErrorMessage(`Standard jobs failed to clear: ${error.message}`);
+      setClearingStandardJobs(false);
+      return;
+    }
+
     await loadJobs();
 
-    setImporting(false);
+    setMessage(`Standard workshop jobs cleared for Car ${carId}.`);
+    setClearingStandardJobs(false);
   }
 
   async function updateJobText(job: JobRow, text: string) {
@@ -319,15 +357,23 @@ export default function ChiefJobListEditorPage() {
       ),
     );
 
-    const { error } = await supabase
+    let updateQuery = supabase
       .from("job_progress")
       .update({
         job_text: text,
         updated_at: new Date().toISOString(),
-      })
-      .eq("car_id", job.car_id)
-      .eq("job_id", job.job_id)
-      .eq("section", job.section);
+      });
+
+    if (job.id) {
+      updateQuery = updateQuery.eq("id", job.id);
+    } else {
+      updateQuery = updateQuery
+        .eq("car_id", job.car_id)
+        .eq("job_id", job.job_id)
+        .eq("section", job.section);
+    }
+
+    const { error } = await updateQuery;
 
     if (error) {
       setErrorMessage(`Could not update job: ${error.message}`);
@@ -395,35 +441,60 @@ export default function ChiefJobListEditorPage() {
     const confirmed = window.confirm(`Remove this job?\n\n${job.job_text}`);
     if (!confirmed) return;
 
+    const key = jobKey(job);
+
     setMessage("");
     setErrorMessage("");
+    setRemovingJobKey(key);
 
-    const { error } = await supabase
-      .from("job_progress")
-      .delete()
-      .eq("car_id", job.car_id)
-      .eq("job_id", job.job_id)
-      .eq("section", job.section);
+    let deleteQuery = supabase.from("job_progress").delete();
+
+    if (job.id) {
+      deleteQuery = deleteQuery.eq("id", job.id);
+    } else {
+      deleteQuery = deleteQuery
+        .eq("car_id", job.car_id)
+        .eq("job_id", job.job_id)
+        .eq("section", job.section);
+    }
+
+    const { error } = await deleteQuery;
 
     if (error) {
       setErrorMessage(`Job failed to remove: ${error.message}`);
+      setRemovingJobKey(null);
       return;
     }
 
+    setJobs((current) =>
+      current.filter((item) => {
+        if (job.id && item.id) {
+          return item.id !== job.id;
+        }
+
+        return !(
+          item.car_id === job.car_id &&
+          item.job_id === job.job_id &&
+          item.section === job.section
+        );
+      }),
+    );
+
     setMessage("Job removed.");
     await loadJobs();
+    setRemovingJobKey(null);
   }
 
   async function clearAllJobs() {
     const confirmed = window.confirm(
-      `Clear ALL workshop jobs for Car ${carId}?\n\nThis will remove all standard jobs, all special jobs, and the released event/date from the mechanic page.`,
+      `Clear ALL workshop jobs for Car ${carId}?\n\nThis will remove standard jobs, special jobs, notes and the released event/date from the mechanic page.`,
     );
 
     if (!confirmed) return;
 
     setMessage("");
     setErrorMessage("");
-    setClearingJobs(true);
+    setClearingAllJobs(true);
 
     const { error: jobsError } = await supabase
       .from("job_progress")
@@ -432,7 +503,7 @@ export default function ChiefJobListEditorPage() {
 
     if (jobsError) {
       setErrorMessage(`Jobs failed to clear: ${jobsError.message}`);
-      setClearingJobs(false);
+      setClearingAllJobs(false);
       return;
     }
 
@@ -442,8 +513,10 @@ export default function ChiefJobListEditorPage() {
       .eq("car_id", carId);
 
     if (releaseError) {
-      setErrorMessage(`Release details failed to clear: ${releaseError.message}`);
-      setClearingJobs(false);
+      setErrorMessage(
+        `Release details failed to clear: ${releaseError.message}`,
+      );
+      setClearingAllJobs(false);
       return;
     }
 
@@ -452,7 +525,7 @@ export default function ChiefJobListEditorPage() {
     setJobDate("");
     setReleaseInfo(null);
     setMessage(`All workshop jobs cleared for Car ${carId}.`);
-    setClearingJobs(false);
+    setClearingAllJobs(false);
   }
 
   const standardJobs = jobs.filter((job) => job.section === "standard");
@@ -489,9 +562,9 @@ export default function ChiefJobListEditorPage() {
           </h1>
 
           <p className="mt-3 max-w-3xl text-sm leading-6 text-zinc-400">
-            Generate, release, modify and monitor the workshop preparation list
-            for this car. Standard jobs come from templates; special jobs are
-            car-specific additions.
+            Create, update, clear and monitor the workshop preparation list for
+            this car. Standard template jobs and special car-specific jobs are
+            kept separate.
           </p>
         </div>
 
@@ -666,10 +739,10 @@ export default function ChiefJobListEditorPage() {
           <button
             type="button"
             onClick={clearAllJobs}
-            disabled={clearingJobs}
+            disabled={clearingAllJobs}
             className="rounded-xl border border-red-900/70 px-5 py-3 text-sm font-semibold text-red-300 hover:bg-red-950/40 disabled:cursor-not-allowed disabled:opacity-50"
           >
-            {clearingJobs ? "Clearing..." : "Clear All Jobs"}
+            {clearingAllJobs ? "Clearing..." : "Clear All Jobs"}
           </button>
         </div>
       </section>
@@ -677,17 +750,17 @@ export default function ChiefJobListEditorPage() {
       <section className="mb-6 grid gap-6 xl:grid-cols-[1fr_420px]">
         <div className="rounded-3xl border border-zinc-800 bg-[#14181d] p-6 shadow-xl">
           <p className="text-xs font-semibold uppercase tracking-[0.3em] text-red-400">
-            Template Import
+            Job List Creation
           </p>
 
           <h2 className="mt-3 text-2xl font-semibold">
-            Import Standard Workshop Template
+            Create / Update Standard Workshop List
           </h2>
 
           <p className="mt-2 text-sm leading-6 text-zinc-500">
-            This updates existing standard jobs in-place and removes any
-            leftover standard jobs outside the selected template length. Special
-            jobs are kept.
+            Choose a template, then update the standard workshop jobs for this
+            car. Special jobs are kept separate. Clear Standard Jobs removes only
+            the current template jobs.
           </p>
 
           <div className="mt-5 flex flex-wrap gap-3">
@@ -709,11 +782,20 @@ export default function ChiefJobListEditorPage() {
 
             <button
               type="button"
-              onClick={importTemplate}
-              disabled={importing || templates.length === 0}
-              className="rounded-xl bg-red-700 px-5 py-3 text-sm font-semibold hover:bg-red-600 disabled:cursor-not-allowed disabled:opacity-50"
+              onClick={updateFromTemplate}
+              disabled={updatingTemplate || templates.length === 0}
+              className="rounded-xl bg-red-700 px-5 py-3 text-sm font-semibold text-white hover:bg-red-600 disabled:cursor-not-allowed disabled:opacity-50"
             >
-              {importing ? "Importing..." : "Generate Workshop List"}
+              {updatingTemplate ? "Updating..." : "Update From Template"}
+            </button>
+
+            <button
+              type="button"
+              onClick={clearStandardJobs}
+              disabled={clearingStandardJobs || standardJobs.length === 0}
+              className="rounded-xl border border-zinc-700 px-5 py-3 text-sm font-semibold text-zinc-300 hover:border-red-500 hover:text-red-300 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {clearingStandardJobs ? "Clearing..." : "Clear Standard Jobs"}
             </button>
           </div>
 
@@ -792,43 +874,49 @@ export default function ChiefJobListEditorPage() {
           <div className="max-h-[680px] space-y-2 overflow-y-auto pr-2">
             {standardJobs.length === 0 ? (
               <div className="rounded-2xl border border-dashed border-zinc-700 bg-[#0d0f12] p-6 text-sm text-zinc-500">
-                No standard jobs released yet. Import a template above.
+                No standard jobs released yet. Update from a template above.
               </div>
             ) : (
-              standardJobs.map((job, index) => (
-                <div
-                  key={`${job.section}-${job.job_id}`}
-                  className="rounded-xl border border-zinc-800 bg-[#0d0f12] p-3"
-                >
-                  <div className="grid grid-cols-[42px_1fr_auto] items-center gap-3">
-                    <span className="text-sm text-zinc-500">{index + 1}</span>
+              standardJobs.map((job, index) => {
+                const key = jobKey(job);
+                const removing = removingJobKey === key;
 
-                    <input
-                      value={job.job_text}
-                      onChange={(event) =>
-                        updateJobText(job, event.target.value)
-                      }
-                      className="w-full rounded-lg border border-transparent bg-transparent px-2 py-2 text-sm outline-none focus:border-zinc-700 focus:bg-[#14181d]"
-                    />
+                return (
+                  <div
+                    key={key}
+                    className="rounded-xl border border-zinc-800 bg-[#0d0f12] p-3"
+                  >
+                    <div className="grid grid-cols-[42px_1fr_auto] items-center gap-3">
+                      <span className="text-sm text-zinc-500">{index + 1}</span>
 
-                    <button
-                      type="button"
-                      onClick={() => removeJob(job)}
-                      className="rounded-lg border border-zinc-700 px-3 py-2 text-xs text-zinc-400 hover:border-red-500 hover:text-red-300"
-                    >
-                      Remove
-                    </button>
+                      <input
+                        value={job.job_text}
+                        onChange={(event) =>
+                          updateJobText(job, event.target.value)
+                        }
+                        className="w-full rounded-lg border border-transparent bg-transparent px-2 py-2 text-sm outline-none focus:border-zinc-700 focus:bg-[#14181d]"
+                      />
+
+                      <button
+                        type="button"
+                        onClick={() => removeJob(job)}
+                        disabled={removing}
+                        className="rounded-lg border border-zinc-700 px-3 py-2 text-xs text-zinc-400 hover:border-red-500 hover:text-red-300 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        {removing ? "Removing..." : "Remove"}
+                      </button>
+                    </div>
+
+                    <div className="mt-2 flex flex-wrap items-center gap-3 pl-[54px] text-xs text-zinc-500">
+                      <StatusPill done={job.done} notes={job.notes} />
+
+                      <span>{niceDateTime(job.updated_at)}</span>
+
+                      {job.updated_by && <span>By {job.updated_by}</span>}
+                    </div>
                   </div>
-
-                  <div className="mt-2 flex flex-wrap items-center gap-3 pl-[54px] text-xs text-zinc-500">
-                    <StatusPill done={job.done} notes={job.notes} />
-
-                    <span>{niceDateTime(job.updated_at)}</span>
-
-                    {job.updated_by && <span>By {job.updated_by}</span>}
-                  </div>
-                </div>
-              ))
+                );
+              })
             )}
           </div>
         </div>
@@ -856,40 +944,46 @@ export default function ChiefJobListEditorPage() {
                 No special jobs released for this car.
               </div>
             ) : (
-              specialJobs.map((job, index) => (
-                <div
-                  key={`${job.section}-${job.job_id}`}
-                  className="rounded-xl border border-red-900/40 bg-[#0d0f12] p-3"
-                >
-                  <div className="grid grid-cols-[42px_1fr_auto] items-center gap-3">
-                    <span className="text-sm text-red-300">{index + 1}</span>
+              specialJobs.map((job, index) => {
+                const key = jobKey(job);
+                const removing = removingJobKey === key;
 
-                    <input
-                      value={job.job_text}
-                      onChange={(event) =>
-                        updateJobText(job, event.target.value)
-                      }
-                      className="w-full rounded-lg border border-transparent bg-transparent px-2 py-2 text-sm text-red-100 outline-none focus:border-red-900/70 focus:bg-[#14181d]"
-                    />
+                return (
+                  <div
+                    key={key}
+                    className="rounded-xl border border-red-900/40 bg-[#0d0f12] p-3"
+                  >
+                    <div className="grid grid-cols-[42px_1fr_auto] items-center gap-3">
+                      <span className="text-sm text-red-300">{index + 1}</span>
 
-                    <button
-                      type="button"
-                      onClick={() => removeJob(job)}
-                      className="rounded-lg border border-red-900/60 px-3 py-2 text-xs text-zinc-400 hover:border-red-500 hover:text-red-300"
-                    >
-                      Remove
-                    </button>
+                      <input
+                        value={job.job_text}
+                        onChange={(event) =>
+                          updateJobText(job, event.target.value)
+                        }
+                        className="w-full rounded-lg border border-transparent bg-transparent px-2 py-2 text-sm text-red-100 outline-none focus:border-red-900/70 focus:bg-[#14181d]"
+                      />
+
+                      <button
+                        type="button"
+                        onClick={() => removeJob(job)}
+                        disabled={removing}
+                        className="rounded-lg border border-red-900/60 px-3 py-2 text-xs text-zinc-400 hover:border-red-500 hover:text-red-300 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        {removing ? "Removing..." : "Remove"}
+                      </button>
+                    </div>
+
+                    <div className="mt-2 flex flex-wrap items-center gap-3 pl-[54px] text-xs text-zinc-500">
+                      <StatusPill done={job.done} notes={job.notes} />
+
+                      <span>{niceDateTime(job.updated_at)}</span>
+
+                      {job.updated_by && <span>By {job.updated_by}</span>}
+                    </div>
                   </div>
-
-                  <div className="mt-2 flex flex-wrap items-center gap-3 pl-[54px] text-xs text-zinc-500">
-                    <StatusPill done={job.done} notes={job.notes} />
-
-                    <span>{niceDateTime(job.updated_at)}</span>
-
-                    {job.updated_by && <span>By {job.updated_by}</span>}
-                  </div>
-                </div>
-              ))
+                );
+              })
             )}
           </div>
         </div>
