@@ -495,12 +495,21 @@ export default function ClutchMeasurementPage() {
 
       const pdfPath = `car-${carId}/${fileName}`;
 
+      const pdfArrayBuffer = pdfBytes.buffer.slice(
+        pdfBytes.byteOffset,
+        pdfBytes.byteOffset + pdfBytes.byteLength
+      ) as ArrayBuffer;
+
+      const pdfBlob = new Blob([pdfArrayBuffer], {
+        type: "application/pdf",
+      });
+
       const { error: uploadError } = await supabase.storage
         .from(PDF_BUCKET)
-        .upload(pdfPath, new Blob([pdfBytes], { type: "application/pdf" }), {
+        .upload(pdfPath, pdfBlob, {
           contentType: "application/pdf",
           upsert: false,
-        });
+      });
 
       if (uploadError) {
         setMessage(`PDF upload failed: ${uploadError.message}`);
@@ -538,7 +547,7 @@ export default function ClutchMeasurementPage() {
         return;
       }
 
-      const url = URL.createObjectURL(new Blob([pdfBytes], { type: "application/pdf" }));
+      const url = URL.createObjectURL(pdfBlob);
       const a = document.createElement("a");
       a.href = url;
       a.download = fileName;
