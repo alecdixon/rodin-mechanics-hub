@@ -1,0 +1,573 @@
+"use client";
+
+import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
+import { useParams, useRouter } from "next/navigation";
+import { supabase } from "@/lib/supabase";
+import { getUserRole } from "@/lib/userAccess";
+import LogoutButton from "@/app/components/LogoutButton";
+
+type ClutchRecord = Record<string, unknown>;
+
+function niceDate(value: unknown) {
+  if (!value || typeof value !== "string") return "No date";
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) return value;
+
+  return date.toLocaleDateString("en-GB");
+}
+
+function niceDateTime(value: unknown) {
+  if (!value || typeof value !== "string") return "No timestamp";
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) return value;
+
+  return date.toLocaleString("en-GB");
+}
+
+function cleanValue(value: unknown) {
+  if (value === null || value === undefined || value === "") return "—";
+
+  if (typeof value === "boolean") {
+    return value ? "Yes" : "No";
+  }
+
+  if (typeof value === "number") {
+    return String(value);
+  }
+
+  if (typeof value === "string") {
+    return value.trim() || "—";
+  }
+
+  return JSON.stringify(value);
+}
+
+function formatLabel(key: string) {
+  return key
+    .replaceAll("_", " ")
+    .replaceAll("-", " ")
+    .replace(/\b\w/g, (char) => char.toUpperCase());
+}
+
+function getFirstValue(record: ClutchRecord, keys: string[]) {
+  for (const key of keys) {
+    const value = record[key];
+
+    if (value !== null && value !== undefined && value !== "") {
+      return value;
+    }
+  }
+
+  return null;
+}
+
+function getRecordId(record: ClutchRecord) {
+  const id = record.id;
+
+  if (typeof id === "string" || typeof id === "number") {
+    return String(id);
+  }
+
+  return crypto.randomUUID();
+}
+
+function isMainField(key: string) {
+  return [
+    "id",
+    "car_id",
+    "created_at",
+    "created_by",
+    "updated_at",
+    "updated_by",
+  ].includes(key);
+}
+
+function DetailField({
+  label,
+  value,
+}: {
+  label: string;
+  value: unknown;
+}) {
+  return (
+    <div className="rounded-2xl border border-zinc-800 bg-[#0d0f12] p-4">
+      <p className="text-xs font-semibold uppercase tracking-[0.22em] text-zinc-500">
+        {label}
+      </p>
+
+      <p className="mt-3 break-words text-base font-semibold text-zinc-100">
+        {cleanValue(value)}
+      </p>
+    </div>
+  );
+}
+
+export default function ChiefClutchMeasurementPage() {
+  const params = useParams();
+  const router = useRouter();
+  const carId = Number(params.carId);
+
+  const [loading, setLoading] = useState(true);
+  const [records, setRecords] = useState<ClutchRecord[]>([]);
+  const [selectedRecord, setSelectedRecord] = useState<ClutchRecord | null>(
+    null,
+  );
+
+  const [dateFilter, setDateFilter] = useState("");
+  const [searchText, setSearchText] = useState("");
+
+  const [message, setMessage] = useState("");
+  const [errorMessage, setErrorMessage] = useState("");
+
+  async function loadClutchMeasurements() {
+    setLoading(true);
+    setMessage("");
+    setErrorMessage("");
+
+    const { data: userData } = await supabase.auth.getUser();
+    const role = getUserRole(userData.user?.email ?? "");
+
+    if (role !== "chief") {
+      router.replace("/dashboard");
+      return;
+    }
+
+    const { data, error } = await supabase
+      .from("clutch_measurements")
+      .select("*")
+      .eq("car_id", carId)
+      .order("created_at", { ascending: false });
+
+    if (error) {
+      setErrorMessage(error.message);
+      setLoading(false);
+      return;
+    }
+
+    setRecords((data ?? []) as ClutchRecord[]);
+    setLoading(false);
+  }
+
+  useEffect(() => {
+    if (carId) {
+      loadClutchMeasurements();
+    }
+  }, [carId]);
+
+  const filteredRecords = useMemo(() => {
+    return records.filter((record) => {
+      const createdAt = getFirstValue(record, ["created_at"]);
+      const recordDate =
+        typeof createdAt === "string" ? createdAt.slice(0, 10) : "";
+
+      const matchesDate = dateFilter ? recordDate === dateFilter : true;
+
+      const searchableText = Object.values(record)
+        .map((value) => cleanValue(value))
+        .join(" ")
+        .toLowerCase();
+
+      const matchesSearch = searchText.trim()
+        ? searchableText.includes(searchText.trim().toLowerCase())
+        : true;
+
+      return matchesDate && matchesSearch;
+    });
+  }, [records, dateFilter, searchText]);
+
+  const latestRecord = records[0] ?? null;
+
+  const latestCreatedAt = latestRecord
+    ? getFirstValue(latestRecord, ["created_at"])
+    : null;
+
+  const latestCreatedBy = latestRecord
+    ? getFirstValue(latestRecord, ["created_by", "updated_by", "submitted_by"])
+    : null;
+
+  if (loading) {
+    return (
+      <main className="flex min-h-screen items-center justify-center bg-[#0d0f12] text-zinc-400">
+        Loading clutch measurements...
+      </main>
+    );
+  }
+
+  return (
+    <main className="min-h-screen bg-[#0d0f12] p-6 text-zinc-100">
+      <div className="mb-8 flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <Link
+            href="/dashboard"
+            className="text-sm text-red-400 hover:text-red-300"
+          >
+            ← Back to chief dashboard
+          </Link>
+
+          <p className="mt-6 text-xs uppercase tracking-[0.3em] text-red-400">
+            Chief Review
+          </p>
+
+          <h1 className="mt-3 text-4xl font-semibold">
+            Car {carId} Clutch Measurements
+          </h1>
+
+          <p className="mt-3 max-w-3xl text-sm text-zinc-400">
+            Review clutch measurement records submitted for this car. This page
+            is read-only for the chief mechanic.
+          </p>
+        </div>
+
+        <div className="flex flex-wrap gap-3">
+          <Link
+            href={`/car/${carId}/clutch-measurement`}
+            className="rounded-xl border border-zinc-700 bg-[#14181d] px-5 py-3 text-sm font-semibold text-zinc-200 hover:border-red-500 hover:text-red-300"
+          >
+            Open Mechanic Sheet
+          </Link>
+
+          <LogoutButton />
+        </div>
+      </div>
+
+      {message && (
+        <div className="mb-6 rounded-2xl border border-green-800 bg-green-950/20 p-4 text-sm text-green-300">
+          {message}
+        </div>
+      )}
+
+      {errorMessage && (
+        <div className="mb-6 rounded-2xl border border-red-900 bg-red-950/40 p-4 text-sm text-red-200">
+          {errorMessage}
+        </div>
+      )}
+
+      <section className="mb-6 grid gap-6 lg:grid-cols-3">
+        <div className="rounded-3xl border border-zinc-800 bg-[#14181d] p-6 shadow-xl">
+          <p className="text-xs font-semibold uppercase tracking-[0.3em] text-red-400">
+            Records
+          </p>
+
+          <h2 className="mt-3 text-5xl font-bold text-zinc-100">
+            {records.length}
+          </h2>
+
+          <p className="mt-2 text-sm text-zinc-500">
+            clutch measurement record{records.length === 1 ? "" : "s"} saved
+          </p>
+        </div>
+
+        <div className="rounded-3xl border border-zinc-800 bg-[#14181d] p-6 shadow-xl">
+          <p className="text-xs font-semibold uppercase tracking-[0.3em] text-red-400">
+            Latest Record
+          </p>
+
+          <h2 className="mt-3 text-2xl font-semibold text-zinc-100">
+            {niceDateTime(latestCreatedAt)}
+          </h2>
+
+          <p className="mt-2 text-sm text-zinc-500">
+            Most recent clutch sheet submitted
+          </p>
+        </div>
+
+        <div className="rounded-3xl border border-zinc-800 bg-[#14181d] p-6 shadow-xl">
+          <p className="text-xs font-semibold uppercase tracking-[0.3em] text-red-400">
+            Latest Submitted By
+          </p>
+
+          <h2 className="mt-3 break-words text-2xl font-semibold text-zinc-100">
+            {cleanValue(latestCreatedBy)}
+          </h2>
+
+          <p className="mt-2 text-sm text-zinc-500">
+            User linked to the latest record
+          </p>
+        </div>
+      </section>
+
+      <section className="mb-6 rounded-3xl border border-zinc-800 bg-[#14181d] p-6 shadow-xl">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.3em] text-red-400">
+              Filters
+            </p>
+
+            <h2 className="mt-3 text-2xl font-semibold">
+              Search Clutch Records
+            </h2>
+          </div>
+
+          <button
+            type="button"
+            onClick={loadClutchMeasurements}
+            className="rounded-xl border border-zinc-700 px-5 py-3 text-sm font-semibold text-zinc-200 hover:border-red-500 hover:text-red-300"
+          >
+            Refresh
+          </button>
+        </div>
+
+        <div className="mt-5 grid gap-4 md:grid-cols-[220px_1fr_auto]">
+          <label className="block">
+            <span className="text-xs font-semibold uppercase tracking-[0.22em] text-zinc-500">
+              Date
+            </span>
+
+            <input
+              type="date"
+              value={dateFilter}
+              onChange={(event) => setDateFilter(event.target.value)}
+              className="mt-2 w-full rounded-xl border border-zinc-700 bg-[#0d0f12] px-4 py-3 text-sm text-zinc-100 outline-none focus:border-red-500"
+            />
+          </label>
+
+          <label className="block">
+            <span className="text-xs font-semibold uppercase tracking-[0.22em] text-zinc-500">
+              Search
+            </span>
+
+            <input
+              value={searchText}
+              onChange={(event) => setSearchText(event.target.value)}
+              placeholder="Search driver, track, notes, values..."
+              className="mt-2 w-full rounded-xl border border-zinc-700 bg-[#0d0f12] px-4 py-3 text-sm text-zinc-100 outline-none focus:border-red-500"
+            />
+          </label>
+
+          <div className="flex items-end">
+            <button
+              type="button"
+              onClick={() => {
+                setDateFilter("");
+                setSearchText("");
+              }}
+              className="w-full rounded-xl border border-zinc-700 px-5 py-3 text-sm font-semibold text-zinc-300 hover:border-red-500 hover:text-red-300"
+            >
+              Clear
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <section className="rounded-3xl border border-zinc-800 bg-[#14181d] p-6 shadow-xl">
+        <div className="mb-5 flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.3em] text-red-400">
+              Clutch Measurement History
+            </p>
+
+            <h2 className="mt-3 text-3xl font-semibold">
+              Saved Measurements
+            </h2>
+
+            <p className="mt-2 text-sm text-zinc-400">
+              Click a record to inspect the full clutch measurement sheet.
+            </p>
+          </div>
+
+          <div className="rounded-2xl border border-zinc-700 bg-[#0d0f12] px-4 py-3 text-sm font-semibold text-red-300">
+            {filteredRecords.length} / {records.length}
+          </div>
+        </div>
+
+        {filteredRecords.length === 0 ? (
+          <div className="rounded-2xl border border-dashed border-zinc-700 bg-[#0d0f12] p-8 text-sm text-zinc-500">
+            No clutch measurement records found.
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {filteredRecords.map((record, index) => {
+              const id = getRecordId(record);
+              const createdAt = getFirstValue(record, ["created_at"]);
+              const createdBy = getFirstValue(record, [
+                "created_by",
+                "updated_by",
+                "submitted_by",
+              ]);
+
+              const trackName = getFirstValue(record, [
+                "track_name",
+                "track",
+                "circuit",
+              ]);
+
+              const driver = getFirstValue(record, ["driver", "driver_name"]);
+              const chassis = getFirstValue(record, ["chassis", "chassis_no"]);
+
+              return (
+                <button
+                  key={`${id}-${index}`}
+                  type="button"
+                  onClick={() => setSelectedRecord(record)}
+                  className="w-full rounded-2xl border border-zinc-800 bg-[#0d0f12] p-5 text-left transition hover:border-red-500/70 hover:bg-[#15191f]"
+                >
+                  <div className="flex flex-wrap items-start justify-between gap-4">
+                    <div>
+                      <p className="text-xs font-semibold uppercase tracking-[0.22em] text-red-400">
+                        {cleanValue(trackName)}
+                      </p>
+
+                      <h3 className="mt-2 text-2xl font-semibold text-zinc-100">
+                        {cleanValue(chassis) !== "—"
+                          ? `Chassis ${cleanValue(chassis)}`
+                          : `Record ${index + 1}`}
+                      </h3>
+
+                      <p className="mt-1 text-sm text-zinc-400">
+                        Driver:{" "}
+                        <span className="font-semibold text-zinc-200">
+                          {cleanValue(driver)}
+                        </span>
+                      </p>
+                    </div>
+
+                    <div className="rounded-xl border border-zinc-700 bg-[#111418] px-4 py-3 text-right text-sm">
+                      <p className="text-xs text-zinc-500">Saved</p>
+
+                      <p className="font-semibold text-zinc-100">
+                        {niceDate(createdAt)}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="mt-4 grid gap-2 text-sm text-zinc-400 md:grid-cols-3">
+                    <p>
+                      Submitted by:{" "}
+                      <span className="font-semibold text-zinc-200">
+                        {cleanValue(createdBy)}
+                      </span>
+                    </p>
+
+                    <p>
+                      Time:{" "}
+                      <span className="font-semibold text-zinc-200">
+                        {niceDateTime(createdAt)}
+                      </span>
+                    </p>
+
+                    <p>
+                      Fields:{" "}
+                      <span className="font-semibold text-zinc-200">
+                        {Object.keys(record).length}
+                      </span>
+                    </p>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        )}
+      </section>
+
+      {selectedRecord && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4">
+          <div className="max-h-[90vh] w-full max-w-6xl overflow-y-auto rounded-3xl border border-zinc-800 bg-[#14181d] p-6 shadow-2xl">
+            <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.3em] text-red-400">
+                  Clutch Measurement Record
+                </p>
+
+                <h2 className="mt-3 text-4xl font-semibold text-zinc-100">
+                  Car {carId}
+                </h2>
+
+                <p className="mt-2 text-sm text-zinc-400">
+                  Saved{" "}
+                  <span className="font-semibold text-zinc-200">
+                    {niceDateTime(getFirstValue(selectedRecord, ["created_at"]))}
+                  </span>{" "}
+                  by{" "}
+                  <span className="font-semibold text-zinc-200">
+                    {cleanValue(
+                      getFirstValue(selectedRecord, [
+                        "created_by",
+                        "updated_by",
+                        "submitted_by",
+                      ]),
+                    )}
+                  </span>
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setSelectedRecord(null)}
+                className="rounded-xl border border-zinc-700 px-5 py-3 text-sm font-semibold text-zinc-200 hover:border-red-500 hover:text-red-300"
+              >
+                Close
+              </button>
+            </div>
+
+            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+              <DetailField
+                label="Track"
+                value={getFirstValue(selectedRecord, [
+                  "track_name",
+                  "track",
+                  "circuit",
+                ])}
+              />
+
+              <DetailField
+                label="Driver"
+                value={getFirstValue(selectedRecord, [
+                  "driver",
+                  "driver_name",
+                ])}
+              />
+
+              <DetailField
+                label="Chassis"
+                value={getFirstValue(selectedRecord, [
+                  "chassis",
+                  "chassis_no",
+                ])}
+              />
+
+              <DetailField
+                label="Created"
+                value={niceDateTime(
+                  getFirstValue(selectedRecord, ["created_at"]),
+                )}
+              />
+            </div>
+
+            <div className="mt-6 rounded-3xl border border-zinc-800 bg-[#0d0f12] p-5">
+              <p className="mb-4 text-xs font-semibold uppercase tracking-[0.3em] text-red-400">
+                Full Sheet Data
+              </p>
+
+              <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                {Object.entries(selectedRecord)
+                  .filter(([key]) => !isMainField(key))
+                  .map(([key, value]) => (
+                    <DetailField
+                      key={key}
+                      label={formatLabel(key)}
+                      value={value}
+                    />
+                  ))}
+              </div>
+            </div>
+
+            <div className="mt-6 rounded-3xl border border-zinc-800 bg-[#0d0f12] p-5">
+              <p className="mb-4 text-xs font-semibold uppercase tracking-[0.3em] text-red-400">
+                Raw Record
+              </p>
+
+              <pre className="max-h-[320px] overflow-auto rounded-2xl border border-zinc-800 bg-black p-4 text-xs leading-5 text-zinc-300">
+                {JSON.stringify(selectedRecord, null, 2)}
+              </pre>
+            </div>
+          </div>
+        </div>
+      )}
+    </main>
+  );
+}

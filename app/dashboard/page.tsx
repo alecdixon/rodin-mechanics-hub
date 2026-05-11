@@ -703,17 +703,16 @@ export default function DashboardPage() {
         </section>
       )}
 
-      <section className="grid grid-cols-1 gap-6 md:grid-cols-3">
+      <section className="grid grid-cols-1 gap-6 xl:grid-cols-3">
         {activeCars.length === 0 ? (
-          <div className="rounded-3xl border border-dashed border-zinc-700 bg-[#14181d] p-7 text-sm text-zinc-500 md:col-span-3">
+          <div className="rounded-3xl border border-dashed border-zinc-700 bg-[#14181d] p-7 text-sm text-zinc-500 xl:col-span-3">
             No active cars. Open Manage Cars and set at least one car to Active.
           </div>
         ) : (
           activeCars.map((car) => (
-            <Link
+            <article
               key={car.id}
-              href={`/dashboard/car/${car.id}/viewer`}
-              className="group rounded-3xl border border-zinc-800 bg-[#14181d] p-7 shadow-lg transition hover:-translate-y-1 hover:bg-[#181d23]"
+              className="rounded-3xl border border-zinc-800 bg-[#14181d] p-6 shadow-lg transition hover:-translate-y-1 hover:bg-[#181d23]"
               style={{
                 borderColor: "#27272a",
               }}
@@ -724,10 +723,10 @@ export default function DashboardPage() {
                 event.currentTarget.style.borderColor = "#27272a";
               }}
             >
-              <div className="flex flex-col items-center">
+              <div className="flex flex-col items-center border-b border-zinc-800 pb-6">
                 <ProgressDial progress={car.progress} colour={car.colour} />
 
-                <div className="mt-6 text-center">
+                <div className="mt-5 text-center">
                   <h2 className="text-2xl font-semibold tracking-tight">
                     {car.name}
                   </h2>
@@ -742,15 +741,69 @@ export default function DashboardPage() {
                   </div>
 
                   <p className="mt-3 text-sm text-zinc-500">
-                    {car.completed} of {car.total || "—"} jobs complete
-                  </p>
-
-                  <p className="mt-4 text-sm text-zinc-500 group-hover:text-zinc-300">
-                    Open car viewer →
+                    {car.completed} of {car.total || "—"} workshop jobs complete
                   </p>
                 </div>
               </div>
-            </Link>
+
+              <div className="mt-6 space-y-5">
+                <div>
+                  <p className="mb-3 text-xs font-semibold uppercase tracking-[0.25em] text-red-400">
+                    Preparation Lists
+                  </p>
+
+                  <div className="grid gap-2">
+                    <Link
+                      href={`/dashboard/car/${car.id}/job-list`}
+                      className="rounded-xl border border-zinc-700 bg-[#0d0f12] px-4 py-3 text-sm font-semibold text-zinc-200 hover:border-red-500 hover:text-red-300"
+                    >
+                      Workshop Job List
+                      <span className="mt-1 block text-xs font-normal text-zinc-500">
+                        Set, check and modify the main workshop jobs
+                      </span>
+                    </Link>
+
+                    <Link
+                      href={`/dashboard/car/${car.id}/evening-job-list`}
+                      className="rounded-xl border border-zinc-700 bg-[#0d0f12] px-4 py-3 text-sm font-semibold text-zinc-200 hover:border-red-500 hover:text-red-300"
+                    >
+                      Evening Prep Job List
+                      <span className="mt-1 block text-xs font-normal text-zinc-500">
+                        Set, check and modify evening prep jobs
+                      </span>
+                    </Link>
+                  </div>
+                </div>
+
+                <div>
+                  <p className="mb-3 text-xs font-semibold uppercase tracking-[0.25em] text-red-400">
+                    Sheets / Records
+                  </p>
+
+                  <div className="grid gap-2">
+                    <Link
+                      href={`/dashboard/car/${car.id}/clutch-measurement`}
+                      className="rounded-xl border border-zinc-700 bg-[#0d0f12] px-4 py-3 text-sm font-semibold text-zinc-200 hover:border-red-500 hover:text-red-300"
+                    >
+                      Clutch Measurement
+                      <span className="mt-1 block text-xs font-normal text-zinc-500">
+                        Review clutch data submitted for this car
+                      </span>
+                    </Link>
+
+                    <Link
+                      href={`/dashboard/car/${car.id}/post-event`}
+                      className="rounded-xl border border-zinc-700 bg-[#0d0f12] px-4 py-3 text-sm font-semibold text-zinc-200 hover:border-red-500 hover:text-red-300"
+                    >
+                      Post Event Sheet
+                      <span className="mt-1 block text-xs font-normal text-zinc-500">
+                        Review post-event information and saved PDFs
+                      </span>
+                    </Link>
+                  </div>
+                </div>
+              </div>
+            </article>
           ))
         )}
       </section>
