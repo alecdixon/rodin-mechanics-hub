@@ -17,6 +17,15 @@ type ClutchRecord = Record<string, unknown> & {
   submitted_by?: string | null;
   pdf_path?: string | null;
   pdf_url?: string | null;
+  driven_plates?: unknown;
+  intermediate_plates?: unknown;
+};
+
+type PlateRow = {
+  no?: string | number;
+  a?: string | number;
+  b?: string | number;
+  c?: string | number;
 };
 
 const CLUTCH_PDF_BUCKET = "clutch-measurement-pdfs";
@@ -92,7 +101,7 @@ function hasPdf(record: ClutchRecord) {
   return Boolean(record.pdf_url || record.pdf_path);
 }
 
-function isMainField(key: string) {
+function shouldHideFromGenericData(key: string) {
   return [
     "id",
     "car_id",
@@ -101,7 +110,50 @@ function isMainField(key: string) {
     "updated_at",
     "updated_by",
     "submitted_by",
+    "pdf_path",
+    "pdf_url",
+    "driven_plates",
+    "intermediate_plates",
   ].includes(key);
+}
+
+function parsePlateRows(value: unknown): PlateRow[] {
+  if (!value) return [];
+
+  if (Array.isArray(value)) {
+    return value as PlateRow[];
+  }
+
+  if (typeof value === "string") {
+    try {
+      const parsed = JSON.parse(value);
+
+      if (Array.isArray(parsed)) {
+        return parsed as PlateRow[];
+      }
+
+      return [];
+    } catch {
+      return [];
+    }
+  }
+
+  return [];
+}
+
+function plateNumber(value: unknown) {
+  const numberValue = Number(value);
+  return Number.isNaN(numberValue) ? null : numberValue;
+}
+
+function plateMean(row: PlateRow) {
+  const values = [plateNumber(row.a), plateNumber(row.b), plateNumber(row.c)]
+    .filter((value): value is number => value !== null);
+
+  if (values.length === 0) return "—";
+
+  const total = values.reduce((sum, value) => sum + value, 0);
+  return (total / values.length).toFixed(3);
 }
 
 function DetailField({
@@ -124,6 +176,93 @@ function DetailField({
   );
 }
 
+function PlateTable({
+  title,
+  value,
+}: {
+  title: string;
+  value: unknown;
+}) {
+  const rows = parsePlateRows(value);
+
+  return (
+    <div className="rounded-3xl border border-zinc-800 bg-[#0d0f12] p-5">
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+        <p className="text-xs font-semibold uppercase tracking-[0.3em] text-red-400">
+          {title}
+        </p>
+
+        <div className="rounded-xl border border-zinc-700 bg-black px-3 py-2 text-xs font-semibold text-zinc-300">
+          {rows.length} plate{rows.length === 1 ? "" : "s"}
+        </div>
+      </div>
+
+      {rows.length === 0 ? (
+        <div className="rounded-2xl border border-dashed border-zinc-700 bg-[#111418] p-5 text-sm text-zinc-500">
+          No plate data saved.
+        </div>
+      ) : (
+        <div className="overflow-hidden rounded-2xl border border-zinc-800">
+          <table className="w-full border-collapse text-sm">
+            <thead className="bg-[#14181d] text-xs uppercase tracking-[0.18em] text-zinc-500">
+              <tr>
+                <th className="border-b border-zinc-800 px-4 py-3 text-left">
+                  Plate
+                </th>
+
+                <th className="border-b border-zinc-800 px-4 py-3 text-left">
+                  A
+                </th>
+
+                <th className="border-b border-zinc-800 px-4 py-3 text-left">
+                  B
+                </th>
+
+                <th className="border-b border-zinc-800 px-4 py-3 text-left">
+                  C
+                </th>
+
+                <th className="border-b border-zinc-800 px-4 py-3 text-left">
+                  Mean
+                </th>
+              </tr>
+            </thead>
+
+            <tbody>
+              {rows.map((row, index) => (
+                <tr
+                  key={index}
+                  className="border-b border-zinc-800 last:border-b-0"
+                >
+                  <td className="px-4 py-3 font-semibold text-zinc-100">
+                    {cleanValue(row.no ?? index + 1)}
+                  </td>
+
+                  <td className="px-4 py-3 text-zinc-300">
+                    {cleanValue(row.a)}
+                  </td>
+
+                  <td className="px-4 py-3 text-zinc-300">
+                    {cleanValue(row.b)}
+                  </td>
+
+                  <td className="px-4 py-3 text-zinc-300">
+                    {cleanValue(row.c)}
+                  </td>
+
+                  <td className="px-4 py-3 font-semibold text-red-200">
+                    {plateMean(row)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function ChiefClutchMeasurementPage() {
   const params = useParams();
   const router = useRouter();
@@ -137,7 +276,6 @@ export default function ChiefClutchMeasurementPage() {
 
   const [dateFilter, setDateFilter] = useState("");
   const [searchText, setSearchText] = useState("");
-
   const [openingPdfKey, setOpeningPdfKey] = useState<string | null>(null);
 
   const [message, setMessage] = useState("");
@@ -637,14 +775,26 @@ export default function ChiefClutchMeasurementPage() {
               </div>
             </div>
 
+            <div className="mt-6 grid gap-6 xl:grid-cols-2">
+              <PlateTable
+                title="Driven Plates"
+                value={selectedRecord.driven_plates}
+              />
+
+              <PlateTable
+                title="Intermediate Plates"
+                value={selectedRecord.intermediate_plates}
+              />
+            </div>
+
             <div className="mt-6 rounded-3xl border border-zinc-800 bg-[#0d0f12] p-5">
               <p className="mb-4 text-xs font-semibold uppercase tracking-[0.3em] text-red-400">
-                Full Sheet Data
+                Measurement Summary
               </p>
 
               <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
                 {Object.entries(selectedRecord)
-                  .filter(([key]) => !isMainField(key))
+                  .filter(([key]) => !shouldHideFromGenericData(key))
                   .map(([key, value]) => (
                     <DetailField
                       key={key}
@@ -655,15 +805,15 @@ export default function ChiefClutchMeasurementPage() {
               </div>
             </div>
 
-            <div className="mt-6 rounded-3xl border border-zinc-800 bg-[#0d0f12] p-5">
-              <p className="mb-4 text-xs font-semibold uppercase tracking-[0.3em] text-red-400">
+            <details className="mt-6 rounded-3xl border border-zinc-800 bg-[#0d0f12] p-5">
+              <summary className="cursor-pointer text-xs font-semibold uppercase tracking-[0.3em] text-red-400">
                 Raw Record
-              </p>
+              </summary>
 
-              <pre className="max-h-[320px] overflow-auto rounded-2xl border border-zinc-800 bg-black p-4 text-xs leading-5 text-zinc-300">
+              <pre className="mt-4 max-h-[320px] overflow-auto rounded-2xl border border-zinc-800 bg-black p-4 text-xs leading-5 text-zinc-300">
                 {JSON.stringify(selectedRecord, null, 2)}
               </pre>
-            </div>
+            </details>
           </div>
         </div>
       )}
