@@ -33,6 +33,10 @@ type JobRelease = {
   job_date: string | null;
   released_by: string | null;
   released_at: string | null;
+  version_number: number | null;
+  status: "draft" | "published" | string | null;
+  published_at: string | null;
+  published_by: string | null;
 };
 
 function niceDate(value: string | null | undefined) {
@@ -81,6 +85,26 @@ function StatusPill({
   );
 }
 
+function PublishStatusPill({
+  status,
+}: {
+  status: string | null | undefined;
+}) {
+  const isPublished = status === "published";
+
+  return (
+    <span
+      className={`inline-flex rounded-full border px-3 py-1 text-xs font-semibold uppercase tracking-[0.16em] ${
+        isPublished
+          ? "border-green-800 bg-green-950/30 text-green-300"
+          : "border-yellow-800 bg-yellow-950/20 text-yellow-300"
+      }`}
+    >
+      {isPublished ? "Published" : "Draft"}
+    </span>
+  );
+}
+
 export default function ChiefJobListEditorPage() {
   const params = useParams();
   const router = useRouter();
@@ -99,6 +123,7 @@ export default function ChiefJobListEditorPage() {
   const [loading, setLoading] = useState(true);
   const [updatingTemplate, setUpdatingTemplate] = useState(false);
   const [savingReleaseInfo, setSavingReleaseInfo] = useState(false);
+  const [publishingJobList, setPublishingJobList] = useState(false);
   const [addingSpecialJob, setAddingSpecialJob] = useState(false);
   const [clearingStandardJobs, setClearingStandardJobs] = useState(false);
   const [clearingAllJobs, setClearingAllJobs] = useState(false);
@@ -225,6 +250,10 @@ export default function ChiefJobListEditorPage() {
         job_date: jobDate || null,
         released_by: userData.user?.email ?? null,
         released_at: new Date().toISOString(),
+        status: releaseInfo?.status === "published" ? "published" : "draft",
+        version_number: releaseInfo?.version_number ?? 0,
+        published_at: releaseInfo?.published_at ?? null,
+        published_by: releaseInfo?.published_by ?? null,
       },
       {
         onConflict: "car_id",
@@ -244,6 +273,115 @@ export default function ChiefJobListEditorPage() {
     return true;
   }
 
+  async function markDraft(customMessage?: string) {
+    const { data: userData, error: userError } = await supabase.auth.getUser();
+
+    if (userError) {
+      setErrorMessage(`User check failed: ${userError.message}`);
+      return false;
+    }
+
+    const { error } = await supabase.from("job_list_releases").upsert(
+      {
+        car_id: carId,
+        after_event: afterEvent.trim() || null,
+        job_date: jobDate || null,
+        released_by: userData.user?.email ?? null,
+        released_at: new Date().toISOString(),
+        status: "draft",
+        version_number: releaseInfo?.version_number ?? 0,
+        published_at: releaseInfo?.published_at ?? null,
+        published_by: releaseInfo?.published_by ?? null,
+      },
+      {
+        onConflict: "car_id",
+      },
+    );
+
+    if (error) {
+      setErrorMessage(`Could not mark job list as draft: ${error.message}`);
+      return false;
+    }
+
+    await loadReleaseInfo();
+
+    if (customMessage) {
+      setMessage(customMessage);
+    }
+
+    return true;
+  }
+
+  async function publishJobList() {
+    setMessage("");
+    setErrorMessage("");
+
+    if (jobs.length === 0) {
+      setErrorMessage("Add or update jobs before publishing the job list.");
+      return;
+    }
+
+    if (!afterEvent.trim()) {
+      setErrorMessage("Enter an event/session name before publishing.");
+      return;
+    }
+
+    if (!jobDate) {
+      setErrorMessage("Enter a job list date before publishing.");
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `Publish workshop job list for Car ${carId}?\n\nMechanics will see this as the official published version.`,
+    );
+
+    if (!confirmed) return;
+
+    setPublishingJobList(true);
+
+    const { data: userData, error: userError } = await supabase.auth.getUser();
+
+    if (userError) {
+      setErrorMessage(`User check failed: ${userError.message}`);
+      setPublishingJobList(false);
+      return;
+    }
+
+    const currentVersion = releaseInfo?.version_number ?? 0;
+    const nextVersion = currentVersion + 1;
+    const now = new Date().toISOString();
+    const email = userData.user?.email ?? null;
+
+    const { error } = await supabase.from("job_list_releases").upsert(
+      {
+        car_id: carId,
+        after_event: afterEvent.trim() || null,
+        job_date: jobDate || null,
+        released_by: email,
+        released_at: now,
+        version_number: nextVersion,
+        status: "published",
+        published_at: now,
+        published_by: email,
+      },
+      {
+        onConflict: "car_id",
+      },
+    );
+
+    if (error) {
+      setErrorMessage(`Could not publish job list: ${error.message}`);
+      setPublishingJobList(false);
+      return;
+    }
+
+    await loadReleaseInfo();
+    await loadJobs();
+
+    setMessage(`Workshop job list published as version ${nextVersion}.`);
+    setPublishingJobList(false);
+  }
+
   async function updateFromTemplate() {
     setMessage("");
     setErrorMessage("");
@@ -258,7 +396,7 @@ export default function ChiefJobListEditorPage() {
     }
 
     const confirmed = window.confirm(
-      `Update Car ${carId} from "${selectedTemplate.name}"?\n\nThis will create or update the STANDARD workshop jobs for this car. Special jobs will be kept.`,
+      `Update Car ${carId} from "${selectedTemplate.name}"?\n\nThis will create or update the STANDARD workshop jobs for this car. Special jobs will be kept.\n\nAfter checking it, click Publish Job List so mechanics know they are on the official version.`,
     );
 
     if (!confirmed) return;
@@ -309,8 +447,8 @@ export default function ChiefJobListEditorPage() {
       return;
     }
 
-    await saveReleaseInfo(
-      `Updated Car ${carId} workshop list from "${selectedTemplate.name}".`,
+    await markDraft(
+      `Updated Car ${carId} workshop list from "${selectedTemplate.name}". Publish it when ready.`,
     );
 
     await loadJobs();
@@ -319,7 +457,7 @@ export default function ChiefJobListEditorPage() {
 
   async function clearStandardJobs() {
     const confirmed = window.confirm(
-      `Clear STANDARD workshop jobs for Car ${carId}?\n\nThis removes only the template workshop jobs. Special jobs and release details will be kept.`,
+      `Clear STANDARD workshop jobs for Car ${carId}?\n\nThis removes only the template workshop jobs. Special jobs and release details will be kept.\n\nThe list will be marked as draft until published again.`,
     );
 
     if (!confirmed) return;
@@ -340,9 +478,9 @@ export default function ChiefJobListEditorPage() {
       return;
     }
 
+    await markDraft(`Standard workshop jobs cleared for Car ${carId}.`);
     await loadJobs();
 
-    setMessage(`Standard workshop jobs cleared for Car ${carId}.`);
     setClearingStandardJobs(false);
   }
 
@@ -377,7 +515,10 @@ export default function ChiefJobListEditorPage() {
 
     if (error) {
       setErrorMessage(`Could not update job: ${error.message}`);
+      return;
     }
+
+    await markDraft();
   }
 
   async function addSpecialJob() {
@@ -430,7 +571,7 @@ export default function ChiefJobListEditorPage() {
       return;
     }
 
-    await saveReleaseInfo("Special job added and released.");
+    await markDraft("Special job added. Publish the job list when ready.");
     setNewSpecialJob("");
     await loadJobs();
 
@@ -480,7 +621,7 @@ export default function ChiefJobListEditorPage() {
       }),
     );
 
-    setMessage("Job removed.");
+    await markDraft("Job removed. Publish the job list when ready.");
     await loadJobs();
     setRemovingJobKey(null);
   }
@@ -541,6 +682,9 @@ export default function ChiefJobListEditorPage() {
     return templates.find((template) => template.id === selectedTemplateId);
   }, [templates, selectedTemplateId]);
 
+  const isPublished = releaseInfo?.status === "published";
+  const versionNumber = releaseInfo?.version_number ?? 0;
+
   if (loading) {
     return (
       <main className="flex min-h-screen items-center justify-center bg-[#0d0f12] text-zinc-400">
@@ -562,9 +706,8 @@ export default function ChiefJobListEditorPage() {
           </h1>
 
           <p className="mt-3 max-w-3xl text-sm leading-6 text-zinc-400">
-            Create, update, clear and monitor the workshop preparation list for
-            this car. Standard template jobs and special car-specific jobs are
-            kept separate.
+            Create, update, clear and publish the workshop preparation list.
+            Mechanics should only work from the published version.
           </p>
         </div>
 
@@ -657,9 +800,13 @@ export default function ChiefJobListEditorPage() {
       <section className="mb-6 rounded-3xl border border-zinc-800 bg-[#14181d] p-6 shadow-xl">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.3em] text-red-400">
-              Release Details
-            </p>
+            <div className="flex flex-wrap items-center gap-3">
+              <p className="text-xs font-semibold uppercase tracking-[0.3em] text-red-400">
+                Publication
+              </p>
+
+              <PublishStatusPill status={releaseInfo?.status} />
+            </div>
 
             <h2 className="mt-3 text-3xl font-semibold">
               {releaseInfo?.after_event || "No event name set"}
@@ -674,21 +821,35 @@ export default function ChiefJobListEditorPage() {
               </span>
 
               <span>
-                Released:{" "}
+                Version:{" "}
                 <span className="font-semibold text-zinc-100">
-                  {niceDateTime(releaseInfo?.released_at)}
+                  {versionNumber || "Not published"}
                 </span>
               </span>
 
-              {releaseInfo?.released_by && (
+              <span>
+                Published:{" "}
+                <span className="font-semibold text-zinc-100">
+                  {niceDateTime(releaseInfo?.published_at)}
+                </span>
+              </span>
+
+              {releaseInfo?.published_by && (
                 <span>
                   By:{" "}
                   <span className="font-semibold text-zinc-100">
-                    {releaseInfo.released_by}
+                    {releaseInfo.published_by}
                   </span>
                 </span>
               )}
             </div>
+
+            {!isPublished && (
+              <div className="mt-4 rounded-2xl border border-yellow-800/60 bg-yellow-950/20 p-4 text-sm text-yellow-200">
+                This job list is currently a draft. Mechanics should not treat it
+                as the official list until you publish it.
+              </div>
+            )}
           </div>
 
           <button
@@ -731,9 +892,18 @@ export default function ChiefJobListEditorPage() {
             type="button"
             onClick={() => saveReleaseInfo()}
             disabled={savingReleaseInfo}
-            className="rounded-xl bg-red-700 px-5 py-3 text-sm font-semibold text-white hover:bg-red-600 disabled:cursor-not-allowed disabled:opacity-50"
+            className="rounded-xl border border-zinc-700 bg-[#0d0f12] px-5 py-3 text-sm font-semibold text-zinc-200 hover:border-red-500 hover:text-red-300 disabled:cursor-not-allowed disabled:opacity-50"
           >
-            {savingReleaseInfo ? "Saving..." : "Save Release Details"}
+            {savingReleaseInfo ? "Saving..." : "Save Draft Details"}
+          </button>
+
+          <button
+            type="button"
+            onClick={publishJobList}
+            disabled={publishingJobList || jobs.length === 0}
+            className="rounded-xl bg-green-700 px-5 py-3 text-sm font-semibold text-white hover:bg-green-600 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {publishingJobList ? "Publishing..." : "Publish Job List"}
           </button>
 
           <button
@@ -759,8 +929,8 @@ export default function ChiefJobListEditorPage() {
 
           <p className="mt-2 text-sm leading-6 text-zinc-500">
             Choose a template, then update the standard workshop jobs for this
-            car. Special jobs are kept separate. Clear Standard Jobs removes only
-            the current template jobs.
+            car. Special jobs are kept separate. Publishing is a separate final
+            step.
           </p>
 
           <div className="mt-5 flex flex-wrap gap-3">
@@ -825,7 +995,8 @@ export default function ChiefJobListEditorPage() {
 
           <p className="mt-2 text-sm leading-6 text-zinc-400">
             Use this for urgent car-specific work, damage checks, or engineer
-            requests.
+            requests. Adding a special job marks the list as draft until
+            published again.
           </p>
 
           <div className="mt-5 space-y-3">
@@ -847,7 +1018,7 @@ export default function ChiefJobListEditorPage() {
               disabled={addingSpecialJob}
               className="w-full rounded-xl bg-red-700 px-5 py-3 text-sm font-semibold hover:bg-red-600 disabled:cursor-not-allowed disabled:opacity-50"
             >
-              {addingSpecialJob ? "Adding..." : "Release Special Job"}
+              {addingSpecialJob ? "Adding..." : "Add Special Job"}
             </button>
           </div>
         </div>
