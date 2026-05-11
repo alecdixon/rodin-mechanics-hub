@@ -222,6 +222,8 @@ export default function DashboardPage() {
   const [importingCalendar, setImportingCalendar] = useState(false);
 
   const [carSettingsOpen, setCarSettingsOpen] = useState(false);
+  const [expandedCarId, setExpandedCarId] = useState<number | null>(null);
+
   const [savingCarId, setSavingCarId] = useState<number | null>(null);
   const [addingCar, setAddingCar] = useState(false);
 
@@ -814,117 +816,150 @@ export default function DashboardPage() {
             No active cars. Open Manage Cars and set at least one car to Active.
           </div>
         ) : (
-          activeCars.map((car) => (
-            <article
-              key={car.id}
-              className="rounded-3xl border border-zinc-800 bg-[#14181d] p-6 shadow-lg transition hover:-translate-y-1 hover:bg-[#181d23]"
-              style={{
-                borderColor: "#27272a",
-              }}
-              onMouseEnter={(event) => {
-                event.currentTarget.style.borderColor = car.colour;
-              }}
-              onMouseLeave={(event) => {
-                event.currentTarget.style.borderColor = "#27272a";
-              }}
-            >
-              <Link
-                href={`/dashboard/car/${car.id}/viewer`}
-                className="block rounded-2xl border border-transparent p-2 transition hover:border-zinc-700 hover:bg-[#0d0f12]"
+          activeCars.map((car) => {
+            const isExpanded = expandedCarId === car.id;
+
+            return (
+              <article
+                key={car.id}
+                className={`rounded-3xl border bg-[#14181d] p-6 shadow-lg transition ${
+                  isExpanded
+                    ? "border-red-500/70 shadow-red-950/20"
+                    : "border-zinc-800 hover:border-zinc-600"
+                }`}
               >
-                <div className="flex flex-col items-center border-b border-zinc-800 pb-6">
-                  <ProgressDial progress={car.progress} colour={car.colour} />
+                <button
+                  type="button"
+                  onClick={() =>
+                    setExpandedCarId((current) =>
+                      current === car.id ? null : car.id,
+                    )
+                  }
+                  className="w-full rounded-2xl border border-transparent p-2 text-left transition hover:border-zinc-700 hover:bg-[#0d0f12]"
+                >
+                  <div className="flex flex-col items-center border-b border-zinc-800 pb-6">
+                    <ProgressDial progress={car.progress} colour={car.colour} />
 
-                  <div className="mt-5 text-center">
-                    <h2 className="text-2xl font-semibold tracking-tight">
-                      {car.name}
-                    </h2>
+                    <div className="mt-5 text-center">
+                      <h2 className="text-2xl font-semibold tracking-tight">
+                        {car.name}
+                      </h2>
 
-                    <JobStatusPill status={car.status} colour={car.colour} />
+                      <JobStatusPill status={car.status} colour={car.colour} />
 
-                    <p className="mt-3 text-sm text-zinc-500">
-                      {car.completed} of {car.total || "—"} workshop jobs
-                      complete
-                    </p>
+                      <p className="mt-3 text-sm text-zinc-500">
+                        {car.completed} of {car.total || "—"} workshop jobs
+                        complete
+                      </p>
 
-                    <p className="mt-3 text-xs font-semibold uppercase tracking-[0.2em] text-zinc-500">
-                      Open car hub →
-                    </p>
+                      <p className="mt-3 text-xs font-semibold uppercase tracking-[0.2em] text-zinc-500">
+                        {isExpanded
+                          ? "Close car options ↑"
+                          : "Open car options ↓"}
+                      </p>
+                    </div>
                   </div>
-                </div>
-              </Link>
+                </button>
 
-              <div className="mt-5 rounded-2xl border border-zinc-800 bg-[#0d0f12] p-4">
-                <div className="flex items-center justify-between gap-3">
-                  <div>
-                    <p className="text-xs font-semibold uppercase tracking-[0.25em] text-red-400">
-                      Evening Prep
-                    </p>
+                <div className="mt-5 rounded-2xl border border-zinc-800 bg-[#0d0f12] p-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <p className="text-xs font-semibold uppercase tracking-[0.25em] text-red-400">
+                        Evening Prep
+                      </p>
 
-                    <p className="mt-1 text-sm text-zinc-500">
-                      {car.eveningCompleted} of {car.eveningTotal || "—"}{" "}
-                      evening jobs complete
-                    </p>
+                      <p className="mt-1 text-sm text-zinc-500">
+                        {car.eveningCompleted} of {car.eveningTotal || "—"}{" "}
+                        evening jobs complete
+                      </p>
+                    </div>
+
+                    <div className="rounded-xl border border-zinc-700 bg-black px-3 py-2 text-lg font-bold text-zinc-100">
+                      {car.eveningProgress}%
+                    </div>
                   </div>
 
-                  <div className="rounded-xl border border-zinc-700 bg-black px-3 py-2 text-lg font-bold text-zinc-100">
-                    {car.eveningProgress}%
-                  </div>
-                </div>
-
-                <div className="mt-4 h-2 overflow-hidden rounded-full bg-zinc-800">
-                  <div
-                    className="h-full rounded-full bg-red-700"
-                    style={{
-                      width: `${car.eveningProgress}%`,
-                    }}
-                  />
-                </div>
-              </div>
-
-              <div className="mt-6 space-y-5">
-                <div>
-                  <p className="mb-3 text-xs font-semibold uppercase tracking-[0.25em] text-red-400">
-                    Preparation Lists
-                  </p>
-
-                  <div className="grid gap-2">
-                    <CardLink
-                      href={`/dashboard/car/${car.id}/job-list`}
-                      title="Workshop Job List"
-                      description="Set, check and modify the main workshop jobs"
-                    />
-
-                    <CardLink
-                      href={`/dashboard/car/${car.id}/evening-job-list`}
-                      title="Evening Prep Job List"
-                      description="Set, check and modify evening prep jobs"
+                  <div className="mt-4 h-2 overflow-hidden rounded-full bg-zinc-800">
+                    <div
+                      className="h-full rounded-full bg-red-700"
+                      style={{
+                        width: `${car.eveningProgress}%`,
+                      }}
                     />
                   </div>
                 </div>
 
-                <div>
-                  <p className="mb-3 text-xs font-semibold uppercase tracking-[0.25em] text-red-400">
-                    Sheets / Records
-                  </p>
+                {isExpanded && (
+                  <div className="mt-6 space-y-5 rounded-3xl border border-zinc-800 bg-[#0d0f12] p-5">
+                    <div className="flex flex-wrap items-start justify-between gap-4 border-b border-zinc-800 pb-5">
+                      <div>
+                        <p className="text-xs font-semibold uppercase tracking-[0.3em] text-red-400">
+                          Car Hub
+                        </p>
 
-                  <div className="grid gap-2">
-                    <CardLink
-                      href={`/dashboard/car/${car.id}/clutch-measurement`}
-                      title="Clutch Measurement"
-                      description="Review clutch data submitted for this car"
-                    />
+                        <h3 className="mt-2 text-2xl font-semibold text-zinc-100">
+                          {car.name}
+                        </h3>
 
-                    <CardLink
-                      href={`/dashboard/car/${car.id}/post-event`}
-                      title="Post Event Sheet"
-                      description="Review post-event information and saved PDFs"
-                    />
+                        <p className="mt-1 text-sm text-zinc-500">
+                          Select what you want to manage or review for this car.
+                        </p>
+                      </div>
+
+                      <Link
+                        href={`/dashboard/car/${car.id}/viewer`}
+                        className="rounded-xl border border-zinc-700 bg-[#14181d] px-4 py-3 text-sm font-semibold text-zinc-200 hover:border-red-500 hover:text-red-300"
+                      >
+                        Open Full Overview
+                      </Link>
+                    </div>
+
+                    <div className="grid gap-4">
+                      <div className="rounded-2xl border border-zinc-800 bg-[#14181d] p-4">
+                        <p className="mb-3 text-xs font-semibold uppercase tracking-[0.25em] text-red-400">
+                          Preparation Lists
+                        </p>
+
+                        <div className="grid gap-2">
+                          <CardLink
+                            href={`/dashboard/car/${car.id}/job-list`}
+                            title="Workshop Job List"
+                            description="Set, check and modify the main workshop jobs"
+                          />
+
+                          <CardLink
+                            href={`/dashboard/car/${car.id}/evening-job-list`}
+                            title="Evening Prep Job List"
+                            description="Set, check and modify evening prep jobs"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="rounded-2xl border border-zinc-800 bg-[#14181d] p-4">
+                        <p className="mb-3 text-xs font-semibold uppercase tracking-[0.25em] text-red-400">
+                          Sheets / Records
+                        </p>
+
+                        <div className="grid gap-2">
+                          <CardLink
+                            href={`/dashboard/car/${car.id}/clutch-measurement`}
+                            title="Clutch Measurement"
+                            description="Review clutch data submitted for this car"
+                          />
+
+                          <CardLink
+                            href={`/dashboard/car/${car.id}/post-event`}
+                            title="Post Event Sheet"
+                            description="Review post-event information and saved PDFs"
+                          />
+                        </div>
+                      </div>
+                    </div>
                   </div>
-                </div>
-              </div>
-            </article>
-          ))
+                )}
+              </article>
+            );
+          })
         )}
       </section>
 
