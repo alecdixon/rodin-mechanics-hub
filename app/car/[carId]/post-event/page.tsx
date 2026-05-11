@@ -303,7 +303,6 @@ export default function PostEventSheetPage() {
         error instanceof Error ? error.message : "Failed to save post-event PDF.",
       );
     }
-    }
 
     setSaving(false);
   }
