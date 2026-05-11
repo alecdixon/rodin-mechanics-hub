@@ -37,12 +37,22 @@ type EveningJobRelease = {
 
 function niceDate(value: string | null | undefined) {
   if (!value) return "No date set";
-  return new Date(value).toLocaleDateString("en-GB");
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) return value;
+
+  return date.toLocaleDateString("en-GB");
 }
 
 function niceDateTime(value: string | null | undefined) {
   if (!value) return "No timestamp";
-  return new Date(value).toLocaleString("en-GB");
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) return value;
+
+  return date.toLocaleString("en-GB");
 }
 
 export default function ChiefEveningJobListPage() {
@@ -56,13 +66,16 @@ export default function ChiefEveningJobListPage() {
 
   const [afterEvent, setAfterEvent] = useState("");
   const [jobDate, setJobDate] = useState("");
-  const [releaseInfo, setReleaseInfo] = useState<EveningJobRelease | null>(null);
+  const [releaseInfo, setReleaseInfo] = useState<EveningJobRelease | null>(
+    null,
+  );
 
   const [newSpecialJob, setNewSpecialJob] = useState("");
   const [loading, setLoading] = useState(true);
   const [importing, setImporting] = useState(false);
   const [savingReleaseInfo, setSavingReleaseInfo] = useState(false);
   const [clearingJobs, setClearingJobs] = useState(false);
+  const [addingSpecialJob, setAddingSpecialJob] = useState(false);
   const [clearingNoteKey, setClearingNoteKey] = useState<string | null>(null);
 
   const [message, setMessage] = useState("");
@@ -77,7 +90,7 @@ export default function ChiefEveningJobListPage() {
       .order("job_id", { ascending: true });
 
     if (error) {
-      setErrorMessage(error.message);
+      setErrorMessage(`Evening jobs failed to load: ${error.message}`);
       return;
     }
 
@@ -91,7 +104,7 @@ export default function ChiefEveningJobListPage() {
       .order("name", { ascending: true });
 
     if (error) {
-      setErrorMessage(error.message);
+      setErrorMessage(`Evening templates failed to load: ${error.message}`);
       return;
     }
 
@@ -99,7 +112,7 @@ export default function ChiefEveningJobListPage() {
     setTemplates(cleanTemplates);
 
     if (cleanTemplates.length > 0) {
-      setSelectedTemplateId(cleanTemplates[0].id);
+      setSelectedTemplateId((current) => current || cleanTemplates[0].id);
     }
   }
 
@@ -111,7 +124,7 @@ export default function ChiefEveningJobListPage() {
       .maybeSingle();
 
     if (error) {
-      setErrorMessage(error.message);
+      setErrorMessage(`Evening release details failed to load: ${error.message}`);
       return;
     }
 
@@ -132,7 +145,14 @@ export default function ChiefEveningJobListPage() {
     setMessage("");
     setErrorMessage("");
 
-    const { data } = await supabase.auth.getUser();
+    const { data, error } = await supabase.auth.getUser();
+
+    if (error) {
+      setErrorMessage(`User check failed: ${error.message}`);
+      setLoading(false);
+      return;
+    }
+
     const role = getUserRole(data.user?.email ?? "");
 
     if (role !== "chief") {
@@ -151,6 +171,7 @@ export default function ChiefEveningJobListPage() {
     if (carId) {
       loadEverything();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [carId]);
 
   async function saveReleaseInfo(customMessage?: string) {
@@ -158,7 +179,13 @@ export default function ChiefEveningJobListPage() {
     setErrorMessage("");
     setSavingReleaseInfo(true);
 
-    const { data: userData } = await supabase.auth.getUser();
+    const { data: userData, error: userError } = await supabase.auth.getUser();
+
+    if (userError) {
+      setErrorMessage(`User check failed: ${userError.message}`);
+      setSavingReleaseInfo(false);
+      return false;
+    }
 
     const { error } = await supabase.from("evening_job_list_releases").upsert(
       {
@@ -174,12 +201,13 @@ export default function ChiefEveningJobListPage() {
     );
 
     if (error) {
-      setErrorMessage(error.message);
+      setErrorMessage(`Evening release details failed to save: ${error.message}`);
       setSavingReleaseInfo(false);
       return false;
     }
 
     await loadReleaseInfo();
+
     setSavingReleaseInfo(false);
     setMessage(customMessage || "Evening prep release details saved.");
     return true;
@@ -213,28 +241,30 @@ export default function ChiefEveningJobListPage() {
       .eq("section", "standard");
 
     if (deleteError) {
-      setErrorMessage(deleteError.message);
+      setErrorMessage(`Could not replace standard evening jobs: ${deleteError.message}`);
       setImporting(false);
       return;
     }
 
-    const rows: Omit<EveningJobRow, "id" | "notes">[] =
-      selectedTemplate.jobs.map((text, index) => ({
-        car_id: carId,
-        job_id: index + 1,
-        job_text: text,
-        section: "standard",
-        done: false,
-        updated_by: null,
-        updated_at: new Date().toISOString(),
-      }));
+    const now = new Date().toISOString();
+
+    const rows = selectedTemplate.jobs.map((text, index) => ({
+      car_id: carId,
+      job_id: index + 1,
+      job_text: text,
+      section: "standard" as const,
+      done: false,
+      notes: null,
+      updated_by: null,
+      updated_at: now,
+    }));
 
     const { error: insertError } = await supabase
       .from("evening_job_progress")
       .insert(rows);
 
     if (insertError) {
-      setErrorMessage(insertError.message);
+      setErrorMessage(`Could not import evening template: ${insertError.message}`);
       setImporting(false);
       return;
     }
@@ -269,16 +299,32 @@ export default function ChiefEveningJobListPage() {
       .eq("section", job.section);
 
     if (error) {
-      setErrorMessage(error.message);
+      setErrorMessage(`Could not update evening job: ${error.message}`);
     }
   }
 
   async function addSpecialJob() {
     const text = newSpecialJob.trim();
-    if (!text) return;
 
     setMessage("");
     setErrorMessage("");
+
+    if (!text) {
+      setErrorMessage("Enter a special evening job before releasing it.");
+      return;
+    }
+
+    setAddingSpecialJob(true);
+
+    const { data: userData, error: userError } = await supabase.auth.getUser();
+
+    if (userError) {
+      setErrorMessage(`User check failed: ${userError.message}`);
+      setAddingSpecialJob(false);
+      return;
+    }
+
+    const userEmail = userData.user?.email ?? null;
 
     const existingSpecialIds = jobs
       .filter((job) => job.section === "special")
@@ -288,6 +334,8 @@ export default function ChiefEveningJobListPage() {
       ? Math.max(...existingSpecialIds) + 1
       : 1;
 
+    const now = new Date().toISOString();
+
     const newRow = {
       car_id: carId,
       job_id: nextId,
@@ -295,20 +343,40 @@ export default function ChiefEveningJobListPage() {
       section: "special" as const,
       done: false,
       notes: null,
-      updated_by: null,
-      updated_at: new Date().toISOString(),
+      updated_by: userEmail,
+      updated_at: now,
     };
 
-    const { error } = await supabase.from("evening_job_progress").insert(newRow);
+    const { data, error } = await supabase
+      .from("evening_job_progress")
+      .insert(newRow)
+      .select();
 
     if (error) {
-      setErrorMessage(error.message);
+      setErrorMessage(`Failed to add special evening job: ${error.message}`);
+      setAddingSpecialJob(false);
       return;
     }
 
-    await saveReleaseInfo("Special evening prep job added and released.");
-    setNewSpecialJob("");
+    if (!data || data.length === 0) {
+      setErrorMessage(
+        "Supabase did not return the inserted evening job. Check RLS insert/select policies.",
+      );
+      setAddingSpecialJob(false);
+      return;
+    }
+
+    const releaseSaved = await saveReleaseInfo(
+      "Special evening prep job added and released.",
+    );
+
     await loadJobs();
+
+    if (releaseSaved) {
+      setNewSpecialJob("");
+    }
+
+    setAddingSpecialJob(false);
   }
 
   async function removeJob(job: EveningJobRow) {
@@ -329,7 +397,7 @@ export default function ChiefEveningJobListPage() {
       .eq("section", job.section);
 
     if (error) {
-      setErrorMessage(error.message);
+      setErrorMessage(`Could not remove evening job: ${error.message}`);
       return;
     }
 
@@ -351,7 +419,14 @@ export default function ChiefEveningJobListPage() {
     setMessage("");
     setErrorMessage("");
 
-    const { data: userData } = await supabase.auth.getUser();
+    const { data: userData, error: userError } = await supabase.auth.getUser();
+
+    if (userError) {
+      setErrorMessage(`User check failed: ${userError.message}`);
+      setClearingNoteKey(null);
+      return;
+    }
+
     const email = userData.user?.email ?? "chief";
 
     const { error } = await supabase
@@ -407,7 +482,7 @@ export default function ChiefEveningJobListPage() {
       .eq("car_id", carId);
 
     if (jobsError) {
-      setErrorMessage(jobsError.message);
+      setErrorMessage(`Could not clear evening jobs: ${jobsError.message}`);
       setClearingJobs(false);
       return;
     }
@@ -418,7 +493,7 @@ export default function ChiefEveningJobListPage() {
       .eq("car_id", carId);
 
     if (releaseError) {
-      setErrorMessage(releaseError.message);
+      setErrorMessage(`Could not clear evening release details: ${releaseError.message}`);
       setClearingJobs(false);
       return;
     }
@@ -464,14 +539,7 @@ export default function ChiefEveningJobListPage() {
     <main className="min-h-screen bg-[#0d0f12] p-6 text-zinc-100">
       <div className="mb-8 flex flex-wrap items-start justify-between gap-4">
         <div>
-          <Link
-            href="/dashboard"
-            className="text-sm text-red-400 hover:text-red-300"
-          >
-            ← Back to chief dashboard
-          </Link>
-
-          <p className="mt-6 text-xs uppercase tracking-[0.3em] text-red-400">
+          <p className="text-xs uppercase tracking-[0.3em] text-red-400">
             Chief Mechanic Control
           </p>
 
@@ -704,7 +772,9 @@ export default function ChiefEveningJobListPage() {
             value={newSpecialJob}
             onChange={(event) => setNewSpecialJob(event.target.value)}
             onKeyDown={(event) => {
-              if (event.key === "Enter") addSpecialJob();
+              if (event.key === "Enter" && !addingSpecialJob) {
+                addSpecialJob();
+              }
             }}
             placeholder="Add special evening job..."
             className="flex-1 rounded-xl border border-red-900/50 bg-[#0d0f12] px-4 py-3 text-sm outline-none focus:border-red-500"
@@ -713,9 +783,10 @@ export default function ChiefEveningJobListPage() {
           <button
             type="button"
             onClick={addSpecialJob}
-            className="rounded-xl bg-red-700 px-5 py-3 text-sm font-semibold hover:bg-red-600"
+            disabled={addingSpecialJob}
+            className="rounded-xl bg-red-700 px-5 py-3 text-sm font-semibold hover:bg-red-600 disabled:cursor-not-allowed disabled:opacity-50"
           >
-            Release Special Job
+            {addingSpecialJob ? "Adding..." : "Release Special Job"}
           </button>
         </div>
       </section>
