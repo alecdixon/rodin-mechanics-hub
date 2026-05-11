@@ -33,13 +33,16 @@ type EveningJobRelease = {
   job_date: string | null;
   released_by: string | null;
   released_at: string | null;
+  version_number: number | null;
+  status: "draft" | "published" | string | null;
+  published_at: string | null;
+  published_by: string | null;
 };
 
 function niceDate(value: string | null | undefined) {
   if (!value) return "No date set";
 
   const date = new Date(value);
-
   if (Number.isNaN(date.getTime())) return value;
 
   return date.toLocaleDateString("en-GB");
@@ -49,10 +52,57 @@ function niceDateTime(value: string | null | undefined) {
   if (!value) return "No timestamp";
 
   const date = new Date(value);
-
   if (Number.isNaN(date.getTime())) return value;
 
   return date.toLocaleString("en-GB");
+}
+
+function StatusPill({
+  done,
+  notes,
+}: {
+  done: boolean;
+  notes?: string | null;
+}) {
+  return (
+    <div className="flex flex-wrap gap-2">
+      <span
+        className={`rounded-full border px-3 py-1 text-xs font-semibold ${
+          done
+            ? "border-green-800 bg-green-950/30 text-green-300"
+            : "border-zinc-700 bg-[#111418] text-zinc-400"
+        }`}
+      >
+        {done ? "Complete" : "Open"}
+      </span>
+
+      {notes?.trim() && (
+        <span className="rounded-full border border-red-900/60 bg-red-950/30 px-3 py-1 text-xs font-semibold text-red-300">
+          Has Note
+        </span>
+      )}
+    </div>
+  );
+}
+
+function PublishStatusPill({
+  status,
+}: {
+  status: string | null | undefined;
+}) {
+  const isPublished = status === "published";
+
+  return (
+    <span
+      className={`inline-flex rounded-full border px-3 py-1 text-xs font-semibold uppercase tracking-[0.16em] ${
+        isPublished
+          ? "border-green-800 bg-green-950/30 text-green-300"
+          : "border-yellow-800 bg-yellow-950/20 text-yellow-300"
+      }`}
+    >
+      {isPublished ? "Published" : "Draft"}
+    </span>
+  );
 }
 
 export default function ChiefEveningJobListPage() {
@@ -71,15 +121,23 @@ export default function ChiefEveningJobListPage() {
   );
 
   const [newSpecialJob, setNewSpecialJob] = useState("");
+
   const [loading, setLoading] = useState(true);
-  const [importing, setImporting] = useState(false);
+  const [updatingTemplate, setUpdatingTemplate] = useState(false);
   const [savingReleaseInfo, setSavingReleaseInfo] = useState(false);
-  const [clearingJobs, setClearingJobs] = useState(false);
+  const [publishingJobList, setPublishingJobList] = useState(false);
   const [addingSpecialJob, setAddingSpecialJob] = useState(false);
+  const [clearingStandardJobs, setClearingStandardJobs] = useState(false);
+  const [clearingAllJobs, setClearingAllJobs] = useState(false);
+  const [removingJobKey, setRemovingJobKey] = useState<string | null>(null);
   const [clearingNoteKey, setClearingNoteKey] = useState<string | null>(null);
 
   const [message, setMessage] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
+
+  function jobKey(job: EveningJobRow) {
+    return job.id || `${job.car_id}-${job.section}-${job.job_id}`;
+  }
 
   async function loadJobs() {
     const { data, error } = await supabase
@@ -173,6 +231,7 @@ export default function ChiefEveningJobListPage() {
     if (carId) {
       loadEverything();
     }
+
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [carId]);
 
@@ -196,6 +255,10 @@ export default function ChiefEveningJobListPage() {
         job_date: jobDate || null,
         released_by: userData.user?.email ?? null,
         released_at: new Date().toISOString(),
+        status: releaseInfo?.status === "published" ? "published" : "draft",
+        version_number: releaseInfo?.version_number ?? 0,
+        published_at: releaseInfo?.published_at ?? null,
+        published_by: releaseInfo?.published_by ?? null,
       },
       {
         onConflict: "car_id",
@@ -217,7 +280,118 @@ export default function ChiefEveningJobListPage() {
     return true;
   }
 
-  async function importTemplate() {
+  async function markDraft(customMessage?: string) {
+    const { data: userData, error: userError } = await supabase.auth.getUser();
+
+    if (userError) {
+      setErrorMessage(`User check failed: ${userError.message}`);
+      return false;
+    }
+
+    const { error } = await supabase.from("evening_job_list_releases").upsert(
+      {
+        car_id: carId,
+        after_event: afterEvent.trim() || null,
+        job_date: jobDate || null,
+        released_by: userData.user?.email ?? null,
+        released_at: new Date().toISOString(),
+        status: "draft",
+        version_number: releaseInfo?.version_number ?? 0,
+        published_at: releaseInfo?.published_at ?? null,
+        published_by: releaseInfo?.published_by ?? null,
+      },
+      {
+        onConflict: "car_id",
+      },
+    );
+
+    if (error) {
+      setErrorMessage(
+        `Could not mark evening job list as draft: ${error.message}`,
+      );
+      return false;
+    }
+
+    await loadReleaseInfo();
+
+    if (customMessage) {
+      setMessage(customMessage);
+    }
+
+    return true;
+  }
+
+  async function publishJobList() {
+    setMessage("");
+    setErrorMessage("");
+
+    if (jobs.length === 0) {
+      setErrorMessage("Add or update evening jobs before publishing the list.");
+      return;
+    }
+
+    if (!afterEvent.trim()) {
+      setErrorMessage("Enter an event/session name before publishing.");
+      return;
+    }
+
+    if (!jobDate) {
+      setErrorMessage("Enter an evening job list date before publishing.");
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `Publish evening prep job list for Car ${carId}?\n\nMechanics will see this as the official published evening prep version.`,
+    );
+
+    if (!confirmed) return;
+
+    setPublishingJobList(true);
+
+    const { data: userData, error: userError } = await supabase.auth.getUser();
+
+    if (userError) {
+      setErrorMessage(`User check failed: ${userError.message}`);
+      setPublishingJobList(false);
+      return;
+    }
+
+    const currentVersion = releaseInfo?.version_number ?? 0;
+    const nextVersion = currentVersion + 1;
+    const now = new Date().toISOString();
+    const email = userData.user?.email ?? null;
+
+    const { error } = await supabase.from("evening_job_list_releases").upsert(
+      {
+        car_id: carId,
+        after_event: afterEvent.trim() || null,
+        job_date: jobDate || null,
+        released_by: email,
+        released_at: now,
+        version_number: nextVersion,
+        status: "published",
+        published_at: now,
+        published_by: email,
+      },
+      {
+        onConflict: "car_id",
+      },
+    );
+
+    if (error) {
+      setErrorMessage(`Could not publish evening job list: ${error.message}`);
+      setPublishingJobList(false);
+      return;
+    }
+
+    await loadReleaseInfo();
+    await loadJobs();
+
+    setMessage(`Evening prep job list published as version ${nextVersion}.`);
+    setPublishingJobList(false);
+  }
+
+  async function updateFromTemplate() {
     setMessage("");
     setErrorMessage("");
 
@@ -231,26 +405,12 @@ export default function ChiefEveningJobListPage() {
     }
 
     const confirmed = window.confirm(
-      `Import "${selectedTemplate.name}" to Car ${carId}?\n\nThis will replace all existing STANDARD evening prep jobs for this car, but it will keep special jobs.`,
+      `Update Car ${carId} from "${selectedTemplate.name}"?\n\nThis will create or update the STANDARD evening prep jobs for this car. Special jobs will be kept.\n\nAfter checking it, click Publish Evening Job List so mechanics know they are on the official version.`,
     );
 
     if (!confirmed) return;
 
-    setImporting(true);
-
-    const { error: deleteError } = await supabase
-      .from("evening_job_progress")
-      .delete()
-      .eq("car_id", carId)
-      .eq("section", "standard");
-
-    if (deleteError) {
-      setErrorMessage(
-        `Could not replace standard evening jobs: ${deleteError.message}`,
-      );
-      setImporting(false);
-      return;
-    }
+    setUpdatingTemplate(true);
 
     const now = new Date().toISOString();
 
@@ -265,24 +425,71 @@ export default function ChiefEveningJobListPage() {
       updated_at: now,
     }));
 
-    const { error: insertError } = await supabase
+    const { error: upsertError } = await supabase
       .from("evening_job_progress")
-      .insert(rows);
+      .upsert(rows, {
+        onConflict: "car_id,job_id,section",
+      });
 
-    if (insertError) {
+    if (upsertError) {
       setErrorMessage(
-        `Could not import evening template: ${insertError.message}`,
+        `Could not update evening list from template: ${upsertError.message}`,
       );
-      setImporting(false);
+      setUpdatingTemplate(false);
       return;
     }
 
-    await saveReleaseInfo(
-      `Imported "${selectedTemplate.name}" evening prep jobs to Car ${carId}.`,
+    const { error: cleanupError } = await supabase
+      .from("evening_job_progress")
+      .delete()
+      .eq("car_id", carId)
+      .eq("section", "standard")
+      .gt("job_id", selectedTemplate.jobs.length);
+
+    if (cleanupError) {
+      setErrorMessage(
+        `Template updated, but old extra evening jobs could not be removed: ${cleanupError.message}`,
+      );
+      await loadJobs();
+      setUpdatingTemplate(false);
+      return;
+    }
+
+    await markDraft(
+      `Updated Car ${carId} evening prep list from "${selectedTemplate.name}". Publish it when ready.`,
     );
 
     await loadJobs();
-    setImporting(false);
+    setUpdatingTemplate(false);
+  }
+
+  async function clearStandardJobs() {
+    const confirmed = window.confirm(
+      `Clear STANDARD evening prep jobs for Car ${carId}?\n\nThis removes only the template evening prep jobs. Special jobs and release details will be kept.\n\nThe list will be marked as draft until published again.`,
+    );
+
+    if (!confirmed) return;
+
+    setMessage("");
+    setErrorMessage("");
+    setClearingStandardJobs(true);
+
+    const { error } = await supabase
+      .from("evening_job_progress")
+      .delete()
+      .eq("car_id", carId)
+      .eq("section", "standard");
+
+    if (error) {
+      setErrorMessage(`Standard evening jobs failed to clear: ${error.message}`);
+      setClearingStandardJobs(false);
+      return;
+    }
+
+    await markDraft(`Standard evening prep jobs cleared for Car ${carId}.`);
+    await loadJobs();
+
+    setClearingStandardJobs(false);
   }
 
   async function updateJobText(job: EveningJobRow, text: string) {
@@ -296,19 +503,30 @@ export default function ChiefEveningJobListPage() {
       ),
     );
 
-    const { error } = await supabase
+    let updateQuery = supabase
       .from("evening_job_progress")
       .update({
         job_text: text,
         updated_at: new Date().toISOString(),
-      })
-      .eq("car_id", job.car_id)
-      .eq("job_id", job.job_id)
-      .eq("section", job.section);
+      });
+
+    if (job.id) {
+      updateQuery = updateQuery.eq("id", job.id);
+    } else {
+      updateQuery = updateQuery
+        .eq("car_id", job.car_id)
+        .eq("job_id", job.job_id)
+        .eq("section", job.section);
+    }
+
+    const { error } = await updateQuery;
 
     if (error) {
       setErrorMessage(`Could not update evening job: ${error.message}`);
+      return;
     }
+
+    await markDraft();
   }
 
   async function addSpecialJob() {
@@ -318,7 +536,7 @@ export default function ChiefEveningJobListPage() {
     setErrorMessage("");
 
     if (!text) {
-      setErrorMessage("Enter a special evening job before releasing it.");
+      setErrorMessage("Enter a special evening job before adding it.");
       return;
     }
 
@@ -360,20 +578,16 @@ export default function ChiefEveningJobListPage() {
       .insert(newRow);
 
     if (insertError) {
-      setErrorMessage(`Failed to add special evening job: ${insertError.message}`);
+      setErrorMessage(
+        `Failed to add special evening job: ${insertError.message}`,
+      );
       setAddingSpecialJob(false);
       return;
     }
 
-    const releaseSaved = await saveReleaseInfo(
-      "Special evening prep job added and released.",
-    );
-
+    await markDraft("Special evening job added. Publish the list when ready.");
+    setNewSpecialJob("");
     await loadJobs();
-
-    if (releaseSaved) {
-      setNewSpecialJob("");
-    }
 
     setAddingSpecialJob(false);
   }
@@ -385,23 +599,48 @@ export default function ChiefEveningJobListPage() {
 
     if (!confirmed) return;
 
+    const key = jobKey(job);
+
     setMessage("");
     setErrorMessage("");
+    setRemovingJobKey(key);
 
-    const { error } = await supabase
-      .from("evening_job_progress")
-      .delete()
-      .eq("car_id", job.car_id)
-      .eq("job_id", job.job_id)
-      .eq("section", job.section);
+    let deleteQuery = supabase.from("evening_job_progress").delete();
+
+    if (job.id) {
+      deleteQuery = deleteQuery.eq("id", job.id);
+    } else {
+      deleteQuery = deleteQuery
+        .eq("car_id", job.car_id)
+        .eq("job_id", job.job_id)
+        .eq("section", job.section);
+    }
+
+    const { error } = await deleteQuery;
 
     if (error) {
       setErrorMessage(`Could not remove evening job: ${error.message}`);
+      setRemovingJobKey(null);
       return;
     }
 
-    setMessage("Evening prep job removed.");
+    setJobs((current) =>
+      current.filter((item) => {
+        if (job.id && item.id) {
+          return item.id !== job.id;
+        }
+
+        return !(
+          item.car_id === job.car_id &&
+          item.job_id === job.job_id &&
+          item.section === job.section
+        );
+      }),
+    );
+
+    await markDraft("Evening job removed. Publish the list when ready.");
     await loadJobs();
+    setRemovingJobKey(null);
   }
 
   async function clearJobNote(job: EveningJobRow) {
@@ -460,20 +699,20 @@ export default function ChiefEveningJobListPage() {
       ),
     );
 
-    setMessage("Mechanic note cleared.");
+    await markDraft("Mechanic note cleared. Publish the list when ready.");
     setClearingNoteKey(null);
   }
 
   async function clearAllJobs() {
     const confirmed = window.confirm(
-      `Clear ALL evening prep jobs for Car ${carId}?\n\nThis will remove all standard evening prep jobs, all special evening prep jobs, and the released event/date from the mechanic page.`,
+      `Clear ALL evening prep jobs for Car ${carId}?\n\nThis will remove standard evening prep jobs, special evening prep jobs, notes and the published/release details from the mechanic page.`,
     );
 
     if (!confirmed) return;
 
     setMessage("");
     setErrorMessage("");
-    setClearingJobs(true);
+    setClearingAllJobs(true);
 
     const { error: jobsError } = await supabase
       .from("evening_job_progress")
@@ -482,7 +721,7 @@ export default function ChiefEveningJobListPage() {
 
     if (jobsError) {
       setErrorMessage(`Could not clear evening jobs: ${jobsError.message}`);
-      setClearingJobs(false);
+      setClearingAllJobs(false);
       return;
     }
 
@@ -495,7 +734,7 @@ export default function ChiefEveningJobListPage() {
       setErrorMessage(
         `Could not clear evening release details: ${releaseError.message}`,
       );
-      setClearingJobs(false);
+      setClearingAllJobs(false);
       return;
     }
 
@@ -504,7 +743,7 @@ export default function ChiefEveningJobListPage() {
     setJobDate("");
     setReleaseInfo(null);
     setMessage(`All evening prep jobs cleared for Car ${carId}.`);
-    setClearingJobs(false);
+    setClearingAllJobs(false);
   }
 
   const standardJobs = jobs.filter((job) => job.section === "standard");
@@ -513,10 +752,7 @@ export default function ChiefEveningJobListPage() {
   const completedJobs = jobs.filter((job) => job.done).length;
   const totalJobs = jobs.length;
   const progress = totalJobs ? Math.round((completedJobs / totalJobs) * 100) : 0;
-
-  const outstandingJobs = useMemo(() => {
-    return jobs.filter((job) => !job.done);
-  }, [jobs]);
+  const outstandingJobs = jobs.filter((job) => !job.done);
 
   const mechanicNotes = useMemo(() => {
     return jobs
@@ -527,6 +763,13 @@ export default function ChiefEveningJobListPage() {
         return bTime - aTime;
       });
   }, [jobs]);
+
+  const selectedTemplate = useMemo(() => {
+    return templates.find((template) => template.id === selectedTemplateId);
+  }, [templates, selectedTemplateId]);
+
+  const isPublished = releaseInfo?.status === "published";
+  const versionNumber = releaseInfo?.version_number ?? 0;
 
   if (loading) {
     return (
@@ -549,8 +792,8 @@ export default function ChiefEveningJobListPage() {
           </h1>
 
           <p className="mt-3 max-w-3xl text-sm text-zinc-400">
-            Generate, release, check and modify the evening preparation list for
-            this car.
+            Create, update, clear and publish the evening preparation list.
+            Mechanics should only work from the published version.
           </p>
         </div>
 
@@ -632,9 +875,13 @@ export default function ChiefEveningJobListPage() {
       <section className="mb-6 rounded-3xl border border-zinc-800 bg-[#14181d] p-6 shadow-xl">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.3em] text-red-400">
-              Evening Release Details
-            </p>
+            <div className="flex flex-wrap items-center gap-3">
+              <p className="text-xs font-semibold uppercase tracking-[0.3em] text-red-400">
+                Publication
+              </p>
+
+              <PublishStatusPill status={releaseInfo?.status} />
+            </div>
 
             <h2 className="mt-3 text-3xl font-semibold">
               {releaseInfo?.after_event || "No evening event name set"}
@@ -649,21 +896,35 @@ export default function ChiefEveningJobListPage() {
               </span>
 
               <span>
-                Released:{" "}
+                Version:{" "}
                 <span className="font-semibold text-zinc-100">
-                  {niceDateTime(releaseInfo?.released_at)}
+                  {versionNumber || "Not published"}
                 </span>
               </span>
 
-              {releaseInfo?.released_by && (
+              <span>
+                Published:{" "}
+                <span className="font-semibold text-zinc-100">
+                  {niceDateTime(releaseInfo?.published_at)}
+                </span>
+              </span>
+
+              {releaseInfo?.published_by && (
                 <span>
                   By:{" "}
                   <span className="font-semibold text-zinc-100">
-                    {releaseInfo.released_by}
+                    {releaseInfo.published_by}
                   </span>
                 </span>
               )}
             </div>
+
+            {!isPublished && (
+              <div className="mt-4 rounded-2xl border border-yellow-800/60 bg-yellow-950/20 p-4 text-sm text-yellow-200">
+                This evening prep list is currently a draft. Mechanics should
+                not treat it as the official list until you publish it.
+              </div>
+            )}
           </div>
 
           <button
@@ -706,193 +967,272 @@ export default function ChiefEveningJobListPage() {
             type="button"
             onClick={() => saveReleaseInfo()}
             disabled={savingReleaseInfo}
-            className="rounded-xl bg-red-700 px-5 py-3 text-sm font-semibold text-white hover:bg-red-600 disabled:cursor-not-allowed disabled:opacity-50"
+            className="rounded-xl border border-zinc-700 bg-[#0d0f12] px-5 py-3 text-sm font-semibold text-zinc-200 hover:border-red-500 hover:text-red-300 disabled:cursor-not-allowed disabled:opacity-50"
           >
-            {savingReleaseInfo ? "Saving..." : "Save Evening Release Details"}
+            {savingReleaseInfo ? "Saving..." : "Save Draft Details"}
+          </button>
+
+          <button
+            type="button"
+            onClick={publishJobList}
+            disabled={publishingJobList || jobs.length === 0}
+            className="rounded-xl bg-green-700 px-5 py-3 text-sm font-semibold text-white hover:bg-green-600 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {publishingJobList ? "Publishing..." : "Publish Evening Job List"}
           </button>
 
           <button
             type="button"
             onClick={clearAllJobs}
-            disabled={clearingJobs}
+            disabled={clearingAllJobs}
             className="rounded-xl border border-red-900/70 px-5 py-3 text-sm font-semibold text-red-300 hover:bg-red-950/40 disabled:cursor-not-allowed disabled:opacity-50"
           >
-            {clearingJobs ? "Clearing..." : "Clear All Evening Jobs"}
+            {clearingAllJobs ? "Clearing..." : "Clear All Evening Jobs"}
           </button>
         </div>
       </section>
 
-      <section className="mb-6 rounded-3xl border border-zinc-800 bg-[#14181d] p-6 shadow-xl">
-        <h2 className="text-2xl font-semibold">Import Evening Template</h2>
+      <section className="mb-6 grid gap-6 xl:grid-cols-[1fr_420px]">
+        <div className="rounded-3xl border border-zinc-800 bg-[#14181d] p-6 shadow-xl">
+          <p className="text-xs font-semibold uppercase tracking-[0.3em] text-red-400">
+            Job List Creation
+          </p>
 
-        <p className="mt-1 text-sm text-zinc-500">
-          This replaces only the standard evening prep jobs for this car.
-          Special evening jobs are kept.
-        </p>
+          <h2 className="mt-3 text-2xl font-semibold">
+            Create / Update Standard Evening List
+          </h2>
 
-        <div className="mt-5 flex flex-wrap gap-3">
-          <select
-            value={selectedTemplateId}
-            onChange={(event) => setSelectedTemplateId(event.target.value)}
-            className="min-w-[280px] flex-1 rounded-xl border border-zinc-700 bg-[#0d0f12] px-4 py-3 text-sm outline-none focus:border-red-500"
-          >
-            {templates.length === 0 ? (
-              <option value="">No evening templates found</option>
-            ) : (
-              templates.map((template) => (
-                <option key={template.id} value={template.id}>
-                  {template.name}
-                </option>
-              ))
-            )}
-          </select>
+          <p className="mt-2 text-sm leading-6 text-zinc-500">
+            Choose a template, then update the standard evening prep jobs for
+            this car. Special jobs are kept separate. Publishing is a separate
+            final step.
+          </p>
 
-          <button
-            type="button"
-            onClick={importTemplate}
-            disabled={importing || templates.length === 0}
-            className="rounded-xl bg-red-700 px-5 py-3 text-sm font-semibold hover:bg-red-600 disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            {importing ? "Importing..." : "Generate Evening Job List"}
-          </button>
+          <div className="mt-5 flex flex-wrap gap-3">
+            <select
+              value={selectedTemplateId}
+              onChange={(event) => setSelectedTemplateId(event.target.value)}
+              className="min-w-[280px] flex-1 rounded-xl border border-zinc-700 bg-[#0d0f12] px-4 py-3 text-sm outline-none focus:border-red-500"
+            >
+              {templates.length === 0 ? (
+                <option value="">No evening templates found</option>
+              ) : (
+                templates.map((template) => (
+                  <option key={template.id} value={template.id}>
+                    {template.name}
+                  </option>
+                ))
+              )}
+            </select>
+
+            <button
+              type="button"
+              onClick={updateFromTemplate}
+              disabled={updatingTemplate || templates.length === 0}
+              className="rounded-xl bg-red-700 px-5 py-3 text-sm font-semibold text-white hover:bg-red-600 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {updatingTemplate ? "Updating..." : "Update From Template"}
+            </button>
+
+            <button
+              type="button"
+              onClick={clearStandardJobs}
+              disabled={clearingStandardJobs || standardJobs.length === 0}
+              className="rounded-xl border border-zinc-700 px-5 py-3 text-sm font-semibold text-zinc-300 hover:border-red-500 hover:text-red-300 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {clearingStandardJobs
+                ? "Clearing..."
+                : "Clear Standard Evening Jobs"}
+            </button>
+          </div>
+
+          {selectedTemplate && (
+            <div className="mt-5 rounded-2xl border border-zinc-800 bg-[#0d0f12] p-4 text-sm text-zinc-400">
+              Selected template:{" "}
+              <span className="font-semibold text-zinc-100">
+                {selectedTemplate.name}
+              </span>{" "}
+              ·{" "}
+              <span className="font-semibold text-zinc-100">
+                {selectedTemplate.jobs.length}
+              </span>{" "}
+              standard jobs
+            </div>
+          )}
         </div>
-      </section>
 
-      <section className="mb-6 rounded-3xl border border-red-900/50 bg-[#181315] p-6 shadow-xl">
-        <h2 className="text-2xl font-semibold text-red-200">
-          Add Special Evening Job
-        </h2>
+        <div className="rounded-3xl border border-red-900/50 bg-[#181315] p-6 shadow-xl">
+          <p className="text-xs font-semibold uppercase tracking-[0.3em] text-red-400">
+            Special Job
+          </p>
 
-        <p className="mt-1 text-sm text-zinc-400">
-          Use this for car-specific repairs, engineer requests, damage checks or
-          urgent prep work.
-        </p>
+          <h2 className="mt-3 text-2xl font-semibold text-red-100">
+            Add Special Evening Job
+          </h2>
 
-        <div className="mt-4 flex gap-3">
-          <input
-            value={newSpecialJob}
-            onChange={(event) => setNewSpecialJob(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === "Enter" && !addingSpecialJob) {
-                addSpecialJob();
-              }
-            }}
-            placeholder="Add special evening job..."
-            className="flex-1 rounded-xl border border-red-900/50 bg-[#0d0f12] px-4 py-3 text-sm outline-none focus:border-red-500"
-          />
+          <p className="mt-2 text-sm leading-6 text-zinc-400">
+            Use this for car-specific repairs, engineer requests, damage checks
+            or urgent prep work. Adding a special job marks the list as draft
+            until published again.
+          </p>
 
-          <button
-            type="button"
-            onClick={addSpecialJob}
-            disabled={addingSpecialJob}
-            className="rounded-xl bg-red-700 px-5 py-3 text-sm font-semibold hover:bg-red-600 disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            {addingSpecialJob ? "Adding..." : "Release Special Job"}
-          </button>
+          <div className="mt-5 space-y-3">
+            <input
+              value={newSpecialJob}
+              onChange={(event) => setNewSpecialJob(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" && !addingSpecialJob) {
+                  addSpecialJob();
+                }
+              }}
+              placeholder="Add special evening job..."
+              className="w-full rounded-xl border border-red-900/50 bg-[#0d0f12] px-4 py-3 text-sm outline-none focus:border-red-500"
+            />
+
+            <button
+              type="button"
+              onClick={addSpecialJob}
+              disabled={addingSpecialJob}
+              className="w-full rounded-xl bg-red-700 px-5 py-3 text-sm font-semibold hover:bg-red-600 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {addingSpecialJob ? "Adding..." : "Add Special Evening Job"}
+            </button>
+          </div>
         </div>
       </section>
 
       <section className="mb-6 grid gap-6 xl:grid-cols-2">
         <div className="rounded-3xl border border-zinc-800 bg-[#14181d] p-6 shadow-xl">
-          <h2 className="text-2xl font-semibold">
-            Standard Evening Jobs ({standardJobs.length})
-          </h2>
+          <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.3em] text-red-400">
+                Standard Jobs
+              </p>
 
-          <div className="mt-5 max-h-[620px] space-y-2 overflow-y-auto pr-2">
+              <h2 className="mt-2 text-2xl font-semibold">
+                Standard Evening Jobs
+              </h2>
+            </div>
+
+            <div className="rounded-2xl border border-zinc-700 bg-[#0d0f12] px-4 py-3 text-sm font-semibold text-red-300">
+              {standardJobs.length}
+            </div>
+          </div>
+
+          <div className="max-h-[620px] space-y-2 overflow-y-auto pr-2">
             {standardJobs.length === 0 ? (
               <div className="rounded-2xl border border-dashed border-zinc-700 bg-[#0d0f12] p-6 text-sm text-zinc-500">
-                No standard evening jobs released yet. Import a template above.
+                No standard evening jobs released yet. Update from a template
+                above.
               </div>
             ) : (
-              standardJobs.map((job, index) => (
-                <div
-                  key={`${job.section}-${job.job_id}`}
-                  className="rounded-xl border border-zinc-800 bg-[#0d0f12] p-3"
-                >
-                  <div className="grid grid-cols-[42px_1fr_auto] items-center gap-3">
-                    <span className="text-sm text-zinc-500">{index + 1}</span>
+              standardJobs.map((job, index) => {
+                const key = jobKey(job);
+                const removing = removingJobKey === key;
 
-                    <input
-                      value={job.job_text}
-                      onChange={(event) =>
-                        updateJobText(job, event.target.value)
-                      }
-                      className="w-full rounded-lg border border-transparent bg-transparent px-2 py-2 text-sm outline-none focus:border-zinc-700 focus:bg-[#14181d]"
-                    />
+                return (
+                  <div
+                    key={key}
+                    className="rounded-xl border border-zinc-800 bg-[#0d0f12] p-3"
+                  >
+                    <div className="grid grid-cols-[42px_1fr_auto] items-center gap-3">
+                      <span className="text-sm text-zinc-500">{index + 1}</span>
 
-                    <button
-                      type="button"
-                      onClick={() => removeJob(job)}
-                      className="rounded-lg border border-zinc-700 px-3 py-2 text-xs text-zinc-400 hover:border-red-500 hover:text-red-300"
-                    >
-                      Remove
-                    </button>
+                      <input
+                        value={job.job_text}
+                        onChange={(event) =>
+                          updateJobText(job, event.target.value)
+                        }
+                        className="w-full rounded-lg border border-transparent bg-transparent px-2 py-2 text-sm outline-none focus:border-zinc-700 focus:bg-[#14181d]"
+                      />
+
+                      <button
+                        type="button"
+                        onClick={() => removeJob(job)}
+                        disabled={removing}
+                        className="rounded-lg border border-zinc-700 px-3 py-2 text-xs text-zinc-400 hover:border-red-500 hover:text-red-300 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        {removing ? "Removing..." : "Remove"}
+                      </button>
+                    </div>
+
+                    <div className="mt-2 flex flex-wrap items-center gap-3 pl-[54px] text-xs text-zinc-500">
+                      <StatusPill done={job.done} notes={job.notes} />
+
+                      <span>{niceDateTime(job.updated_at)}</span>
+
+                      {job.updated_by && <span>By {job.updated_by}</span>}
+                    </div>
                   </div>
-
-                  <div className="mt-2 flex flex-wrap gap-3 pl-[54px] text-xs text-zinc-500">
-                    <span>{job.done ? "Complete" : "Open"}</span>
-                    <span>{niceDateTime(job.updated_at)}</span>
-                    {job.updated_by && <span>By {job.updated_by}</span>}
-                    {job.notes?.trim() && (
-                      <span className="font-semibold text-red-300">
-                        Has mechanic note
-                      </span>
-                    )}
-                  </div>
-                </div>
-              ))
+                );
+              })
             )}
           </div>
         </div>
 
         <div className="rounded-3xl border border-red-900/50 bg-[#181315] p-6 shadow-xl">
-          <h2 className="text-2xl font-semibold text-red-200">
-            Special Evening Jobs ({specialJobs.length})
-          </h2>
+          <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.3em] text-red-400">
+                Special Jobs
+              </p>
 
-          <div className="mt-5 max-h-[620px] space-y-2 overflow-y-auto pr-2">
+              <h2 className="mt-2 text-2xl font-semibold text-red-100">
+                Special Evening Jobs
+              </h2>
+            </div>
+
+            <div className="rounded-2xl border border-red-900/50 bg-[#0d0f12] px-4 py-3 text-sm font-semibold text-red-300">
+              {specialJobs.length}
+            </div>
+          </div>
+
+          <div className="max-h-[620px] space-y-2 overflow-y-auto pr-2">
             {specialJobs.length === 0 ? (
               <div className="rounded-2xl border border-dashed border-red-900/50 bg-[#0d0f12] p-6 text-sm text-zinc-500">
                 No special evening jobs released for this car.
               </div>
             ) : (
-              specialJobs.map((job, index) => (
-                <div
-                  key={`${job.section}-${job.job_id}`}
-                  className="rounded-xl border border-red-900/40 bg-[#0d0f12] p-3"
-                >
-                  <div className="grid grid-cols-[42px_1fr_auto] items-center gap-3">
-                    <span className="text-sm text-red-300">{index + 1}</span>
+              specialJobs.map((job, index) => {
+                const key = jobKey(job);
+                const removing = removingJobKey === key;
 
-                    <input
-                      value={job.job_text}
-                      onChange={(event) =>
-                        updateJobText(job, event.target.value)
-                      }
-                      className="w-full rounded-lg border border-transparent bg-transparent px-2 py-2 text-sm text-red-100 outline-none focus:border-red-900/70 focus:bg-[#14181d]"
-                    />
+                return (
+                  <div
+                    key={key}
+                    className="rounded-xl border border-red-900/40 bg-[#0d0f12] p-3"
+                  >
+                    <div className="grid grid-cols-[42px_1fr_auto] items-center gap-3">
+                      <span className="text-sm text-red-300">{index + 1}</span>
 
-                    <button
-                      type="button"
-                      onClick={() => removeJob(job)}
-                      className="rounded-lg border border-red-900/60 px-3 py-2 text-xs text-zinc-400 hover:border-red-500 hover:text-red-300"
-                    >
-                      Remove
-                    </button>
+                      <input
+                        value={job.job_text}
+                        onChange={(event) =>
+                          updateJobText(job, event.target.value)
+                        }
+                        className="w-full rounded-lg border border-transparent bg-transparent px-2 py-2 text-sm text-red-100 outline-none focus:border-red-900/70 focus:bg-[#14181d]"
+                      />
+
+                      <button
+                        type="button"
+                        onClick={() => removeJob(job)}
+                        disabled={removing}
+                        className="rounded-lg border border-red-900/60 px-3 py-2 text-xs text-zinc-400 hover:border-red-500 hover:text-red-300 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        {removing ? "Removing..." : "Remove"}
+                      </button>
+                    </div>
+
+                    <div className="mt-2 flex flex-wrap items-center gap-3 pl-[54px] text-xs text-zinc-500">
+                      <StatusPill done={job.done} notes={job.notes} />
+
+                      <span>{niceDateTime(job.updated_at)}</span>
+
+                      {job.updated_by && <span>By {job.updated_by}</span>}
+                    </div>
                   </div>
-
-                  <div className="mt-2 flex flex-wrap gap-3 pl-[54px] text-xs text-zinc-500">
-                    <span>{job.done ? "Complete" : "Open"}</span>
-                    <span>{niceDateTime(job.updated_at)}</span>
-                    {job.updated_by && <span>By {job.updated_by}</span>}
-                    {job.notes?.trim() && (
-                      <span className="font-semibold text-red-300">
-                        Has mechanic note
-                      </span>
-                    )}
-                  </div>
-                </div>
-              ))
+                );
+              })
             )}
           </div>
         </div>
