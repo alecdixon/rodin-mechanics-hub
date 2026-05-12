@@ -132,8 +132,44 @@ export default function ChiefJobListEditorPage() {
   const [message, setMessage] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
 
+  const [pendingChanges, setPendingChanges] = useState<string[]>([]);
+
   function jobKey(job: JobRow) {
     return job.id || `${job.car_id}-${job.section}-${job.job_id}`;
+  }
+
+  function addPendingChange(change: string) {
+    setPendingChanges((current) => {
+      if (current.includes(change)) return current;
+      return [...current, change];
+    });
+  }
+
+  function buildChangesMadeSummary(nextVersion: number) {
+    const baseDetails = [
+      `Car: ${carId}`,
+      `Version: ${nextVersion}`,
+      `Event/session: ${afterEvent.trim()}`,
+      `Date: ${jobDate}`,
+      "",
+      "Changes Made:",
+    ];
+
+    if (pendingChanges.length === 0) {
+      return [
+        ...baseDetails,
+        "Job list published. No individual added or removed jobs were recorded during this editing session.",
+        "",
+        "Please review the latest job list before continuing work.",
+      ].join("\n");
+    }
+
+    return [
+      ...baseDetails,
+      ...pendingChanges.map((change) => `• ${change}`),
+      "",
+      "Please review the latest job list before continuing work.",
+    ].join("\n");
   }
 
   async function createJobListNotification({
@@ -165,23 +201,6 @@ export default function ChiefJobListEditorPage() {
     if (error) {
       throw new Error(error.message);
     }
-  }
-
-  function buildPublishedChangeSummary(nextVersion: number) {
-    const standardCount = jobs.filter((job) => job.section === "standard").length;
-    const specialCount = jobs.filter((job) => job.section === "special").length;
-
-    return [
-      `Car: ${carId}`,
-      `Version: ${nextVersion}`,
-      `Event/session: ${afterEvent.trim()}`,
-      `Date: ${jobDate}`,
-      `Standard jobs: ${standardCount}`,
-      `Special jobs: ${specialCount}`,
-      "",
-      "The job list has been published by the chief mechanic.",
-      "Please review the latest job list before continuing work.",
-    ].join("\n");
   }
 
   async function loadJobs() {
@@ -427,8 +446,8 @@ export default function ChiefJobListEditorPage() {
       await createJobListNotification({
         title: "Workshop job list published",
         message:
-          "The chief mechanic has published a new workshop job list for this car. Please review the latest jobs before continuing.",
-        changeSummary: buildPublishedChangeSummary(nextVersion),
+          "The chief mechanic has published a new workshop job list for this car. Please review the changes before continuing.",
+        changeSummary: buildChangesMadeSummary(nextVersion),
       });
     } catch (notificationError) {
       const warning =
@@ -449,6 +468,8 @@ export default function ChiefJobListEditorPage() {
 
     await loadReleaseInfo();
     await loadJobs();
+
+    setPendingChanges([]);
 
     setMessage(
       `Workshop job list published as version ${nextVersion}. Mechanics will receive an acknowledgement popup.`,
@@ -474,6 +495,24 @@ export default function ChiefJobListEditorPage() {
     );
 
     if (!confirmed) return;
+
+    const currentStandardJobs = jobs.filter((job) => job.section === "standard");
+
+    const currentStandardTexts = new Set(
+      currentStandardJobs.map((job) => job.job_text.trim()).filter(Boolean),
+    );
+
+    const newTemplateTexts = new Set(
+      selectedTemplate.jobs.map((job) => job.trim()).filter(Boolean),
+    );
+
+    const addedStandardJobs = selectedTemplate.jobs.filter(
+      (job) => !currentStandardTexts.has(job.trim()),
+    );
+
+    const removedStandardJobs = currentStandardJobs.filter(
+      (job) => !newTemplateTexts.has(job.job_text.trim()),
+    );
 
     setUpdatingTemplate(true);
 
@@ -521,6 +560,14 @@ export default function ChiefJobListEditorPage() {
       return;
     }
 
+    addedStandardJobs.forEach((jobText) => {
+      addPendingChange(`Added to standard job list: ${jobText}`);
+    });
+
+    removedStandardJobs.forEach((job) => {
+      addPendingChange(`Removed from standard job list: ${job.job_text}`);
+    });
+
     await markDraft(
       `Updated Car ${carId} workshop list from "${selectedTemplate.name}". Publish it when ready.`,
     );
@@ -540,6 +587,8 @@ export default function ChiefJobListEditorPage() {
     setErrorMessage("");
     setClearingStandardJobs(true);
 
+    const jobsBeingRemoved = jobs.filter((job) => job.section === "standard");
+
     const { error } = await supabase
       .from("job_progress")
       .delete()
@@ -552,6 +601,10 @@ export default function ChiefJobListEditorPage() {
       return;
     }
 
+    jobsBeingRemoved.forEach((job) => {
+      addPendingChange(`Removed from standard job list: ${job.job_text}`);
+    });
+
     await markDraft(`Standard workshop jobs cleared for Car ${carId}.`);
     await loadJobs();
 
@@ -559,6 +612,10 @@ export default function ChiefJobListEditorPage() {
   }
 
   async function updateJobText(job: JobRow, text: string) {
+    const previousText = job.job_text;
+    const cleanNewText = text.trim();
+    const cleanPreviousText = previousText.trim();
+
     setJobs((current) =>
       current.map((item) =>
         item.car_id === job.car_id &&
@@ -590,6 +647,18 @@ export default function ChiefJobListEditorPage() {
     if (error) {
       setErrorMessage(`Could not update job: ${error.message}`);
       return;
+    }
+
+    if (
+      cleanPreviousText &&
+      cleanNewText &&
+      cleanPreviousText !== cleanNewText
+    ) {
+      addPendingChange(
+        job.section === "special"
+          ? `Updated special job: ${cleanPreviousText} → ${cleanNewText}`
+          : `Updated standard job: ${cleanPreviousText} → ${cleanNewText}`,
+      );
     }
 
     await markDraft();
@@ -645,6 +714,8 @@ export default function ChiefJobListEditorPage() {
       return;
     }
 
+    addPendingChange(`Added to special jobs: ${text}`);
+
     await markDraft("Special job added. Publish the job list when ready.");
     setNewSpecialJob("");
     await loadJobs();
@@ -681,6 +752,12 @@ export default function ChiefJobListEditorPage() {
       return;
     }
 
+    addPendingChange(
+      job.section === "special"
+        ? `Removed from special jobs: ${job.job_text}`
+        : `Removed from standard job list: ${job.job_text}`,
+    );
+
     setJobs((current) =>
       current.filter((item) => {
         if (job.id && item.id) {
@@ -711,6 +788,8 @@ export default function ChiefJobListEditorPage() {
     setErrorMessage("");
     setClearingAllJobs(true);
 
+    const jobsBeingRemoved = [...jobs];
+
     const { error: jobsError } = await supabase
       .from("job_progress")
       .delete()
@@ -735,19 +814,35 @@ export default function ChiefJobListEditorPage() {
       return;
     }
 
+    const removedStandardJobs = jobsBeingRemoved.filter(
+      (job) => job.section === "standard",
+    );
+
+    const removedSpecialJobs = jobsBeingRemoved.filter(
+      (job) => job.section === "special",
+    );
+
+    const clearSummary = [
+      `Car: ${carId}`,
+      "",
+      "Changes Made:",
+      ...removedStandardJobs.map(
+        (job) => `• Removed from standard job list: ${job.job_text}`,
+      ),
+      ...removedSpecialJobs.map(
+        (job) => `• Removed from special jobs: ${job.job_text}`,
+      ),
+      "",
+      "Release details were cleared.",
+      "Previous job-list instructions should no longer be treated as current.",
+    ].join("\n");
+
     try {
       await createJobListNotification({
         title: "Workshop job list cleared",
         message:
           "The chief mechanic has cleared the workshop job list for this car. Please check with the chief mechanic before continuing with previous job-list work.",
-        changeSummary: [
-          `Car: ${carId}`,
-          "All standard jobs were cleared.",
-          "All special jobs were cleared.",
-          "Release details were cleared.",
-          "",
-          "Previous job-list instructions should no longer be treated as current.",
-        ].join("\n"),
+        changeSummary: clearSummary,
       });
     } catch (notificationError) {
       const warning =
@@ -766,6 +861,8 @@ export default function ChiefJobListEditorPage() {
     setAfterEvent("");
     setJobDate("");
     setReleaseInfo(null);
+    setPendingChanges([]);
+
     setMessage(
       `All workshop jobs cleared for Car ${carId}. Mechanics will receive an acknowledgement popup.`,
     );
@@ -843,6 +940,22 @@ export default function ChiefJobListEditorPage() {
       {errorMessage && (
         <div className="mb-6 rounded-2xl border border-red-900 bg-red-950/40 p-4 text-sm text-red-200">
           {errorMessage}
+        </div>
+      )}
+
+      {pendingChanges.length > 0 && (
+        <div className="mb-6 rounded-2xl border border-blue-900/70 bg-blue-950/20 p-4 text-sm text-blue-200">
+          <p className="font-semibold">Pending notification changes:</p>
+
+          <ul className="mt-2 list-disc space-y-1 pl-5">
+            {pendingChanges.map((change) => (
+              <li key={change}>{change}</li>
+            ))}
+          </ul>
+
+          <p className="mt-3 text-xs text-blue-300/80">
+            These will be shown to mechanics when you publish the job list.
+          </p>
         </div>
       )}
 

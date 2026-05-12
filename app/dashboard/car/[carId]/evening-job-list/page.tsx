@@ -135,8 +135,75 @@ export default function ChiefEveningJobListPage() {
   const [message, setMessage] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
 
+  const [pendingChanges, setPendingChanges] = useState<string[]>([]);
+
   function jobKey(job: EveningJobRow) {
     return job.id || `${job.car_id}-${job.section}-${job.job_id}`;
+  }
+
+  function addPendingChange(change: string) {
+    setPendingChanges((current) => {
+      if (current.includes(change)) return current;
+      return [...current, change];
+    });
+  }
+
+  function buildChangesMadeSummary(nextVersion: number) {
+    const baseDetails = [
+      `Car: ${carId}`,
+      `Evening job list version: ${nextVersion}`,
+      `Event/session: ${afterEvent.trim()}`,
+      `Date: ${jobDate}`,
+      "",
+      "Changes Made:",
+    ];
+
+    if (pendingChanges.length === 0) {
+      return [
+        ...baseDetails,
+        "Evening job list published. No individual added or removed jobs were recorded during this editing session.",
+        "",
+        "Please review the latest evening job list before continuing work.",
+      ].join("\n");
+    }
+
+    return [
+      ...baseDetails,
+      ...pendingChanges.map((change) => `• ${change}`),
+      "",
+      "Please review the latest evening job list before continuing work.",
+    ].join("\n");
+  }
+
+  async function createEveningJobListNotification({
+    title,
+    message,
+    changeSummary,
+  }: {
+    title: string;
+    message: string;
+    changeSummary: string;
+  }) {
+    const { data: userData, error: userError } = await supabase.auth.getUser();
+
+    if (userError) {
+      throw new Error(`User check failed: ${userError.message}`);
+    }
+
+    const email = userData.user?.email?.trim().toLowerCase() ?? "unknown";
+
+    const { error } = await supabase.from("job_list_notifications").insert({
+      car_id: carId,
+      notice_type: "evening_job_list_update",
+      title,
+      message,
+      change_summary: changeSummary,
+      created_by: email,
+    });
+
+    if (error) {
+      throw new Error(error.message);
+    }
   }
 
   async function loadJobs() {
@@ -341,7 +408,7 @@ export default function ChiefEveningJobListPage() {
     }
 
     const confirmed = window.confirm(
-      `Publish evening prep job list for Car ${carId}?\n\nMechanics will see this as the official published evening prep version.`,
+      `Publish evening prep job list for Car ${carId}?\n\nMechanics assigned to this car will receive a popup notification and must acknowledge it.`,
     );
 
     if (!confirmed) return;
@@ -384,10 +451,38 @@ export default function ChiefEveningJobListPage() {
       return;
     }
 
+    try {
+      await createEveningJobListNotification({
+        title: "Evening job list published",
+        message:
+          "The chief mechanic has published a new evening prep job list for this car. Please review the changes before continuing.",
+        changeSummary: buildChangesMadeSummary(nextVersion),
+      });
+    } catch (notificationError) {
+      const warning =
+        notificationError instanceof Error
+          ? notificationError.message
+          : "Unknown notification error";
+
+      setErrorMessage(
+        `Evening job list was published, but the mechanic notification failed: ${warning}`,
+      );
+
+      await loadReleaseInfo();
+      await loadJobs();
+
+      setPublishingJobList(false);
+      return;
+    }
+
     await loadReleaseInfo();
     await loadJobs();
 
-    setMessage(`Evening prep job list published as version ${nextVersion}.`);
+    setPendingChanges([]);
+
+    setMessage(
+      `Evening prep job list published as version ${nextVersion}. Mechanics will receive an acknowledgement popup.`,
+    );
     setPublishingJobList(false);
   }
 
@@ -409,6 +504,24 @@ export default function ChiefEveningJobListPage() {
     );
 
     if (!confirmed) return;
+
+    const currentStandardJobs = jobs.filter((job) => job.section === "standard");
+
+    const currentStandardTexts = new Set(
+      currentStandardJobs.map((job) => job.job_text.trim()).filter(Boolean),
+    );
+
+    const newTemplateTexts = new Set(
+      selectedTemplate.jobs.map((job) => job.trim()).filter(Boolean),
+    );
+
+    const addedStandardJobs = selectedTemplate.jobs.filter(
+      (job) => !currentStandardTexts.has(job.trim()),
+    );
+
+    const removedStandardJobs = currentStandardJobs.filter(
+      (job) => !newTemplateTexts.has(job.job_text.trim()),
+    );
 
     setUpdatingTemplate(true);
 
@@ -455,6 +568,14 @@ export default function ChiefEveningJobListPage() {
       return;
     }
 
+    addedStandardJobs.forEach((jobText) => {
+      addPendingChange(`Added to evening standard job list: ${jobText}`);
+    });
+
+    removedStandardJobs.forEach((job) => {
+      addPendingChange(`Removed from evening standard job list: ${job.job_text}`);
+    });
+
     await markDraft(
       `Updated Car ${carId} evening prep list from "${selectedTemplate.name}". Publish it when ready.`,
     );
@@ -474,6 +595,8 @@ export default function ChiefEveningJobListPage() {
     setErrorMessage("");
     setClearingStandardJobs(true);
 
+    const jobsBeingRemoved = jobs.filter((job) => job.section === "standard");
+
     const { error } = await supabase
       .from("evening_job_progress")
       .delete()
@@ -486,6 +609,10 @@ export default function ChiefEveningJobListPage() {
       return;
     }
 
+    jobsBeingRemoved.forEach((job) => {
+      addPendingChange(`Removed from evening standard job list: ${job.job_text}`);
+    });
+
     await markDraft(`Standard evening prep jobs cleared for Car ${carId}.`);
     await loadJobs();
 
@@ -493,6 +620,10 @@ export default function ChiefEveningJobListPage() {
   }
 
   async function updateJobText(job: EveningJobRow, text: string) {
+    const previousText = job.job_text;
+    const cleanPreviousText = previousText.trim();
+    const cleanNewText = text.trim();
+
     setJobs((current) =>
       current.map((item) =>
         item.car_id === job.car_id &&
@@ -524,6 +655,18 @@ export default function ChiefEveningJobListPage() {
     if (error) {
       setErrorMessage(`Could not update evening job: ${error.message}`);
       return;
+    }
+
+    if (
+      cleanPreviousText &&
+      cleanNewText &&
+      cleanPreviousText !== cleanNewText
+    ) {
+      addPendingChange(
+        job.section === "special"
+          ? `Updated evening special job: ${cleanPreviousText} → ${cleanNewText}`
+          : `Updated evening standard job: ${cleanPreviousText} → ${cleanNewText}`,
+      );
     }
 
     await markDraft();
@@ -585,6 +728,8 @@ export default function ChiefEveningJobListPage() {
       return;
     }
 
+    addPendingChange(`Added to evening special jobs: ${text}`);
+
     await markDraft("Special evening job added. Publish the list when ready.");
     setNewSpecialJob("");
     await loadJobs();
@@ -623,6 +768,12 @@ export default function ChiefEveningJobListPage() {
       setRemovingJobKey(null);
       return;
     }
+
+    addPendingChange(
+      job.section === "special"
+        ? `Removed from evening special jobs: ${job.job_text}`
+        : `Removed from evening standard job list: ${job.job_text}`,
+    );
 
     setJobs((current) =>
       current.filter((item) => {
@@ -705,7 +856,7 @@ export default function ChiefEveningJobListPage() {
 
   async function clearAllJobs() {
     const confirmed = window.confirm(
-      `Clear ALL evening prep jobs for Car ${carId}?\n\nThis will remove standard evening prep jobs, special evening prep jobs, notes and the published/release details from the mechanic page.`,
+      `Clear ALL evening prep jobs for Car ${carId}?\n\nThis will remove standard evening prep jobs, special evening prep jobs, notes and the published/release details from the mechanic page.\n\nMechanics will receive a popup notification.`,
     );
 
     if (!confirmed) return;
@@ -713,6 +864,8 @@ export default function ChiefEveningJobListPage() {
     setMessage("");
     setErrorMessage("");
     setClearingAllJobs(true);
+
+    const jobsBeingRemoved = [...jobs];
 
     const { error: jobsError } = await supabase
       .from("evening_job_progress")
@@ -738,11 +891,58 @@ export default function ChiefEveningJobListPage() {
       return;
     }
 
+    const removedStandardJobs = jobsBeingRemoved.filter(
+      (job) => job.section === "standard",
+    );
+
+    const removedSpecialJobs = jobsBeingRemoved.filter(
+      (job) => job.section === "special",
+    );
+
+    const clearSummary = [
+      `Car: ${carId}`,
+      "",
+      "Changes Made:",
+      ...removedStandardJobs.map(
+        (job) => `• Removed from evening standard job list: ${job.job_text}`,
+      ),
+      ...removedSpecialJobs.map(
+        (job) => `• Removed from evening special jobs: ${job.job_text}`,
+      ),
+      "",
+      "Evening release details were cleared.",
+      "Previous evening job-list instructions should no longer be treated as current.",
+    ].join("\n");
+
+    try {
+      await createEveningJobListNotification({
+        title: "Evening job list cleared",
+        message:
+          "The chief mechanic has cleared the evening prep job list for this car. Please check with the chief mechanic before continuing with previous evening job-list work.",
+        changeSummary: clearSummary,
+      });
+    } catch (notificationError) {
+      const warning =
+        notificationError instanceof Error
+          ? notificationError.message
+          : "Unknown notification error";
+
+      setErrorMessage(
+        `Evening jobs were cleared, but the mechanic notification failed: ${warning}`,
+      );
+      setClearingAllJobs(false);
+      return;
+    }
+
     setJobs([]);
     setAfterEvent("");
     setJobDate("");
     setReleaseInfo(null);
-    setMessage(`All evening prep jobs cleared for Car ${carId}.`);
+    setPendingChanges([]);
+
+    setMessage(
+      `All evening prep jobs cleared for Car ${carId}. Mechanics will receive an acknowledgement popup.`,
+    );
     setClearingAllJobs(false);
   }
 
@@ -793,7 +993,8 @@ export default function ChiefEveningJobListPage() {
 
           <p className="mt-3 max-w-3xl text-sm text-zinc-400">
             Create, update, clear and publish the evening preparation list.
-            Mechanics should only work from the published version.
+            Mechanics receive a blocking acknowledgement popup when the evening
+            list is published or cleared.
           </p>
         </div>
 
@@ -821,15 +1022,30 @@ export default function ChiefEveningJobListPage() {
         </div>
       )}
 
+      {pendingChanges.length > 0 && (
+        <div className="mb-6 rounded-2xl border border-blue-900/70 bg-blue-950/20 p-4 text-sm text-blue-200">
+          <p className="font-semibold">Pending evening notification changes:</p>
+
+          <ul className="mt-2 list-disc space-y-1 pl-5">
+            {pendingChanges.map((change) => (
+              <li key={change}>{change}</li>
+            ))}
+          </ul>
+
+          <p className="mt-3 text-xs text-blue-300/80">
+            These will be shown to mechanics when you publish the evening job
+            list.
+          </p>
+        </div>
+      )}
+
       <section className="mb-6 grid gap-6 lg:grid-cols-3">
         <div className="rounded-3xl border border-zinc-800 bg-[#14181d] p-6 shadow-xl">
           <p className="text-xs font-semibold uppercase tracking-[0.3em] text-red-400">
             Evening Progress
           </p>
 
-          <h2 className="mt-4 text-6xl font-bold text-red-400">
-            {progress}%
-          </h2>
+          <h2 className="mt-4 text-6xl font-bold text-red-400">{progress}%</h2>
 
           <p className="mt-3 text-sm text-zinc-500">
             {completedJobs} of {totalJobs} jobs complete
@@ -978,7 +1194,9 @@ export default function ChiefEveningJobListPage() {
             disabled={publishingJobList || jobs.length === 0}
             className="rounded-xl bg-green-700 px-5 py-3 text-sm font-semibold text-white hover:bg-green-600 disabled:cursor-not-allowed disabled:opacity-50"
           >
-            {publishingJobList ? "Publishing..." : "Publish Evening Job List"}
+            {publishingJobList
+              ? "Publishing..."
+              : "Publish Evening Job List + Notify"}
           </button>
 
           <button
@@ -987,7 +1205,7 @@ export default function ChiefEveningJobListPage() {
             disabled={clearingAllJobs}
             className="rounded-xl border border-red-900/70 px-5 py-3 text-sm font-semibold text-red-300 hover:bg-red-950/40 disabled:cursor-not-allowed disabled:opacity-50"
           >
-            {clearingAllJobs ? "Clearing..." : "Clear All Evening Jobs"}
+            {clearingAllJobs ? "Clearing..." : "Clear All Evening Jobs + Notify"}
           </button>
         </div>
       </section>
