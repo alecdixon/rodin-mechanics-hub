@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { supabase } from "@/lib/supabase";
 
 type JobListNotification = {
@@ -26,12 +26,16 @@ export default function JobListNotificationModal({ carId, enabled }: Props) {
   const [acknowledging, setAcknowledging] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
 
+  const loadingRef = useRef(false);
+
   const activeNotification = notifications[0] ?? null;
 
   const loadUnacknowledgedNotifications = useCallback(
     async (email: string) => {
-      if (!enabled || !carId || !email) return;
+      if (!enabled || !Number.isFinite(carId) || !email) return;
+      if (loadingRef.current) return;
 
+      loadingRef.current = true;
       setLoading(true);
       setErrorMessage("");
 
@@ -45,6 +49,7 @@ export default function JobListNotificationModal({ carId, enabled }: Props) {
       if (notificationError) {
         setErrorMessage(notificationError.message);
         setLoading(false);
+        loadingRef.current = false;
         return;
       }
 
@@ -57,6 +62,7 @@ export default function JobListNotificationModal({ carId, enabled }: Props) {
       if (acknowledgementError) {
         setErrorMessage(acknowledgementError.message);
         setLoading(false);
+        loadingRef.current = false;
         return;
       }
 
@@ -70,17 +76,23 @@ export default function JobListNotificationModal({ carId, enabled }: Props) {
 
       setNotifications(unacknowledged);
       setLoading(false);
+      loadingRef.current = false;
     },
     [carId, enabled],
   );
 
   useEffect(() => {
     async function init() {
-      if (!enabled || !carId) return;
+      if (!enabled || !Number.isFinite(carId)) return;
 
-      const { data } = await supabase.auth.getUser();
+      const { data, error } = await supabase.auth.getUser();
+
+      if (error) {
+        setErrorMessage(error.message);
+        return;
+      }
+
       const email = data.user?.email?.trim().toLowerCase() ?? "";
-
       setUserEmail(email);
 
       if (email) {
@@ -92,26 +104,43 @@ export default function JobListNotificationModal({ carId, enabled }: Props) {
   }, [carId, enabled, loadUnacknowledgedNotifications]);
 
   useEffect(() => {
-    if (!enabled || !carId || !userEmail) return;
+    if (!enabled || !Number.isFinite(carId) || !userEmail) return;
 
     const channel = supabase
-      .channel(`job-list-notifications-car-${carId}`)
+      .channel(`live-job-list-notifications-car-${carId}`)
       .on(
         "postgres_changes",
         {
           event: "INSERT",
           schema: "public",
           table: "job_list_notifications",
-          filter: `car_id=eq.${carId}`,
         },
-        () => {
-          loadUnacknowledgedNotifications(userEmail);
+        (payload) => {
+          const newNotice = payload.new as JobListNotification;
+
+          if (Number(newNotice.car_id) === Number(carId)) {
+            loadUnacknowledgedNotifications(userEmail);
+          }
         },
       )
-      .subscribe();
+      .subscribe((status) => {
+        console.log("Job list notification realtime status:", status);
+      });
 
     return () => {
       supabase.removeChannel(channel);
+    };
+  }, [carId, enabled, userEmail, loadUnacknowledgedNotifications]);
+
+  useEffect(() => {
+    if (!enabled || !Number.isFinite(carId) || !userEmail) return;
+
+    const interval = window.setInterval(() => {
+      loadUnacknowledgedNotifications(userEmail);
+    }, 5000);
+
+    return () => {
+      window.clearInterval(interval);
     };
   }, [carId, enabled, userEmail, loadUnacknowledgedNotifications]);
 
