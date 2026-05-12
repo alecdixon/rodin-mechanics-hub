@@ -1,31 +1,47 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { useEffect, useMemo, useState } from "react";
+import { useParams, usePathname, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import { getAssignedCar, getUserRole } from "@/lib/userAccess";
+import JobListNotificationModal from "@/app/components/JobListNotificationModal";
 
 type Props = {
   children: React.ReactNode;
 };
 
+type UserRole = "chief" | "mechanic" | "unknown";
+
 export default function CarLayout({ children }: Props) {
   const router = useRouter();
   const params = useParams();
+  const pathname = usePathname();
+
   const carId = String(params.carId ?? "");
+  const numericCarId = Number(carId);
 
   const [loading, setLoading] = useState(true);
-  const [role, setRole] = useState<"chief" | "mechanic" | "unknown">(
-    "unknown",
-  );
+  const [role, setRole] = useState<UserRole>("unknown");
 
   useEffect(() => {
+    let mounted = true;
+
     async function checkAccess() {
-      const { data } = await supabase.auth.getUser();
-      const email = data.user?.email ?? "";
+      setLoading(true);
+
+      const { data, error } = await supabase.auth.getUser();
+
+      if (error || !data.user?.email) {
+        router.replace("/login");
+        return;
+      }
+
+      const email = data.user.email;
       const userRole = getUserRole(email);
       const assignedCar = getAssignedCar(email);
+
+      if (!mounted) return;
 
       if (userRole === "chief") {
         setRole("chief");
@@ -34,6 +50,11 @@ export default function CarLayout({ children }: Props) {
       }
 
       if (userRole === "mechanic") {
+        if (!assignedCar) {
+          router.replace("/login");
+          return;
+        }
+
         if (String(assignedCar) !== carId) {
           router.replace(`/car/${assignedCar}/job-list`);
           return;
@@ -48,26 +69,33 @@ export default function CarLayout({ children }: Props) {
     }
 
     checkAccess();
+
+    return () => {
+      mounted = false;
+    };
   }, [carId, router]);
 
-  const navItems = [
-    {
-      name: "Job List",
-      href: `/car/${carId}/job-list`,
-    },
-    {
-      name: "Evening Job List",
-      href: `/car/${carId}/evening-job-list`,
-    },
-    {
-      name: "Clutch Measurement",
-      href: `/car/${carId}/clutch-measurement`,
-    },
-    {
-      name: "Post Event",
-      href: `/car/${carId}/post-event`,
-    },
-  ];
+  const navItems = useMemo(
+    () => [
+      {
+        name: "Job List",
+        href: `/car/${carId}/job-list`,
+      },
+      {
+        name: "Evening Job List",
+        href: `/car/${carId}/evening-job-list`,
+      },
+      {
+        name: "Clutch Measurement",
+        href: `/car/${carId}/clutch-measurement`,
+      },
+      {
+        name: "Post Event",
+        href: `/car/${carId}/post-event`,
+      },
+    ],
+    [carId],
+  );
 
   if (loading) {
     return (
@@ -79,7 +107,7 @@ export default function CarLayout({ children }: Props) {
 
   return (
     <div className="flex min-h-screen bg-black text-white">
-      <aside className="w-64 border-r border-neutral-800 bg-neutral-950 p-5">
+      <aside className="w-64 shrink-0 border-r border-neutral-800 bg-neutral-950 p-5">
         {role === "chief" ? (
           <Link
             href="/dashboard"
@@ -103,26 +131,52 @@ export default function CarLayout({ children }: Props) {
               Chief mechanic access
             </p>
           )}
+
+          {role === "mechanic" && (
+            <p className="mt-2 rounded-full border border-neutral-800 bg-black px-3 py-1 text-xs text-neutral-300">
+              Mechanic access
+            </p>
+          )}
         </div>
 
         <nav className="mt-8 space-y-2">
-          {navItems.map((item) => (
-            <Link
-              key={item.name}
-              href={item.href}
-              className="block rounded-lg border border-neutral-800 bg-black px-4 py-3 text-sm hover:border-red-500"
-            >
-              {item.name}
-            </Link>
-          ))}
+          {navItems.map((item) => {
+            const active = pathname === item.href;
+
+            return (
+              <Link
+                key={item.name}
+                href={item.href}
+                className={[
+                  "block rounded-lg border px-4 py-3 text-sm transition",
+                  active
+                    ? "border-red-500 bg-red-950/40 text-red-100"
+                    : "border-neutral-800 bg-black text-neutral-200 hover:border-red-500",
+                ].join(" ")}
+              >
+                {item.name}
+              </Link>
+            );
+          })}
 
           {role === "chief" && (
-            <div className="mt-6 space-y-2">
+            <div className="mt-6 space-y-2 border-t border-neutral-800 pt-6">
+              <p className="mb-2 text-xs uppercase tracking-[0.25em] text-neutral-500">
+                Chief Tools
+              </p>
+
               <Link
                 href={`/dashboard/car/${carId}/viewer`}
                 className="block rounded-lg border border-red-800 bg-red-950/30 px-4 py-3 text-sm font-semibold text-red-200 hover:border-red-500"
               >
                 Chief Viewer
+              </Link>
+
+              <Link
+                href={`/dashboard/car/${carId}/job-list`}
+                className="block rounded-lg border border-red-800 bg-red-950/30 px-4 py-3 text-sm font-semibold text-red-200 hover:border-red-500"
+              >
+                Edit Job List
               </Link>
 
               <Link
@@ -137,6 +191,11 @@ export default function CarLayout({ children }: Props) {
       </aside>
 
       <main className="flex-1 p-6">{children}</main>
+
+      <JobListNotificationModal
+        carId={numericCarId}
+        enabled={role === "mechanic" && Number.isFinite(numericCarId)}
+      />
     </div>
   );
 }

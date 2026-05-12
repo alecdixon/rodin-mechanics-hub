@@ -136,6 +136,54 @@ export default function ChiefJobListEditorPage() {
     return job.id || `${job.car_id}-${job.section}-${job.job_id}`;
   }
 
+  async function createJobListNotification({
+    title,
+    message,
+    changeSummary,
+  }: {
+    title: string;
+    message: string;
+    changeSummary: string;
+  }) {
+    const { data: userData, error: userError } = await supabase.auth.getUser();
+
+    if (userError) {
+      throw new Error(`User check failed: ${userError.message}`);
+    }
+
+    const email = userData.user?.email?.trim().toLowerCase() ?? "unknown";
+
+    const { error } = await supabase.from("job_list_notifications").insert({
+      car_id: carId,
+      notice_type: "job_list_update",
+      title,
+      message,
+      change_summary: changeSummary,
+      created_by: email,
+    });
+
+    if (error) {
+      throw new Error(error.message);
+    }
+  }
+
+  function buildPublishedChangeSummary(nextVersion: number) {
+    const standardCount = jobs.filter((job) => job.section === "standard").length;
+    const specialCount = jobs.filter((job) => job.section === "special").length;
+
+    return [
+      `Car: ${carId}`,
+      `Version: ${nextVersion}`,
+      `Event/session: ${afterEvent.trim()}`,
+      `Date: ${jobDate}`,
+      `Standard jobs: ${standardCount}`,
+      `Special jobs: ${specialCount}`,
+      "",
+      "The job list has been published by the chief mechanic.",
+      "Please review the latest job list before continuing work.",
+    ].join("\n");
+  }
+
   async function loadJobs() {
     const { data, error } = await supabase
       .from("job_progress")
@@ -332,7 +380,7 @@ export default function ChiefJobListEditorPage() {
     }
 
     const confirmed = window.confirm(
-      `Publish workshop job list for Car ${carId}?\n\nMechanics will see this as the official published version.`,
+      `Publish workshop job list for Car ${carId}?\n\nMechanics assigned to this car will receive a popup notification and must acknowledge it.`,
     );
 
     if (!confirmed) return;
@@ -375,10 +423,36 @@ export default function ChiefJobListEditorPage() {
       return;
     }
 
+    try {
+      await createJobListNotification({
+        title: "Workshop job list published",
+        message:
+          "The chief mechanic has published a new workshop job list for this car. Please review the latest jobs before continuing.",
+        changeSummary: buildPublishedChangeSummary(nextVersion),
+      });
+    } catch (notificationError) {
+      const warning =
+        notificationError instanceof Error
+          ? notificationError.message
+          : "Unknown notification error";
+
+      setErrorMessage(
+        `Job list was published, but the mechanic notification failed: ${warning}`,
+      );
+
+      await loadReleaseInfo();
+      await loadJobs();
+
+      setPublishingJobList(false);
+      return;
+    }
+
     await loadReleaseInfo();
     await loadJobs();
 
-    setMessage(`Workshop job list published as version ${nextVersion}.`);
+    setMessage(
+      `Workshop job list published as version ${nextVersion}. Mechanics will receive an acknowledgement popup.`,
+    );
     setPublishingJobList(false);
   }
 
@@ -628,7 +702,7 @@ export default function ChiefJobListEditorPage() {
 
   async function clearAllJobs() {
     const confirmed = window.confirm(
-      `Clear ALL workshop jobs for Car ${carId}?\n\nThis will remove standard jobs, special jobs, notes and the released event/date from the mechanic page.`,
+      `Clear ALL workshop jobs for Car ${carId}?\n\nThis will remove standard jobs, special jobs, notes and the released event/date from the mechanic page.\n\nMechanics will receive a popup notification that the job list has been cleared.`,
     );
 
     if (!confirmed) return;
@@ -661,11 +735,40 @@ export default function ChiefJobListEditorPage() {
       return;
     }
 
+    try {
+      await createJobListNotification({
+        title: "Workshop job list cleared",
+        message:
+          "The chief mechanic has cleared the workshop job list for this car. Please check with the chief mechanic before continuing with previous job-list work.",
+        changeSummary: [
+          `Car: ${carId}`,
+          "All standard jobs were cleared.",
+          "All special jobs were cleared.",
+          "Release details were cleared.",
+          "",
+          "Previous job-list instructions should no longer be treated as current.",
+        ].join("\n"),
+      });
+    } catch (notificationError) {
+      const warning =
+        notificationError instanceof Error
+          ? notificationError.message
+          : "Unknown notification error";
+
+      setErrorMessage(
+        `Jobs were cleared, but the mechanic notification failed: ${warning}`,
+      );
+      setClearingAllJobs(false);
+      return;
+    }
+
     setJobs([]);
     setAfterEvent("");
     setJobDate("");
     setReleaseInfo(null);
-    setMessage(`All workshop jobs cleared for Car ${carId}.`);
+    setMessage(
+      `All workshop jobs cleared for Car ${carId}. Mechanics will receive an acknowledgement popup.`,
+    );
     setClearingAllJobs(false);
   }
 
@@ -707,7 +810,8 @@ export default function ChiefJobListEditorPage() {
 
           <p className="mt-3 max-w-3xl text-sm leading-6 text-zinc-400">
             Create, update, clear and publish the workshop preparation list.
-            Mechanics should only work from the published version.
+            Mechanics receive a blocking acknowledgement popup when the list is
+            published or cleared.
           </p>
         </div>
 
@@ -903,7 +1007,9 @@ export default function ChiefJobListEditorPage() {
             disabled={publishingJobList || jobs.length === 0}
             className="rounded-xl bg-green-700 px-5 py-3 text-sm font-semibold text-white hover:bg-green-600 disabled:cursor-not-allowed disabled:opacity-50"
           >
-            {publishingJobList ? "Publishing..." : "Publish Job List"}
+            {publishingJobList
+              ? "Publishing..."
+              : "Publish Job List + Notify Mechanics"}
           </button>
 
           <button
@@ -912,7 +1018,7 @@ export default function ChiefJobListEditorPage() {
             disabled={clearingAllJobs}
             className="rounded-xl border border-red-900/70 px-5 py-3 text-sm font-semibold text-red-300 hover:bg-red-950/40 disabled:cursor-not-allowed disabled:opacity-50"
           >
-            {clearingAllJobs ? "Clearing..." : "Clear All Jobs"}
+            {clearingAllJobs ? "Clearing..." : "Clear All Jobs + Notify"}
           </button>
         </div>
       </section>
@@ -930,7 +1036,7 @@ export default function ChiefJobListEditorPage() {
           <p className="mt-2 text-sm leading-6 text-zinc-500">
             Choose a template, then update the standard workshop jobs for this
             car. Special jobs are kept separate. Publishing is a separate final
-            step.
+            step, and that is when mechanics are notified.
           </p>
 
           <div className="mt-5 flex flex-wrap gap-3">
