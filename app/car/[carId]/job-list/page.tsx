@@ -76,9 +76,78 @@ type JobRelease = {
   car_id: number;
   after_event: string | null;
   job_date: string | null;
+  completion_date: string | null;
   released_by: string | null;
   released_at: string | null;
+  version_number: number | null;
+  status: "draft" | "published" | string | null;
+  published_at: string | null;
+  published_by: string | null;
 };
+
+function niceDate(value: string | null | undefined) {
+  if (!value) return "No date set";
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+
+  return date.toLocaleDateString("en-GB");
+}
+
+function niceDateTime(value: string | null | undefined) {
+  if (!value) return "No timestamp";
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+
+  return date.toLocaleString("en-GB");
+}
+
+function getCompletionUrgency(completionDate: string | null | undefined) {
+  if (!completionDate) {
+    return {
+      label: "No completion date set",
+      className: "border-zinc-800 bg-[#111418] text-zinc-300",
+    };
+  }
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  const deadline = new Date(completionDate);
+  deadline.setHours(0, 0, 0, 0);
+
+  const diffMs = deadline.getTime() - today.getTime();
+  const diffDays = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
+
+  if (diffDays < 0) {
+    return {
+      label: `Overdue by ${Math.abs(diffDays)} day${
+        Math.abs(diffDays) === 1 ? "" : "s"
+      }`,
+      className: "border-red-700 bg-red-950/50 text-red-200",
+    };
+  }
+
+  if (diffDays === 0) {
+    return {
+      label: "Due today",
+      className: "border-red-700 bg-red-950/50 text-red-200",
+    };
+  }
+
+  if (diffDays === 1) {
+    return {
+      label: "Due tomorrow",
+      className: "border-yellow-700 bg-yellow-950/30 text-yellow-200",
+    };
+  }
+
+  return {
+    label: `Due in ${diffDays} days`,
+    className: "border-green-800 bg-green-950/30 text-green-300",
+  };
+}
 
 function makeTemplateRows(carId: number): JobRow[] {
   return STANDARD_JOBS.map((text, index) => ({
@@ -171,8 +240,8 @@ export default function MechanicJobListPage() {
         const key = `${job.section}-${job.job_id}`;
         initialNotes[key] = job.notes ?? "";
       });
-      setDraftNotes(initialNotes);
 
+      setDraftNotes(initialNotes);
       setLoading(false);
     }
 
@@ -192,6 +261,8 @@ export default function MechanicJobListPage() {
   const totalJobs = jobs.length;
   const completedJobs = jobs.filter((job) => job.done).length;
   const progress = totalJobs ? Math.round((completedJobs / totalJobs) * 100) : 0;
+
+  const completionUrgency = getCompletionUrgency(releaseInfo?.completion_date);
 
   async function toggleJob(job: JobRow) {
     const newDone = !job.done;
@@ -539,6 +610,24 @@ export default function MechanicJobListPage() {
         </div>
       )}
 
+      {releaseInfo?.completion_date && (
+        <section
+          className={`mb-6 rounded-3xl border p-6 shadow-xl ${completionUrgency.className}`}
+        >
+          <p className="text-xs font-semibold uppercase tracking-[0.3em]">
+            Required Completion Date
+          </p>
+
+          <h2 className="mt-3 text-4xl font-bold">
+            Complete by {niceDate(releaseInfo.completion_date)}
+          </h2>
+
+          <p className="mt-3 text-sm font-semibold">
+            {completionUrgency.label}
+          </p>
+        </section>
+      )}
+
       <section className="mb-6 rounded-3xl border border-zinc-800 bg-[#14181d] p-6 shadow-xl">
         <p className="text-xs font-semibold uppercase tracking-[0.3em] text-red-400">
           Current Released Job List
@@ -550,19 +639,49 @@ export default function MechanicJobListPage() {
 
         <div className="mt-3 flex flex-wrap gap-4 text-sm text-zinc-400">
           <span>
-            Date:{" "}
+            Job list date:{" "}
             <span className="font-semibold text-zinc-100">
-              {releaseInfo?.job_date
-                ? new Date(releaseInfo.job_date).toLocaleDateString("en-GB")
-                : "No date set"}
+              {niceDate(releaseInfo?.job_date)}
             </span>
           </span>
+
+          <span>
+            Complete by:{" "}
+            <span className="font-semibold text-red-300">
+              {niceDate(releaseInfo?.completion_date)}
+            </span>
+          </span>
+
+          {releaseInfo?.version_number !== null &&
+            releaseInfo?.version_number !== undefined && (
+              <span>
+                Version:{" "}
+                <span className="font-semibold text-zinc-100">
+                  {releaseInfo.version_number || "Not published"}
+                </span>
+              </span>
+            )}
+
+          {releaseInfo?.status && (
+            <span>
+              Status:{" "}
+              <span
+                className={`font-semibold ${
+                  releaseInfo.status === "published"
+                    ? "text-green-300"
+                    : "text-yellow-300"
+                }`}
+              >
+                {releaseInfo.status}
+              </span>
+            </span>
+          )}
 
           {releaseInfo?.released_at && (
             <span>
               Released:{" "}
               <span className="font-semibold text-zinc-100">
-                {new Date(releaseInfo.released_at).toLocaleString("en-GB")}
+                {niceDateTime(releaseInfo.released_at)}
               </span>
             </span>
           )}

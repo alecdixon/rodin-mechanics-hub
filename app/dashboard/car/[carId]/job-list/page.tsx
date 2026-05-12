@@ -31,6 +31,7 @@ type JobRelease = {
   car_id: number;
   after_event: string | null;
   job_date: string | null;
+  completion_date: string | null;
   released_by: string | null;
   released_at: string | null;
   version_number: number | null;
@@ -116,6 +117,7 @@ export default function ChiefJobListEditorPage() {
 
   const [afterEvent, setAfterEvent] = useState("");
   const [jobDate, setJobDate] = useState("");
+  const [completionDate, setCompletionDate] = useState("");
   const [releaseInfo, setReleaseInfo] = useState<JobRelease | null>(null);
 
   const [newSpecialJob, setNewSpecialJob] = useState("");
@@ -150,7 +152,8 @@ export default function ChiefJobListEditorPage() {
       `Car: ${carId}`,
       `Version: ${nextVersion}`,
       `Event/session: ${afterEvent.trim()}`,
-      `Date: ${jobDate}`,
+      `Job list date: ${jobDate}`,
+      `Required completion date: ${completionDate || "No completion date set"}`,
       "",
       "Changes Made:",
     ];
@@ -255,10 +258,12 @@ export default function ChiefJobListEditorPage() {
       setReleaseInfo(release);
       setAfterEvent(release.after_event ?? "");
       setJobDate(release.job_date ?? "");
+      setCompletionDate(release.completion_date ?? "");
     } else {
       setReleaseInfo(null);
       setAfterEvent("");
       setJobDate("");
+      setCompletionDate("");
     }
   }
 
@@ -315,6 +320,7 @@ export default function ChiefJobListEditorPage() {
         car_id: carId,
         after_event: afterEvent.trim() || null,
         job_date: jobDate || null,
+        completion_date: completionDate || null,
         released_by: userData.user?.email ?? null,
         released_at: new Date().toISOString(),
         status: releaseInfo?.status === "published" ? "published" : "draft",
@@ -353,6 +359,7 @@ export default function ChiefJobListEditorPage() {
         car_id: carId,
         after_event: afterEvent.trim() || null,
         job_date: jobDate || null,
+        completion_date: completionDate || null,
         released_by: userData.user?.email ?? null,
         released_at: new Date().toISOString(),
         status: "draft",
@@ -398,6 +405,11 @@ export default function ChiefJobListEditorPage() {
       return;
     }
 
+    if (!completionDate) {
+      setErrorMessage("Enter a required completion date before publishing.");
+      return;
+    }
+
     const confirmed = window.confirm(
       `Publish workshop job list for Car ${carId}?\n\nMechanics assigned to this car will receive a popup notification and must acknowledge it.`,
     );
@@ -424,6 +436,7 @@ export default function ChiefJobListEditorPage() {
         car_id: carId,
         after_event: afterEvent.trim() || null,
         job_date: jobDate || null,
+        completion_date: completionDate || null,
         released_by: email,
         released_at: now,
         version_number: nextVersion,
@@ -446,7 +459,7 @@ export default function ChiefJobListEditorPage() {
       await createJobListNotification({
         title: "Workshop job list published",
         message:
-          "The chief mechanic has published a new workshop job list for this car. Please review the changes before continuing.",
+          "The chief mechanic has published a new workshop job list for this car. Please review the changes and required completion date before continuing.",
         changeSummary: buildChangesMadeSummary(nextVersion),
       });
     } catch (notificationError) {
@@ -860,6 +873,7 @@ export default function ChiefJobListEditorPage() {
     setJobs([]);
     setAfterEvent("");
     setJobDate("");
+    setCompletionDate("");
     setReleaseInfo(null);
     setPendingChanges([]);
 
@@ -1038,6 +1052,13 @@ export default function ChiefJobListEditorPage() {
               </span>
 
               <span>
+                Complete by:{" "}
+                <span className="font-semibold text-zinc-100">
+                  {niceDate(releaseInfo?.completion_date)}
+                </span>
+              </span>
+
+              <span>
                 Version:{" "}
                 <span className="font-semibold text-zinc-100">
                   {versionNumber || "Not published"}
@@ -1078,7 +1099,7 @@ export default function ChiefJobListEditorPage() {
           </button>
         </div>
 
-        <div className="mt-6 grid gap-4 md:grid-cols-2">
+        <div className="mt-6 grid gap-4 md:grid-cols-3">
           <label className="block">
             <span className="text-sm font-semibold text-zinc-300">
               After Event Name
@@ -1093,12 +1114,27 @@ export default function ChiefJobListEditorPage() {
           </label>
 
           <label className="block">
-            <span className="text-sm font-semibold text-zinc-300">Date</span>
+            <span className="text-sm font-semibold text-zinc-300">
+              Job List Date
+            </span>
 
             <input
               type="date"
               value={jobDate}
               onChange={(event) => setJobDate(event.target.value)}
+              className="mt-2 w-full rounded-xl border border-zinc-700 bg-[#0d0f12] px-4 py-3 text-sm text-zinc-100 outline-none focus:border-red-500"
+            />
+          </label>
+
+          <label className="block">
+            <span className="text-sm font-semibold text-zinc-300">
+              Required Completion Date
+            </span>
+
+            <input
+              type="date"
+              value={completionDate}
+              onChange={(event) => setCompletionDate(event.target.value)}
               className="mt-2 w-full rounded-xl border border-zinc-700 bg-[#0d0f12] px-4 py-3 text-sm text-zinc-100 outline-none focus:border-red-500"
             />
           </label>
