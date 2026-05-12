@@ -8,8 +8,8 @@ import { getAssignedCar, getUserRole } from "@/lib/userAccess";
 export default function LoginPage() {
   const router = useRouter();
 
-  const [email, setEmail] = useState("dan.crain@rodinmotorsport.com");
-  const [password, setPassword] = useState("Rodin123!");
+  const [email, setEmail] = useState("Rodin Email");
+  const [password, setPassword] = useState("pword");
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
 
