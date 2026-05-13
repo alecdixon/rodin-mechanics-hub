@@ -25,6 +25,8 @@ type Props = {
   enabled: boolean;
 };
 
+const ALARM_SOUND_STORAGE_KEY = "mechanicsHubAlarmSoundEnabled";
+
 function formatDateTime(value: string) {
   const date = new Date(value);
 
@@ -48,7 +50,7 @@ export default function JobListNotificationModal({ carId, enabled }: Props) {
   const [acknowledging, setAcknowledging] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
   const [soundBlocked, setSoundBlocked] = useState(false);
-  const [soundEnabled, setSoundEnabled] = useState(false);
+  const [soundEnabled, setSoundEnabled] = useState(true);
 
   const loadingRef = useRef(false);
   const audioContextRef = useRef<AudioContext | null>(null);
@@ -126,78 +128,119 @@ export default function JobListNotificationModal({ carId, enabled }: Props) {
 
     if (!audioContext || audioContext.state !== "running") {
       setSoundBlocked(true);
-      setSoundEnabled(false);
       return;
     }
 
     const now = audioContext.currentTime;
-
-    /*
-      Stuka-style dive siren effect:
-      - Harsh descending main tone.
-      - Detuned second oscillator for mechanical roughness.
-      - Tremolo modulation to mimic the chopping/wailing character.
-      - Filter sweep makes it feel like it is diving past.
-      This is not a sampled real aircraft sound.
-    */
+    const duration = 2.65;
 
     const mainOscillator = audioContext.createOscillator();
-    const detunedOscillator = audioContext.createOscillator();
+    const secondOscillator = audioContext.createOscillator();
+    const thirdOscillator = audioContext.createOscillator();
+
     const tremoloOscillator = audioContext.createOscillator();
+    const tremoloDepth = audioContext.createGain();
 
     const mainGain = audioContext.createGain();
-    const tremoloGain = audioContext.createGain();
     const filter = audioContext.createBiquadFilter();
 
+    const noiseBuffer = audioContext.createBuffer(
+      1,
+      audioContext.sampleRate * duration,
+      audioContext.sampleRate,
+    );
+
+    const noiseData = noiseBuffer.getChannelData(0);
+
+    for (let i = 0; i < noiseData.length; i += 1) {
+      noiseData[i] = Math.random() * 2 - 1;
+    }
+
+    const noiseSource = audioContext.createBufferSource();
+    const noiseGain = audioContext.createGain();
+    const noiseFilter = audioContext.createBiquadFilter();
+
+    noiseSource.buffer = noiseBuffer;
+
     mainOscillator.type = "sawtooth";
-    detunedOscillator.type = "square";
+    secondOscillator.type = "square";
+    thirdOscillator.type = "sawtooth";
+
+    mainOscillator.frequency.setValueAtTime(1650, now);
+    mainOscillator.frequency.exponentialRampToValueAtTime(310, now + duration);
+
+    secondOscillator.frequency.setValueAtTime(1580, now);
+    secondOscillator.frequency.exponentialRampToValueAtTime(
+      285,
+      now + duration,
+    );
+
+    thirdOscillator.frequency.setValueAtTime(1725, now);
+    thirdOscillator.frequency.exponentialRampToValueAtTime(
+      335,
+      now + duration,
+    );
+
     tremoloOscillator.type = "sine";
+    tremoloOscillator.frequency.setValueAtTime(8, now);
+    tremoloOscillator.frequency.linearRampToValueAtTime(15, now + duration);
 
-    // Descending dive pitch.
-    mainOscillator.frequency.setValueAtTime(1400, now);
-    mainOscillator.frequency.exponentialRampToValueAtTime(230, now + 3.0);
-
-    detunedOscillator.frequency.setValueAtTime(1042, now);
-    detunedOscillator.frequency.exponentialRampToValueAtTime(224, now + 3.0);
-
-    // Tremolo gives it the "mechanical siren" pulse.
-    tremoloOscillator.frequency.setValueAtTime(11, now);
-    tremoloGain.gain.setValueAtTime(0.12, now);
+    tremoloDepth.gain.setValueAtTime(0.09, now);
 
     filter.type = "bandpass";
-    filter.frequency.setValueAtTime(1200, now);
-    filter.frequency.exponentialRampToValueAtTime(420, now + 3.0);
-    filter.Q.setValueAtTime(5, now);
+    filter.frequency.setValueAtTime(1700, now);
+    filter.frequency.exponentialRampToValueAtTime(430, now + duration);
+    filter.Q.setValueAtTime(7, now);
 
     mainGain.gain.setValueAtTime(0.0001, now);
     mainGain.gain.exponentialRampToValueAtTime(0.24, now + 0.08);
-    mainGain.gain.setValueAtTime(0.24, now + 1.8);
-    mainGain.gain.exponentialRampToValueAtTime(0.0001, now + 2.35);
+    mainGain.gain.setValueAtTime(0.24, now + duration - 0.28);
+    mainGain.gain.exponentialRampToValueAtTime(0.0001, now + duration);
 
-    tremoloOscillator.connect(tremoloGain);
-    tremoloGain.connect(mainGain.gain);
+    tremoloOscillator.connect(tremoloDepth);
+    tremoloDepth.connect(mainGain.gain);
 
     mainOscillator.connect(filter);
-    detunedOscillator.connect(filter);
+    secondOscillator.connect(filter);
+    thirdOscillator.connect(filter);
     filter.connect(mainGain);
     mainGain.connect(audioContext.destination);
 
-    mainOscillator.start(now);
-    detunedOscillator.start(now);
-    tremoloOscillator.start(now);
+    noiseFilter.type = "bandpass";
+    noiseFilter.frequency.setValueAtTime(1300, now);
+    noiseFilter.frequency.exponentialRampToValueAtTime(520, now + duration);
+    noiseFilter.Q.setValueAtTime(1.6, now);
 
-    mainOscillator.stop(now + 2.45);
-    detunedOscillator.stop(now + 2.45);
-    tremoloOscillator.stop(now + 2.45);
+    noiseGain.gain.setValueAtTime(0.0001, now);
+    noiseGain.gain.exponentialRampToValueAtTime(0.045, now + 0.12);
+    noiseGain.gain.setValueAtTime(0.045, now + duration - 0.35);
+    noiseGain.gain.exponentialRampToValueAtTime(0.0001, now + duration);
+
+    noiseSource.connect(noiseFilter);
+    noiseFilter.connect(noiseGain);
+    noiseGain.connect(audioContext.destination);
+
+    mainOscillator.start(now);
+    secondOscillator.start(now);
+    thirdOscillator.start(now);
+    tremoloOscillator.start(now);
+    noiseSource.start(now);
+
+    mainOscillator.stop(now + duration + 0.05);
+    secondOscillator.stop(now + duration + 0.05);
+    thirdOscillator.stop(now + duration + 0.05);
+    tremoloOscillator.stop(now + duration + 0.05);
+    noiseSource.stop(now + duration + 0.05);
   }
 
   async function startAlarmSound() {
+    if (!soundEnabled) return;
+
     try {
       const audioContext = getAudioContext();
 
       if (!audioContext) {
         setSoundBlocked(true);
-        setSoundEnabled(false);
         return;
       }
 
@@ -207,7 +250,6 @@ export default function JobListNotificationModal({ carId, enabled }: Props) {
 
       if (audioContext.state !== "running") {
         setSoundBlocked(true);
-        setSoundEnabled(false);
         return;
       }
 
@@ -220,14 +262,12 @@ export default function JobListNotificationModal({ carId, enabled }: Props) {
 
       alarmIntervalRef.current = window.setInterval(() => {
         playStukaDiveSiren();
-      }, 3000);
+      }, 3200);
 
       setSoundBlocked(false);
-      setSoundEnabled(true);
     } catch (error) {
       console.error("Alarm sound failed:", error);
       setSoundBlocked(true);
-      setSoundEnabled(false);
     }
   }
 
@@ -236,9 +276,45 @@ export default function JobListNotificationModal({ carId, enabled }: Props) {
       window.clearInterval(alarmIntervalRef.current);
       alarmIntervalRef.current = null;
     }
+  }
+
+  async function enableAlarmSound() {
+    setSoundEnabled(true);
+    setSoundBlocked(false);
+
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem(ALARM_SOUND_STORAGE_KEY, "true");
+    }
+
+    if (activeNotification) {
+      await startAlarmSound();
+    }
+  }
+
+  function disableAlarmSound() {
+    stopAlarmSound();
 
     setSoundEnabled(false);
+    setSoundBlocked(false);
+
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem(ALARM_SOUND_STORAGE_KEY, "false");
+    }
   }
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const savedSoundPreference = window.localStorage.getItem(
+      ALARM_SOUND_STORAGE_KEY,
+    );
+
+    if (savedSoundPreference === "false") {
+      setSoundEnabled(false);
+    } else {
+      setSoundEnabled(true);
+    }
+  }, []);
 
   useEffect(() => {
     async function init() {
@@ -300,7 +376,7 @@ export default function JobListNotificationModal({ carId, enabled }: Props) {
   }, [carId, enabled, userEmail, loadUnacknowledgedNotifications]);
 
   useEffect(() => {
-    if (!enabled || !activeNotification) {
+    if (!enabled || !activeNotification || !soundEnabled) {
       stopAlarmSound();
       return;
     }
@@ -310,7 +386,7 @@ export default function JobListNotificationModal({ carId, enabled }: Props) {
     return () => {
       stopAlarmSound();
     };
-  }, [enabled, activeNotification?.id]);
+  }, [enabled, activeNotification?.id, soundEnabled]);
 
   async function acknowledgeNotification() {
     if (!activeNotification || !userEmail) return;
@@ -435,6 +511,25 @@ export default function JobListNotificationModal({ carId, enabled }: Props) {
                 </div>
               )}
 
+              {soundEnabled && !soundBlocked && (
+                <div className="mt-4 rounded-xl border border-red-700 bg-red-950/40 p-4 text-center text-xs font-black uppercase tracking-[0.18em] text-red-200">
+                  Dive siren active
+                </div>
+              )}
+
+              {!soundEnabled && (
+                <div className="mt-4 rounded-xl border border-neutral-700 bg-neutral-900 p-4 text-center text-sm font-semibold text-neutral-300">
+                  Alarm sound disabled
+                </div>
+              )}
+
+              {soundBlocked && soundEnabled && (
+                <div className="mt-4 rounded-xl border border-yellow-700 bg-yellow-950/40 p-4 text-center text-sm font-semibold text-yellow-100">
+                  Siren could not auto-start. The tablet may require one tap on
+                  the page after opening, or the media volume may be muted.
+                </div>
+              )}
+
               <div className="mt-4 rounded-xl border border-neutral-800 bg-neutral-900/70 p-4 text-sm leading-6 text-neutral-300">
                 Scroll this message if needed, then press acknowledge below.
                 Acknowledging only confirms that you have seen the update. It
@@ -445,26 +540,15 @@ export default function JobListNotificationModal({ carId, enabled }: Props) {
             <div className="shrink-0 border-t border-red-900/70 bg-neutral-950 p-4">
               <button
                 type="button"
-                onClick={startAlarmSound}
-                className="mb-3 w-full rounded-2xl border border-yellow-500 bg-yellow-950 px-6 py-4 text-sm font-black uppercase tracking-[0.16em] text-yellow-100 transition hover:bg-yellow-900"
+                onClick={soundEnabled ? disableAlarmSound : enableAlarmSound}
+                className={`mb-3 w-full rounded-2xl border px-6 py-4 text-sm font-black uppercase tracking-[0.16em] transition ${
+                  soundEnabled
+                    ? "border-neutral-700 bg-neutral-900 text-neutral-200 hover:bg-neutral-800"
+                    : "border-yellow-500 bg-yellow-950 text-yellow-100 hover:bg-yellow-900"
+                }`}
               >
-                {soundEnabled
-                  ? "Test Dive Siren"
-                  : "Enable Dive Siren Sound"}
+                {soundEnabled ? "Disable Alarm Sound" : "Enable Alarm Sound"}
               </button>
-
-              {soundEnabled && !soundBlocked && (
-                <p className="mb-3 text-center text-xs font-semibold uppercase tracking-[0.18em] text-red-300">
-                  Dive siren active
-                </p>
-              )}
-
-              {soundBlocked && (
-                <p className="mb-3 text-center text-xs font-semibold text-yellow-200">
-                  Sound was blocked by the browser. Tap Enable Dive Siren Sound
-                  and check the tablet media volume.
-                </p>
-              )}
 
               <button
                 type="button"
