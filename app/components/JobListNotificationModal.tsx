@@ -121,39 +121,7 @@ export default function JobListNotificationModal({ carId, enabled }: Props) {
     return audioContextRef.current;
   }
 
-  function playRetroArcadeNote(
-    audioContext: AudioContext,
-    frequency: number,
-    startTime: number,
-    duration: number,
-    volume = 0.18,
-  ) {
-    const oscillator = audioContext.createOscillator();
-    const gain = audioContext.createGain();
-    const filter = audioContext.createBiquadFilter();
-
-    oscillator.type = "square";
-
-    oscillator.frequency.setValueAtTime(frequency, startTime);
-
-    filter.type = "lowpass";
-    filter.frequency.setValueAtTime(2200, startTime);
-    filter.Q.setValueAtTime(1.2, startTime);
-
-    gain.gain.setValueAtTime(0.0001, startTime);
-    gain.gain.exponentialRampToValueAtTime(volume, startTime + 0.015);
-    gain.gain.setValueAtTime(volume, startTime + duration * 0.65);
-    gain.gain.exponentialRampToValueAtTime(0.0001, startTime + duration);
-
-    oscillator.connect(filter);
-    filter.connect(gain);
-    gain.connect(audioContext.destination);
-
-    oscillator.start(startTime);
-    oscillator.stop(startTime + duration + 0.03);
-  }
-
-  function playRetroArcadeAlert() {
+  function playStukaDiveSiren() {
     const audioContext = getAudioContext();
 
     if (!audioContext || audioContext.state !== "running") {
@@ -165,31 +133,62 @@ export default function JobListNotificationModal({ carId, enabled }: Props) {
     const now = audioContext.currentTime;
 
     /*
-      Retro 8-bit arcade alert.
-      This is deliberately NOT a Mario melody.
-      It uses simple square-wave tones in a short original pattern.
+      Stuka-style dive siren effect:
+      - Harsh descending main tone.
+      - Detuned second oscillator for mechanical roughness.
+      - Tremolo modulation to mimic the chopping/wailing character.
+      - Filter sweep makes it feel like it is diving past.
+      This is not a sampled real aircraft sound.
     */
 
-    const notes = [
-      { frequency: 784, offset: 0.0, duration: 0.11 }, // G5
-      { frequency: 988, offset: 0.13, duration: 0.11 }, // B5
-      { frequency: 1175, offset: 0.26, duration: 0.14 }, // D6
-      { frequency: 988, offset: 0.45, duration: 0.11 }, // B5
-      { frequency: 784, offset: 0.58, duration: 0.11 }, // G5
-      { frequency: 659, offset: 0.71, duration: 0.16 }, // E5
-      { frequency: 880, offset: 0.96, duration: 0.12 }, // A5
-      { frequency: 1175, offset: 1.1, duration: 0.2 }, // D6
-    ];
+    const mainOscillator = audioContext.createOscillator();
+    const detunedOscillator = audioContext.createOscillator();
+    const tremoloOscillator = audioContext.createOscillator();
 
-    notes.forEach((note) => {
-      playRetroArcadeNote(
-        audioContext,
-        note.frequency,
-        now + note.offset,
-        note.duration,
-        0.18,
-      );
-    });
+    const mainGain = audioContext.createGain();
+    const tremoloGain = audioContext.createGain();
+    const filter = audioContext.createBiquadFilter();
+
+    mainOscillator.type = "sawtooth";
+    detunedOscillator.type = "square";
+    tremoloOscillator.type = "sine";
+
+    // Descending dive pitch.
+    mainOscillator.frequency.setValueAtTime(1050, now);
+    mainOscillator.frequency.exponentialRampToValueAtTime(230, now + 2.2);
+
+    detunedOscillator.frequency.setValueAtTime(1042, now);
+    detunedOscillator.frequency.exponentialRampToValueAtTime(224, now + 2.2);
+
+    // Tremolo gives it the "mechanical siren" pulse.
+    tremoloOscillator.frequency.setValueAtTime(11, now);
+    tremoloGain.gain.setValueAtTime(0.12, now);
+
+    filter.type = "bandpass";
+    filter.frequency.setValueAtTime(1200, now);
+    filter.frequency.exponentialRampToValueAtTime(420, now + 2.2);
+    filter.Q.setValueAtTime(5, now);
+
+    mainGain.gain.setValueAtTime(0.0001, now);
+    mainGain.gain.exponentialRampToValueAtTime(0.24, now + 0.08);
+    mainGain.gain.setValueAtTime(0.24, now + 1.8);
+    mainGain.gain.exponentialRampToValueAtTime(0.0001, now + 2.35);
+
+    tremoloOscillator.connect(tremoloGain);
+    tremoloGain.connect(mainGain.gain);
+
+    mainOscillator.connect(filter);
+    detunedOscillator.connect(filter);
+    filter.connect(mainGain);
+    mainGain.connect(audioContext.destination);
+
+    mainOscillator.start(now);
+    detunedOscillator.start(now);
+    tremoloOscillator.start(now);
+
+    mainOscillator.stop(now + 2.45);
+    detunedOscillator.stop(now + 2.45);
+    tremoloOscillator.stop(now + 2.45);
   }
 
   async function startAlarmSound() {
@@ -217,11 +216,11 @@ export default function JobListNotificationModal({ carId, enabled }: Props) {
         alarmIntervalRef.current = null;
       }
 
-      playRetroArcadeAlert();
+      playStukaDiveSiren();
 
       alarmIntervalRef.current = window.setInterval(() => {
-        playRetroArcadeAlert();
-      }, 2500);
+        playStukaDiveSiren();
+      }, 3000);
 
       setSoundBlocked(false);
       setSoundEnabled(true);
@@ -449,19 +448,21 @@ export default function JobListNotificationModal({ carId, enabled }: Props) {
                 onClick={startAlarmSound}
                 className="mb-3 w-full rounded-2xl border border-yellow-500 bg-yellow-950 px-6 py-4 text-sm font-black uppercase tracking-[0.16em] text-yellow-100 transition hover:bg-yellow-900"
               >
-                {soundEnabled ? "Test Arcade Alert" : "Enable Arcade Alert"}
+                {soundEnabled
+                  ? "Test Dive Siren"
+                  : "Enable Dive Siren Sound"}
               </button>
 
               {soundEnabled && !soundBlocked && (
                 <p className="mb-3 text-center text-xs font-semibold uppercase tracking-[0.18em] text-red-300">
-                  Arcade alert active
+                  Dive siren active
                 </p>
               )}
 
               {soundBlocked && (
                 <p className="mb-3 text-center text-xs font-semibold text-yellow-200">
-                  Sound was blocked by the browser. Tap Enable Arcade Alert and
-                  check the tablet media volume.
+                  Sound was blocked by the browser. Tap Enable Dive Siren Sound
+                  and check the tablet media volume.
                 </p>
               )}
 
