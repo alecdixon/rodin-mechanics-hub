@@ -3,6 +3,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { supabase } from "@/lib/supabase";
 
+declare global {
+  interface Window {
+    webkitAudioContext?: typeof AudioContext;
+  }
+}
+
 type JobListNotification = {
   id: string;
   car_id: number;
@@ -41,8 +47,12 @@ export default function JobListNotificationModal({ carId, enabled }: Props) {
   const [loading, setLoading] = useState(false);
   const [acknowledging, setAcknowledging] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
+  const [soundBlocked, setSoundBlocked] = useState(false);
+  const [soundEnabled, setSoundEnabled] = useState(false);
 
   const loadingRef = useRef(false);
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const alarmIntervalRef = useRef<number | null>(null);
 
   const activeNotification = notifications[0] ?? null;
 
@@ -96,6 +106,106 @@ export default function JobListNotificationModal({ carId, enabled }: Props) {
     },
     [carId, enabled],
   );
+
+  function getAudioContext() {
+    if (typeof window === "undefined") return null;
+
+    const AudioContextClass =
+      window.AudioContext || window.webkitAudioContext;
+
+    if (!AudioContextClass) return null;
+
+    if (!audioContextRef.current) {
+      audioContextRef.current = new AudioContextClass();
+    }
+
+    return audioContextRef.current;
+  }
+
+  function playKlaxonBurst() {
+    const audioContext = getAudioContext();
+    if (!audioContext) return;
+
+    const now = audioContext.currentTime;
+
+    const oscillatorOne = audioContext.createOscillator();
+    const oscillatorTwo = audioContext.createOscillator();
+    const gain = audioContext.createGain();
+    const filter = audioContext.createBiquadFilter();
+
+    oscillatorOne.type = "sawtooth";
+    oscillatorTwo.type = "square";
+
+    oscillatorOne.frequency.setValueAtTime(370, now);
+    oscillatorOne.frequency.exponentialRampToValueAtTime(185, now + 0.45);
+    oscillatorOne.frequency.setValueAtTime(370, now + 0.55);
+    oscillatorOne.frequency.exponentialRampToValueAtTime(185, now + 1.0);
+
+    oscillatorTwo.frequency.setValueAtTime(185, now);
+    oscillatorTwo.frequency.exponentialRampToValueAtTime(95, now + 0.45);
+    oscillatorTwo.frequency.setValueAtTime(185, now + 0.55);
+    oscillatorTwo.frequency.exponentialRampToValueAtTime(95, now + 1.0);
+
+    filter.type = "lowpass";
+    filter.frequency.setValueAtTime(900, now);
+    filter.Q.setValueAtTime(8, now);
+
+    gain.gain.setValueAtTime(0.0001, now);
+    gain.gain.exponentialRampToValueAtTime(0.2, now + 0.05);
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + 1.1);
+
+    oscillatorOne.connect(filter);
+    oscillatorTwo.connect(filter);
+    filter.connect(gain);
+    gain.connect(audioContext.destination);
+
+    oscillatorOne.start(now);
+    oscillatorTwo.start(now);
+
+    oscillatorOne.stop(now + 1.15);
+    oscillatorTwo.stop(now + 1.15);
+  }
+
+  async function startAlarmSound() {
+    try {
+      const audioContext = getAudioContext();
+
+      if (!audioContext) {
+        setSoundBlocked(true);
+        setSoundEnabled(false);
+        return;
+      }
+
+      if (audioContext.state === "suspended") {
+        await audioContext.resume();
+      }
+
+      playKlaxonBurst();
+
+      if (alarmIntervalRef.current) {
+        window.clearInterval(alarmIntervalRef.current);
+      }
+
+      alarmIntervalRef.current = window.setInterval(() => {
+        playKlaxonBurst();
+      }, 1700);
+
+      setSoundBlocked(false);
+      setSoundEnabled(true);
+    } catch {
+      setSoundBlocked(true);
+      setSoundEnabled(false);
+    }
+  }
+
+  function stopAlarmSound() {
+    if (alarmIntervalRef.current) {
+      window.clearInterval(alarmIntervalRef.current);
+      alarmIntervalRef.current = null;
+    }
+
+    setSoundEnabled(false);
+  }
 
   useEffect(() => {
     async function init() {
@@ -156,8 +266,23 @@ export default function JobListNotificationModal({ carId, enabled }: Props) {
     };
   }, [carId, enabled, userEmail, loadUnacknowledgedNotifications]);
 
+  useEffect(() => {
+    if (!enabled || !activeNotification) {
+      stopAlarmSound();
+      return;
+    }
+
+    startAlarmSound();
+
+    return () => {
+      stopAlarmSound();
+    };
+  }, [enabled, activeNotification?.id]);
+
   async function acknowledgeNotification() {
     if (!activeNotification || !userEmail) return;
+
+    stopAlarmSound();
 
     setAcknowledging(true);
     setErrorMessage("");
@@ -285,6 +410,22 @@ export default function JobListNotificationModal({ carId, enabled }: Props) {
             </div>
 
             <div className="shrink-0 border-t border-red-900/70 bg-neutral-950 p-4">
+              {soundBlocked && (
+                <button
+                  type="button"
+                  onClick={startAlarmSound}
+                  className="mb-3 w-full rounded-2xl border border-yellow-500 bg-yellow-950 px-6 py-4 text-sm font-black uppercase tracking-[0.16em] text-yellow-100 transition hover:bg-yellow-900"
+                >
+                  Enable Alarm Sound
+                </button>
+              )}
+
+              {soundEnabled && !soundBlocked && (
+                <p className="mb-3 text-center text-xs font-semibold uppercase tracking-[0.18em] text-red-300">
+                  Alarm sound active
+                </p>
+              )}
+
               <button
                 type="button"
                 onClick={acknowledgeNotification}
