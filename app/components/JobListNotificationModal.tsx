@@ -121,7 +121,39 @@ export default function JobListNotificationModal({ carId, enabled }: Props) {
     return audioContextRef.current;
   }
 
-  function playFrenchPoliceSirenBurst() {
+  function playRetroArcadeNote(
+    audioContext: AudioContext,
+    frequency: number,
+    startTime: number,
+    duration: number,
+    volume = 0.18,
+  ) {
+    const oscillator = audioContext.createOscillator();
+    const gain = audioContext.createGain();
+    const filter = audioContext.createBiquadFilter();
+
+    oscillator.type = "square";
+
+    oscillator.frequency.setValueAtTime(frequency, startTime);
+
+    filter.type = "lowpass";
+    filter.frequency.setValueAtTime(2200, startTime);
+    filter.Q.setValueAtTime(1.2, startTime);
+
+    gain.gain.setValueAtTime(0.0001, startTime);
+    gain.gain.exponentialRampToValueAtTime(volume, startTime + 0.015);
+    gain.gain.setValueAtTime(volume, startTime + duration * 0.65);
+    gain.gain.exponentialRampToValueAtTime(0.0001, startTime + duration);
+
+    oscillator.connect(filter);
+    filter.connect(gain);
+    gain.connect(audioContext.destination);
+
+    oscillator.start(startTime);
+    oscillator.stop(startTime + duration + 0.03);
+  }
+
+  function playRetroArcadeAlert() {
     const audioContext = getAudioContext();
 
     if (!audioContext || audioContext.state !== "running") {
@@ -132,57 +164,32 @@ export default function JobListNotificationModal({ carId, enabled }: Props) {
 
     const now = audioContext.currentTime;
 
-    const oscillatorOne = audioContext.createOscillator();
-    const oscillatorTwo = audioContext.createOscillator();
-    const gain = audioContext.createGain();
-    const filter = audioContext.createBiquadFilter();
-
     /*
-      French-style two-tone emergency siren:
-      - Alternates between two clear tones.
-      - A slightly detuned second oscillator gives it a harsher warning feel.
-      - The burst repeats until the notification is acknowledged.
+      Retro 8-bit arcade alert.
+      This is deliberately NOT a Mario melody.
+      It uses simple square-wave tones in a short original pattern.
     */
 
-    oscillatorOne.type = "square";
-    oscillatorTwo.type = "sawtooth";
+    const notes = [
+      { frequency: 784, offset: 0.0, duration: 0.11 }, // G5
+      { frequency: 988, offset: 0.13, duration: 0.11 }, // B5
+      { frequency: 1175, offset: 0.26, duration: 0.14 }, // D6
+      { frequency: 988, offset: 0.45, duration: 0.11 }, // B5
+      { frequency: 784, offset: 0.58, duration: 0.11 }, // G5
+      { frequency: 659, offset: 0.71, duration: 0.16 }, // E5
+      { frequency: 880, offset: 0.96, duration: 0.12 }, // A5
+      { frequency: 1175, offset: 1.1, duration: 0.2 }, // D6
+    ];
 
-    filter.type = "bandpass";
-    filter.frequency.setValueAtTime(850, now);
-    filter.Q.setValueAtTime(2.5, now);
-
-    gain.gain.setValueAtTime(0.0001, now);
-    gain.gain.exponentialRampToValueAtTime(0.28, now + 0.04);
-
-    // High tone
-    oscillatorOne.frequency.setValueAtTime(660, now);
-    oscillatorTwo.frequency.setValueAtTime(668, now);
-
-    // Low tone
-    oscillatorOne.frequency.setValueAtTime(440, now + 0.38);
-    oscillatorTwo.frequency.setValueAtTime(448, now + 0.38);
-
-    // High tone again
-    oscillatorOne.frequency.setValueAtTime(660, now + 0.76);
-    oscillatorTwo.frequency.setValueAtTime(668, now + 0.76);
-
-    // Low tone again
-    oscillatorOne.frequency.setValueAtTime(440, now + 1.14);
-    oscillatorTwo.frequency.setValueAtTime(448, now + 1.14);
-
-    gain.gain.setValueAtTime(0.28, now + 1.42);
-    gain.gain.exponentialRampToValueAtTime(0.0001, now + 1.55);
-
-    oscillatorOne.connect(filter);
-    oscillatorTwo.connect(filter);
-    filter.connect(gain);
-    gain.connect(audioContext.destination);
-
-    oscillatorOne.start(now);
-    oscillatorTwo.start(now);
-
-    oscillatorOne.stop(now + 1.6);
-    oscillatorTwo.stop(now + 1.6);
+    notes.forEach((note) => {
+      playRetroArcadeNote(
+        audioContext,
+        note.frequency,
+        now + note.offset,
+        note.duration,
+        0.18,
+      );
+    });
   }
 
   async function startAlarmSound() {
@@ -210,11 +217,11 @@ export default function JobListNotificationModal({ carId, enabled }: Props) {
         alarmIntervalRef.current = null;
       }
 
-      playFrenchPoliceSirenBurst();
+      playRetroArcadeAlert();
 
       alarmIntervalRef.current = window.setInterval(() => {
-        playFrenchPoliceSirenBurst();
-      }, 1550);
+        playRetroArcadeAlert();
+      }, 2500);
 
       setSoundBlocked(false);
       setSoundEnabled(true);
@@ -442,18 +449,18 @@ export default function JobListNotificationModal({ carId, enabled }: Props) {
                 onClick={startAlarmSound}
                 className="mb-3 w-full rounded-2xl border border-yellow-500 bg-yellow-950 px-6 py-4 text-sm font-black uppercase tracking-[0.16em] text-yellow-100 transition hover:bg-yellow-900"
               >
-                {soundEnabled ? "Test French Police Siren" : "Enable Siren Sound"}
+                {soundEnabled ? "Test Arcade Alert" : "Enable Arcade Alert"}
               </button>
 
               {soundEnabled && !soundBlocked && (
                 <p className="mb-3 text-center text-xs font-semibold uppercase tracking-[0.18em] text-red-300">
-                  French police siren active
+                  Arcade alert active
                 </p>
               )}
 
               {soundBlocked && (
                 <p className="mb-3 text-center text-xs font-semibold text-yellow-200">
-                  Sound was blocked by the browser. Tap Enable Siren Sound and
+                  Sound was blocked by the browser. Tap Enable Arcade Alert and
                   check the tablet media volume.
                 </p>
               )}
