@@ -154,11 +154,11 @@ export default function JobListNotificationModal({ carId, enabled }: Props) {
     tremoloOscillator.type = "sine";
 
     // Descending dive pitch.
-    mainOscillator.frequency.setValueAtTime(1050, now);
-    mainOscillator.frequency.exponentialRampToValueAtTime(230, now + 2.2);
+    mainOscillator.frequency.setValueAtTime(1400, now);
+    mainOscillator.frequency.exponentialRampToValueAtTime(230, now + 3.0);
 
     detunedOscillator.frequency.setValueAtTime(1042, now);
-    detunedOscillator.frequency.exponentialRampToValueAtTime(224, now + 2.2);
+    detunedOscillator.frequency.exponentialRampToValueAtTime(224, now + 3.0);
 
     // Tremolo gives it the "mechanical siren" pulse.
     tremoloOscillator.frequency.setValueAtTime(11, now);
@@ -166,7 +166,7 @@ export default function JobListNotificationModal({ carId, enabled }: Props) {
 
     filter.type = "bandpass";
     filter.frequency.setValueAtTime(1200, now);
-    filter.frequency.exponentialRampToValueAtTime(420, now + 2.2);
+    filter.frequency.exponentialRampToValueAtTime(420, now + 3.0);
     filter.Q.setValueAtTime(5, now);
 
     mainGain.gain.setValueAtTime(0.0001, now);
