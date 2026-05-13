@@ -52,7 +52,12 @@ export default function JobListNotificationModal({ carId, enabled }: Props) {
 
   const loadingRef = useRef(false);
   const audioContextRef = useRef<AudioContext | null>(null);
-  const alarmIntervalRef = useRef<number | null>(null);
+
+  const sirenOscillatorOneRef = useRef<OscillatorNode | null>(null);
+  const sirenOscillatorTwoRef = useRef<OscillatorNode | null>(null);
+  const sirenGainRef = useRef<GainNode | null>(null);
+  const sirenLfoRef = useRef<OscillatorNode | null>(null);
+  const sirenLfoGainRef = useRef<GainNode | null>(null);
 
   const activeNotification = notifications[0] ?? null;
 
@@ -110,8 +115,7 @@ export default function JobListNotificationModal({ carId, enabled }: Props) {
   function getAudioContext() {
     if (typeof window === "undefined") return null;
 
-    const AudioContextClass =
-      window.AudioContext || window.webkitAudioContext;
+    const AudioContextClass = window.AudioContext || window.webkitAudioContext;
 
     if (!AudioContextClass) return null;
 
@@ -122,48 +126,50 @@ export default function JobListNotificationModal({ carId, enabled }: Props) {
     return audioContextRef.current;
   }
 
-  function playKlaxonBurst() {
-    const audioContext = getAudioContext();
-    if (!audioContext) return;
+  function stopAlarmSound() {
+    try {
+      const audioContext = audioContextRef.current;
+      const now = audioContext?.currentTime ?? 0;
 
-    const now = audioContext.currentTime;
+      if (sirenGainRef.current && audioContext) {
+        sirenGainRef.current.gain.cancelScheduledValues(now);
+        sirenGainRef.current.gain.setValueAtTime(
+          sirenGainRef.current.gain.value,
+          now,
+        );
+        sirenGainRef.current.gain.exponentialRampToValueAtTime(0.0001, now + 0.25);
+      }
 
-    const oscillatorOne = audioContext.createOscillator();
-    const oscillatorTwo = audioContext.createOscillator();
-    const gain = audioContext.createGain();
-    const filter = audioContext.createBiquadFilter();
+      window.setTimeout(() => {
+        try {
+          sirenOscillatorOneRef.current?.stop();
+          sirenOscillatorTwoRef.current?.stop();
+          sirenLfoRef.current?.stop();
+        } catch {
+          // Ignore already-stopped audio nodes.
+        }
 
-    oscillatorOne.type = "sawtooth";
-    oscillatorTwo.type = "square";
+        sirenOscillatorOneRef.current?.disconnect();
+        sirenOscillatorTwoRef.current?.disconnect();
+        sirenGainRef.current?.disconnect();
+        sirenLfoRef.current?.disconnect();
+        sirenLfoGainRef.current?.disconnect();
 
-    oscillatorOne.frequency.setValueAtTime(370, now);
-    oscillatorOne.frequency.exponentialRampToValueAtTime(185, now + 0.45);
-    oscillatorOne.frequency.setValueAtTime(370, now + 0.55);
-    oscillatorOne.frequency.exponentialRampToValueAtTime(185, now + 1.0);
+        sirenOscillatorOneRef.current = null;
+        sirenOscillatorTwoRef.current = null;
+        sirenGainRef.current = null;
+        sirenLfoRef.current = null;
+        sirenLfoGainRef.current = null;
+      }, 300);
+    } catch {
+      sirenOscillatorOneRef.current = null;
+      sirenOscillatorTwoRef.current = null;
+      sirenGainRef.current = null;
+      sirenLfoRef.current = null;
+      sirenLfoGainRef.current = null;
+    }
 
-    oscillatorTwo.frequency.setValueAtTime(185, now);
-    oscillatorTwo.frequency.exponentialRampToValueAtTime(95, now + 0.45);
-    oscillatorTwo.frequency.setValueAtTime(185, now + 0.55);
-    oscillatorTwo.frequency.exponentialRampToValueAtTime(95, now + 1.0);
-
-    filter.type = "lowpass";
-    filter.frequency.setValueAtTime(900, now);
-    filter.Q.setValueAtTime(8, now);
-
-    gain.gain.setValueAtTime(0.0001, now);
-    gain.gain.exponentialRampToValueAtTime(0.2, now + 0.05);
-    gain.gain.exponentialRampToValueAtTime(0.0001, now + 1.1);
-
-    oscillatorOne.connect(filter);
-    oscillatorTwo.connect(filter);
-    filter.connect(gain);
-    gain.connect(audioContext.destination);
-
-    oscillatorOne.start(now);
-    oscillatorTwo.start(now);
-
-    oscillatorOne.stop(now + 1.15);
-    oscillatorTwo.stop(now + 1.15);
+    setSoundEnabled(false);
   }
 
   async function startAlarmSound() {
@@ -180,15 +186,60 @@ export default function JobListNotificationModal({ carId, enabled }: Props) {
         await audioContext.resume();
       }
 
-      playKlaxonBurst();
+      stopAlarmSound();
 
-      if (alarmIntervalRef.current) {
-        window.clearInterval(alarmIntervalRef.current);
-      }
+      const now = audioContext.currentTime;
 
-      alarmIntervalRef.current = window.setInterval(() => {
-        playKlaxonBurst();
-      }, 1700);
+      const oscillatorOne = audioContext.createOscillator();
+      const oscillatorTwo = audioContext.createOscillator();
+      const lfo = audioContext.createOscillator();
+      const lfoGain = audioContext.createGain();
+      const mainGain = audioContext.createGain();
+      const filter = audioContext.createBiquadFilter();
+
+      /*
+        WW2-style air raid siren effect:
+        - Two detuned sawtooth oscillators for a rough mechanical tone.
+        - Slow LFO sweeps the pitch up and down.
+        - Low-pass filter makes it less electronic and more horn-like.
+      */
+
+      oscillatorOne.type = "sawtooth";
+      oscillatorTwo.type = "sawtooth";
+
+      oscillatorOne.frequency.setValueAtTime(430, now);
+      oscillatorTwo.frequency.setValueAtTime(436, now);
+
+      lfo.type = "sine";
+      lfo.frequency.setValueAtTime(0.18, now); // slow rise/fall cycle
+
+      lfoGain.gain.setValueAtTime(260, now); // pitch sweep amount
+
+      filter.type = "lowpass";
+      filter.frequency.setValueAtTime(1200, now);
+      filter.Q.setValueAtTime(4, now);
+
+      mainGain.gain.setValueAtTime(0.0001, now);
+      mainGain.gain.exponentialRampToValueAtTime(0.24, now + 0.4);
+
+      lfo.connect(lfoGain);
+      lfoGain.connect(oscillatorOne.frequency);
+      lfoGain.connect(oscillatorTwo.frequency);
+
+      oscillatorOne.connect(filter);
+      oscillatorTwo.connect(filter);
+      filter.connect(mainGain);
+      mainGain.connect(audioContext.destination);
+
+      oscillatorOne.start(now);
+      oscillatorTwo.start(now);
+      lfo.start(now);
+
+      sirenOscillatorOneRef.current = oscillatorOne;
+      sirenOscillatorTwoRef.current = oscillatorTwo;
+      sirenLfoRef.current = lfo;
+      sirenLfoGainRef.current = lfoGain;
+      sirenGainRef.current = mainGain;
 
       setSoundBlocked(false);
       setSoundEnabled(true);
@@ -196,15 +247,6 @@ export default function JobListNotificationModal({ carId, enabled }: Props) {
       setSoundBlocked(true);
       setSoundEnabled(false);
     }
-  }
-
-  function stopAlarmSound() {
-    if (alarmIntervalRef.current) {
-      window.clearInterval(alarmIntervalRef.current);
-      alarmIntervalRef.current = null;
-    }
-
-    setSoundEnabled(false);
   }
 
   useEffect(() => {
@@ -416,13 +458,13 @@ export default function JobListNotificationModal({ carId, enabled }: Props) {
                   onClick={startAlarmSound}
                   className="mb-3 w-full rounded-2xl border border-yellow-500 bg-yellow-950 px-6 py-4 text-sm font-black uppercase tracking-[0.16em] text-yellow-100 transition hover:bg-yellow-900"
                 >
-                  Enable Alarm Sound
+                  Enable Air Raid Siren
                 </button>
               )}
 
               {soundEnabled && !soundBlocked && (
                 <p className="mb-3 text-center text-xs font-semibold uppercase tracking-[0.18em] text-red-300">
-                  Alarm sound active
+                  Air raid siren active
                 </p>
               )}
 
