@@ -123,7 +123,12 @@ export default function JobListNotificationModal({ carId, enabled }: Props) {
 
   function playFrenchPoliceSirenBurst() {
     const audioContext = getAudioContext();
-    if (!audioContext) return;
+
+    if (!audioContext || audioContext.state !== "running") {
+      setSoundBlocked(true);
+      setSoundEnabled(false);
+      return;
+    }
 
     const now = audioContext.currentTime;
 
@@ -135,8 +140,8 @@ export default function JobListNotificationModal({ carId, enabled }: Props) {
     /*
       French-style two-tone emergency siren:
       - Alternates between two clear tones.
-      - Slight detuned second oscillator makes it louder and more urgent.
-      - The quick tone switching gives the "pin-pon / nee-naw" feel.
+      - A slightly detuned second oscillator gives it a harsher warning feel.
+      - The burst repeats until the notification is acknowledged.
     */
 
     oscillatorOne.type = "square";
@@ -147,25 +152,25 @@ export default function JobListNotificationModal({ carId, enabled }: Props) {
     filter.Q.setValueAtTime(2.5, now);
 
     gain.gain.setValueAtTime(0.0001, now);
-    gain.gain.exponentialRampToValueAtTime(0.22, now + 0.04);
+    gain.gain.exponentialRampToValueAtTime(0.28, now + 0.04);
 
-    // Tone 1
+    // High tone
     oscillatorOne.frequency.setValueAtTime(660, now);
-    oscillatorTwo.frequency.setValueAtTime(665, now);
+    oscillatorTwo.frequency.setValueAtTime(668, now);
 
-    // Tone 2
+    // Low tone
     oscillatorOne.frequency.setValueAtTime(440, now + 0.38);
-    oscillatorTwo.frequency.setValueAtTime(445, now + 0.38);
+    oscillatorTwo.frequency.setValueAtTime(448, now + 0.38);
 
-    // Tone 1 again
+    // High tone again
     oscillatorOne.frequency.setValueAtTime(660, now + 0.76);
-    oscillatorTwo.frequency.setValueAtTime(665, now + 0.76);
+    oscillatorTwo.frequency.setValueAtTime(668, now + 0.76);
 
-    // Tone 2 again
+    // Low tone again
     oscillatorOne.frequency.setValueAtTime(440, now + 1.14);
-    oscillatorTwo.frequency.setValueAtTime(445, now + 1.14);
+    oscillatorTwo.frequency.setValueAtTime(448, now + 1.14);
 
-    gain.gain.setValueAtTime(0.22, now + 1.42);
+    gain.gain.setValueAtTime(0.28, now + 1.42);
     gain.gain.exponentialRampToValueAtTime(0.0001, now + 1.55);
 
     oscillatorOne.connect(filter);
@@ -194,11 +199,18 @@ export default function JobListNotificationModal({ carId, enabled }: Props) {
         await audioContext.resume();
       }
 
-      playFrenchPoliceSirenBurst();
+      if (audioContext.state !== "running") {
+        setSoundBlocked(true);
+        setSoundEnabled(false);
+        return;
+      }
 
       if (alarmIntervalRef.current) {
         window.clearInterval(alarmIntervalRef.current);
+        alarmIntervalRef.current = null;
       }
+
+      playFrenchPoliceSirenBurst();
 
       alarmIntervalRef.current = window.setInterval(() => {
         playFrenchPoliceSirenBurst();
@@ -206,7 +218,8 @@ export default function JobListNotificationModal({ carId, enabled }: Props) {
 
       setSoundBlocked(false);
       setSoundEnabled(true);
-    } catch {
+    } catch (error) {
+      console.error("Alarm sound failed:", error);
       setSoundBlocked(true);
       setSoundEnabled(false);
     }
@@ -424,19 +437,24 @@ export default function JobListNotificationModal({ carId, enabled }: Props) {
             </div>
 
             <div className="shrink-0 border-t border-red-900/70 bg-neutral-950 p-4">
-              {soundBlocked && (
-                <button
-                  type="button"
-                  onClick={startAlarmSound}
-                  className="mb-3 w-full rounded-2xl border border-yellow-500 bg-yellow-950 px-6 py-4 text-sm font-black uppercase tracking-[0.16em] text-yellow-100 transition hover:bg-yellow-900"
-                >
-                  Enable French Police Siren
-                </button>
-              )}
+              <button
+                type="button"
+                onClick={startAlarmSound}
+                className="mb-3 w-full rounded-2xl border border-yellow-500 bg-yellow-950 px-6 py-4 text-sm font-black uppercase tracking-[0.16em] text-yellow-100 transition hover:bg-yellow-900"
+              >
+                {soundEnabled ? "Test French Police Siren" : "Enable Siren Sound"}
+              </button>
 
               {soundEnabled && !soundBlocked && (
                 <p className="mb-3 text-center text-xs font-semibold uppercase tracking-[0.18em] text-red-300">
                   French police siren active
+                </p>
+              )}
+
+              {soundBlocked && (
+                <p className="mb-3 text-center text-xs font-semibold text-yellow-200">
+                  Sound was blocked by the browser. Tap Enable Siren Sound and
+                  check the tablet media volume.
                 </p>
               )}
 
