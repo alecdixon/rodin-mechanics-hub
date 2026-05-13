@@ -25,8 +25,6 @@ type Props = {
   enabled: boolean;
 };
 
-const ALARM_SOUND_STORAGE_KEY = "mechanicsHubAlarmSoundEnabled";
-
 function formatDateTime(value: string) {
   const date = new Date(value);
 
@@ -49,10 +47,8 @@ export default function JobListNotificationModal({ carId, enabled }: Props) {
   const [loading, setLoading] = useState(false);
   const [acknowledging, setAcknowledging] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
-
   const [soundBlocked, setSoundBlocked] = useState(false);
   const [soundEnabled, setSoundEnabled] = useState(false);
-  const [soundAutoEnabled, setSoundAutoEnabled] = useState(false);
 
   const loadingRef = useRef(false);
   const audioContextRef = useRef<AudioContext | null>(null);
@@ -141,6 +137,13 @@ export default function JobListNotificationModal({ carId, enabled }: Props) {
     const gain = audioContext.createGain();
     const filter = audioContext.createBiquadFilter();
 
+    /*
+      French-style two-tone emergency siren:
+      - Alternates between two clear tones.
+      - A slightly detuned second oscillator gives it a harsher warning feel.
+      - The burst repeats until the notification is acknowledged.
+    */
+
     oscillatorOne.type = "square";
     oscillatorTwo.type = "sawtooth";
 
@@ -151,16 +154,19 @@ export default function JobListNotificationModal({ carId, enabled }: Props) {
     gain.gain.setValueAtTime(0.0001, now);
     gain.gain.exponentialRampToValueAtTime(0.28, now + 0.04);
 
-    // French-style two-tone: high / low / high / low.
+    // High tone
     oscillatorOne.frequency.setValueAtTime(660, now);
     oscillatorTwo.frequency.setValueAtTime(668, now);
 
+    // Low tone
     oscillatorOne.frequency.setValueAtTime(440, now + 0.38);
     oscillatorTwo.frequency.setValueAtTime(448, now + 0.38);
 
+    // High tone again
     oscillatorOne.frequency.setValueAtTime(660, now + 0.76);
     oscillatorTwo.frequency.setValueAtTime(668, now + 0.76);
 
+    // Low tone again
     oscillatorOne.frequency.setValueAtTime(440, now + 1.14);
     oscillatorTwo.frequency.setValueAtTime(448, now + 1.14);
 
@@ -177,44 +183,6 @@ export default function JobListNotificationModal({ carId, enabled }: Props) {
 
     oscillatorOne.stop(now + 1.6);
     oscillatorTwo.stop(now + 1.6);
-  }
-
-  async function unlockAlarmSound() {
-    try {
-      const audioContext = getAudioContext();
-
-      if (!audioContext) {
-        setSoundBlocked(true);
-        setSoundEnabled(false);
-        setSoundAutoEnabled(false);
-        return;
-      }
-
-      if (audioContext.state === "suspended") {
-        await audioContext.resume();
-      }
-
-      if (audioContext.state !== "running") {
-        setSoundBlocked(true);
-        setSoundEnabled(false);
-        setSoundAutoEnabled(false);
-        return;
-      }
-
-      window.localStorage.setItem(ALARM_SOUND_STORAGE_KEY, "true");
-
-      setSoundBlocked(false);
-      setSoundEnabled(true);
-      setSoundAutoEnabled(true);
-
-      // Short confirmation beep, not the full repeating alarm.
-      playFrenchPoliceSirenBurst();
-    } catch (error) {
-      console.error("Alarm sound unlock failed:", error);
-      setSoundBlocked(true);
-      setSoundEnabled(false);
-      setSoundAutoEnabled(false);
-    }
   }
 
   async function startAlarmSound() {
@@ -265,16 +233,6 @@ export default function JobListNotificationModal({ carId, enabled }: Props) {
 
     setSoundEnabled(false);
   }
-
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-
-    const savedPreference = window.localStorage.getItem(
-      ALARM_SOUND_STORAGE_KEY,
-    );
-
-    setSoundAutoEnabled(savedPreference === "true");
-  }, []);
 
   useEffect(() => {
     async function init() {
@@ -341,18 +299,12 @@ export default function JobListNotificationModal({ carId, enabled }: Props) {
       return;
     }
 
-    if (soundAutoEnabled) {
-      startAlarmSound();
-    } else {
-      // Still try once automatically. If Chrome allows it, great.
-      // If Chrome blocks it, the setup button remains available when no alarm is active.
-      startAlarmSound();
-    }
+    startAlarmSound();
 
     return () => {
       stopAlarmSound();
     };
-  }, [enabled, activeNotification?.id, soundAutoEnabled]);
+  }, [enabled, activeNotification?.id]);
 
   async function acknowledgeNotification() {
     if (!activeNotification || !userEmail) return;
@@ -382,38 +334,7 @@ export default function JobListNotificationModal({ carId, enabled }: Props) {
     setAcknowledging(false);
   }
 
-  if (!enabled) {
-    return null;
-  }
-
-  if (!activeNotification) {
-    return (
-      <div className="fixed bottom-4 right-4 z-40">
-        <button
-          type="button"
-          onClick={unlockAlarmSound}
-          className={`rounded-2xl border px-4 py-3 text-xs font-black uppercase tracking-[0.14em] shadow-xl transition ${
-            soundAutoEnabled
-              ? "border-green-700 bg-green-950 text-green-100"
-              : "border-yellow-500 bg-yellow-950 text-yellow-100 hover:bg-yellow-900"
-          }`}
-        >
-          {soundAutoEnabled
-            ? "Alarm Sound Ready"
-            : "Enable Workshop Alarm Sound"}
-        </button>
-
-        {soundBlocked && (
-          <p className="mt-2 max-w-64 rounded-xl border border-yellow-700 bg-black/90 p-2 text-center text-xs text-yellow-100">
-            Sound was blocked. Tap the button again and check tablet media
-            volume.
-          </p>
-        )}
-      </div>
-    );
-  }
-
-  if (loading) {
+  if (!enabled || loading || !activeNotification) {
     return null;
   }
 
@@ -508,13 +429,6 @@ export default function JobListNotificationModal({ carId, enabled }: Props) {
                 </div>
               )}
 
-              {soundBlocked && (
-                <div className="mt-4 rounded-xl border border-yellow-700 bg-yellow-950/40 p-4 text-center text-sm font-semibold text-yellow-100">
-                  Siren could not auto-start. The page needs one tap after
-                  opening, or the tablet media volume may be muted.
-                </div>
-              )}
-
               <div className="mt-4 rounded-xl border border-neutral-800 bg-neutral-900/70 p-4 text-sm leading-6 text-neutral-300">
                 Scroll this message if needed, then press acknowledge below.
                 Acknowledging only confirms that you have seen the update. It
@@ -523,9 +437,24 @@ export default function JobListNotificationModal({ carId, enabled }: Props) {
             </div>
 
             <div className="shrink-0 border-t border-red-900/70 bg-neutral-950 p-4">
+              <button
+                type="button"
+                onClick={startAlarmSound}
+                className="mb-3 w-full rounded-2xl border border-yellow-500 bg-yellow-950 px-6 py-4 text-sm font-black uppercase tracking-[0.16em] text-yellow-100 transition hover:bg-yellow-900"
+              >
+                {soundEnabled ? "Test French Police Siren" : "Enable Siren Sound"}
+              </button>
+
               {soundEnabled && !soundBlocked && (
                 <p className="mb-3 text-center text-xs font-semibold uppercase tracking-[0.18em] text-red-300">
                   French police siren active
+                </p>
+              )}
+
+              {soundBlocked && (
+                <p className="mb-3 text-center text-xs font-semibold text-yellow-200">
+                  Sound was blocked by the browser. Tap Enable Siren Sound and
+                  check the tablet media volume.
                 </p>
               )}
 
