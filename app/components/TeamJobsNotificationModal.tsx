@@ -1,68 +1,192 @@
-create table if not exists team_jobs (
-  id uuid primary key default gen_random_uuid(),
-  job_text text not null,
-  notes text,
-  priority text not null default 'normal',
-  published boolean not null default false,
-  published_at timestamptz,
-  completed boolean not null default false,
-  completed_by text,
-  completed_at timestamptz,
-  created_by text,
-  created_at timestamptz not null default now(),
-  updated_by text,
-  updated_at timestamptz
-);
+"use client";
 
-create table if not exists team_job_notifications (
-  id uuid primary key default gen_random_uuid(),
-  title text not null,
-  message text not null,
-  created_by text,
-  created_at timestamptz not null default now()
-);
+import { useEffect, useRef, useState } from "react";
+import Link from "next/link";
+import { supabase } from "@/lib/supabase";
 
-alter table team_jobs enable row level security;
-alter table team_job_notifications enable row level security;
+declare global {
+  interface Window {
+    webkitAudioContext?: typeof AudioContext;
+  }
+}
 
-drop policy if exists "authenticated can read team jobs" on team_jobs;
-drop policy if exists "authenticated can insert team jobs" on team_jobs;
-drop policy if exists "authenticated can update team jobs" on team_jobs;
-drop policy if exists "authenticated can delete team jobs" on team_jobs;
+type TeamJobNotification = {
+  id: string;
+  title: string;
+  message: string;
+  created_by: string | null;
+  created_at: string;
+};
 
-create policy "authenticated can read team jobs"
-on team_jobs for select
-to authenticated
-using (true);
+type Props = {
+  enabled: boolean;
+};
 
-create policy "authenticated can insert team jobs"
-on team_jobs for insert
-to authenticated
-with check (true);
+function formatDateTime(value: string) {
+  const date = new Date(value);
 
-create policy "authenticated can update team jobs"
-on team_jobs for update
-to authenticated
-using (true)
-with check (true);
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
 
-create policy "authenticated can delete team jobs"
-on team_jobs for delete
-to authenticated
-using (true);
+  return date.toLocaleString("en-GB");
+}
 
-drop policy if exists "authenticated can read team job notifications" on team_job_notifications;
-drop policy if exists "authenticated can insert team job notifications" on team_job_notifications;
+function playNotificationSound() {
+  try {
+    const AudioContextClass = window.AudioContext || window.webkitAudioContext;
 
-create policy "authenticated can read team job notifications"
-on team_job_notifications for select
-to authenticated
-using (true);
+    if (!AudioContextClass) return;
 
-create policy "authenticated can insert team job notifications"
-on team_job_notifications for insert
-to authenticated
-with check (true);
+    const context = new AudioContextClass();
+    const oscillator = context.createOscillator();
+    const gain = context.createGain();
 
-alter publication supabase_realtime add table team_jobs;
-alter publication supabase_realtime add table team_job_notifications;
+    oscillator.type = "sawtooth";
+    oscillator.frequency.setValueAtTime(880, context.currentTime);
+    oscillator.frequency.exponentialRampToValueAtTime(
+      220,
+      context.currentTime + 0.8,
+    );
+
+    gain.gain.setValueAtTime(0.001, context.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.18, context.currentTime + 0.05);
+    gain.gain.exponentialRampToValueAtTime(0.001, context.currentTime + 0.9);
+
+    oscillator.connect(gain);
+    gain.connect(context.destination);
+
+    oscillator.start();
+    oscillator.stop(context.currentTime + 0.9);
+  } catch {
+    // Some browsers block sound until the user has interacted with the page.
+  }
+}
+
+export default function TeamJobsNotificationModal({ enabled }: Props) {
+  const [notification, setNotification] =
+    useState<TeamJobNotification | null>(null);
+
+  const mountedRef = useRef(false);
+
+  useEffect(() => {
+    if (!enabled) return;
+
+    mountedRef.current = true;
+
+    async function loadLatestUnseenNotification() {
+      const lastSeen = window.localStorage.getItem(
+        "team_jobs_last_seen_notification",
+      );
+
+      const { data, error } = await supabase
+        .from("team_job_notifications")
+        .select("*")
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (error || !data || !mountedRef.current) return;
+
+      const latest = data as TeamJobNotification;
+
+      if (latest.id !== lastSeen) {
+        setNotification(latest);
+        playNotificationSound();
+      }
+    }
+
+    loadLatestUnseenNotification();
+
+    const channel = supabase
+      .channel("team-job-notifications")
+      .on(
+        "postgres_changes",
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "team_job_notifications",
+        },
+        (payload) => {
+          const nextNotification = payload.new as TeamJobNotification;
+          setNotification(nextNotification);
+          playNotificationSound();
+        },
+      )
+      .subscribe();
+
+    return () => {
+      mountedRef.current = false;
+      supabase.removeChannel(channel);
+    };
+  }, [enabled]);
+
+  function dismissNotification() {
+    if (notification) {
+      window.localStorage.setItem(
+        "team_jobs_last_seen_notification",
+        notification.id,
+      );
+    }
+
+    setNotification(null);
+  }
+
+  if (!enabled || !notification) {
+    return null;
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4">
+      <div className="w-full max-w-lg rounded-2xl border border-red-700 bg-neutral-950 p-6 shadow-2xl shadow-red-950/40">
+        <p className="text-xs font-semibold uppercase tracking-[0.3em] text-red-400">
+          Team Job Alert
+        </p>
+
+        <h2 className="mt-3 text-2xl font-bold text-white">
+          {notification.title}
+        </h2>
+
+        <p className="mt-4 text-sm leading-6 text-neutral-300">
+          {notification.message}
+        </p>
+
+        <div className="mt-5 rounded-xl border border-neutral-800 bg-black p-4 text-xs text-neutral-400">
+          <p>
+            Published:{" "}
+            <span className="text-neutral-200">
+              {formatDateTime(notification.created_at)}
+            </span>
+          </p>
+
+          {notification.created_by && (
+            <p className="mt-1">
+              By:{" "}
+              <span className="text-neutral-200">
+                {notification.created_by}
+              </span>
+            </p>
+          )}
+        </div>
+
+        <div className="mt-6 flex flex-col gap-3 sm:flex-row">
+          <Link
+            href="/team-jobs"
+            onClick={dismissNotification}
+            className="flex-1 rounded-xl bg-red-600 px-4 py-3 text-center text-sm font-bold text-white hover:bg-red-500"
+          >
+            Open Team Jobs
+          </Link>
+
+          <button
+            type="button"
+            onClick={dismissNotification}
+            className="flex-1 rounded-xl border border-neutral-700 px-4 py-3 text-sm font-bold text-neutral-200 hover:border-red-500"
+          >
+            Dismiss
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
