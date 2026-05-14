@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
-import { getUserRole } from "@/lib/userAccess";
+import { hasPermission } from "@/lib/userAccess";
 import LogoutButton from "@/app/components/LogoutButton";
 
 type PostEventSheet = {
@@ -28,17 +28,33 @@ type PostEventSheet = {
 
 function niceDate(value: string | null | undefined) {
   if (!value) return "No date";
-  return new Date(value).toLocaleDateString("en-GB");
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return "No date";
+  }
+
+  return date.toLocaleDateString("en-GB");
 }
 
 function niceDateTime(value: string | null | undefined) {
   if (!value) return "No timestamp";
-  return new Date(value).toLocaleString("en-GB");
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return "No timestamp";
+  }
+
+  return date.toLocaleString("en-GB");
 }
 
 function cleanValue(value: string | number | null | undefined) {
   if (value === null || value === undefined) return "—";
+
   const text = String(value).trim();
+
   return text || "—";
 }
 
@@ -65,6 +81,7 @@ function DetailField({
 export default function ChiefPostEventPage() {
   const params = useParams();
   const router = useRouter();
+
   const carId = Number(params.carId);
 
   const [loading, setLoading] = useState(true);
@@ -78,15 +95,36 @@ export default function ChiefPostEventPage() {
   const [driverFilter, setDriverFilter] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
 
+  async function checkAccess() {
+    if (!Number.isFinite(carId)) {
+      router.replace("/dashboard");
+      return null;
+    }
+
+    const { data: userData, error: userError } = await supabase.auth.getUser();
+
+    if (userError || !userData.user?.email) {
+      router.replace("/login");
+      return null;
+    }
+
+    const email = userData.user.email.trim().toLowerCase();
+
+    if (!hasPermission(email, "post_event:view")) {
+      router.replace("/dashboard");
+      return null;
+    }
+
+    return email;
+  }
+
   async function loadPostEventSheets() {
     setLoading(true);
     setErrorMessage("");
 
-    const { data: userData } = await supabase.auth.getUser();
-    const role = getUserRole(userData.user?.email ?? "");
+    const email = await checkAccess();
 
-    if (role !== "chief") {
-      router.replace("/dashboard");
+    if (!email) {
       return;
     }
 
@@ -110,6 +148,8 @@ export default function ChiefPostEventPage() {
     if (carId) {
       loadPostEventSheets();
     }
+
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [carId]);
 
   const trackOptions = useMemo(() => {
@@ -159,11 +199,11 @@ export default function ChiefPostEventPage() {
             href="/dashboard"
             className="text-sm text-red-400 hover:text-red-300"
           >
-            ← Back to chief dashboard
+            ← Back to dashboard
           </Link>
 
           <p className="mt-6 text-xs uppercase tracking-[0.3em] text-red-400">
-            Chief Review
+            Post Event Review
           </p>
 
           <h1 className="mt-3 text-4xl font-semibold">
@@ -215,7 +255,9 @@ export default function ChiefPostEventPage() {
           </p>
 
           <h2 className="mt-4 text-2xl font-semibold text-zinc-100">
-            {latestSheet ? niceDateTime(latestSheet.created_at) : "No records yet"}
+            {latestSheet
+              ? niceDateTime(latestSheet.created_at)
+              : "No records yet"}
           </h2>
 
           <p className="mt-3 text-sm text-zinc-500">
@@ -454,8 +496,13 @@ export default function ChiefPostEventPage() {
 
             <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
               <DetailField label="Chassis" value={selectedSheet.chassis} />
+
               <DetailField label="Driver" value={selectedSheet.driver} />
-              <DetailField label="Engine No." value={selectedSheet.engine_no} />
+
+              <DetailField
+                label="Engine No."
+                value={selectedSheet.engine_no}
+              />
 
               <DetailField
                 label="Hours Remaining"

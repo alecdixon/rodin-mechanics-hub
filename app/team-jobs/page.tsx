@@ -4,7 +4,12 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
-import { getAssignedCar, getUserRole } from "@/lib/userAccess";
+import {
+  getAssignedCar,
+  getUserRole,
+  hasPermission,
+  type UserRole,
+} from "@/lib/userAccess";
 import LogoutButton from "@/app/components/LogoutButton";
 
 type Priority = "low" | "normal" | "high" | "urgent";
@@ -42,10 +47,9 @@ export default function TeamJobsPage() {
 
   const [jobs, setJobs] = useState<TeamJob[]>([]);
   const [userEmail, setUserEmail] = useState("");
-  const [userRole, setUserRole] = useState<"chief" | "mechanic" | "unknown">(
-    "unknown",
-  );
+  const [userRole, setUserRole] = useState<UserRole>("unknown");
   const [assignedCar, setAssignedCar] = useState<number | null>(null);
+  const [canCompleteJobs, setCanCompleteJobs] = useState(false);
 
   const [loading, setLoading] = useState(true);
   const [savingId, setSavingId] = useState<string | null>(null);
@@ -69,7 +73,7 @@ export default function TeamJobsPage() {
     const role = getUserRole(email);
     const carId = getAssignedCar(email);
 
-    if (role !== "chief" && role !== "mechanic") {
+    if (!hasPermission(email, "team_jobs:view")) {
       router.replace("/login");
       return;
     }
@@ -77,6 +81,7 @@ export default function TeamJobsPage() {
     setUserEmail(email);
     setUserRole(role);
     setAssignedCar(carId ? Number(carId) : null);
+    setCanCompleteJobs(hasPermission(email, "team_jobs:complete"));
 
     const { data, error } = await supabase
       .from("team_jobs")
@@ -97,6 +102,7 @@ export default function TeamJobsPage() {
 
   useEffect(() => {
     loadJobs();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -118,6 +124,7 @@ export default function TeamJobsPage() {
     return () => {
       supabase.removeChannel(channel);
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const openJobs = useMemo(
@@ -135,15 +142,15 @@ export default function TeamJobsPage() {
     : 0;
 
   function backHref() {
-    if (userRole === "chief") {
+    if (userRole === "chief_mechanic" || userRole === "engineer") {
       return "/dashboard";
     }
 
-    if (assignedCar) {
+    if (userRole === "number1_mechanic" && assignedCar) {
       return `/car/${assignedCar}/job-list`;
     }
 
-    return "/login";
+    return "/team-jobs";
   }
 
   function priorityClass(priority: Priority) {
@@ -163,6 +170,11 @@ export default function TeamJobsPage() {
   }
 
   async function toggleJob(job: TeamJob) {
+    if (!canCompleteJobs) {
+      setErrorMessage("You do not have permission to complete team jobs.");
+      return;
+    }
+
     const nextCompleted = !job.completed;
     const now = new Date().toISOString();
 
@@ -223,8 +235,13 @@ export default function TeamJobsPage() {
           <button
             type="button"
             onClick={() => toggleJob(job)}
-            disabled={isSaving}
-            className={`grid h-9 w-9 place-items-center rounded-lg border text-sm font-bold transition disabled:opacity-50 ${
+            disabled={isSaving || !canCompleteJobs}
+            title={
+              canCompleteJobs
+                ? "Toggle team job"
+                : "You do not have permission to complete team jobs"
+            }
+            className={`grid h-9 w-9 place-items-center rounded-lg border text-sm font-bold transition disabled:cursor-not-allowed disabled:opacity-50 ${
               job.completed
                 ? "border-green-500 bg-green-600 text-white"
                 : "border-zinc-600 bg-[#111418] text-transparent hover:border-red-500"
@@ -314,6 +331,12 @@ export default function TeamJobsPage() {
                 Team-wide jobs published by the chief mechanic. This is one
                 shared list for all cars and all mechanics.
               </p>
+
+              {!canCompleteJobs && (
+                <p className="mt-3 rounded-xl border border-yellow-800 bg-yellow-950/30 px-4 py-3 text-sm text-yellow-200">
+                  Your login can view team jobs, but cannot mark them complete.
+                </p>
+              )}
             </div>
 
             <LogoutButton />

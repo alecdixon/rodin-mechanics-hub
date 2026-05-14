@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
-import { getUserRole } from "@/lib/userAccess";
+import { hasPermission } from "@/lib/userAccess";
 import LogoutButton from "@/app/components/LogoutButton";
 
 type JobSection = "standard" | "special";
@@ -175,6 +175,28 @@ export default function ChiefEveningJobListPage() {
     ].join("\n");
   }
 
+  async function checkManageAccess() {
+    const { data, error } = await supabase.auth.getUser();
+
+    if (error || !data.user?.email) {
+      router.replace("/login");
+      return null;
+    }
+
+    const email = data.user.email.trim().toLowerCase();
+
+    const allowed =
+      hasPermission(email, "dashboard:view") &&
+      hasPermission(email, "evening_jobs:edit");
+
+    if (!allowed) {
+      router.replace("/dashboard");
+      return null;
+    }
+
+    return email;
+  }
+
   async function createEveningJobListNotification({
     title,
     message,
@@ -272,18 +294,14 @@ export default function ChiefEveningJobListPage() {
     setMessage("");
     setErrorMessage("");
 
-    const { data, error } = await supabase.auth.getUser();
-
-    if (error) {
-      setErrorMessage(`User check failed: ${error.message}`);
-      setLoading(false);
+    if (!Number.isFinite(carId)) {
+      router.replace("/dashboard");
       return;
     }
 
-    const role = getUserRole(data.user?.email ?? "");
+    const email = await checkManageAccess();
 
-    if (role !== "chief") {
-      router.replace("/dashboard");
+    if (!email) {
       return;
     }
 
@@ -307,10 +325,9 @@ export default function ChiefEveningJobListPage() {
     setErrorMessage("");
     setSavingReleaseInfo(true);
 
-    const { data: userData, error: userError } = await supabase.auth.getUser();
+    const email = await checkManageAccess();
 
-    if (userError) {
-      setErrorMessage(`User check failed: ${userError.message}`);
+    if (!email) {
       setSavingReleaseInfo(false);
       return false;
     }
@@ -320,7 +337,7 @@ export default function ChiefEveningJobListPage() {
         car_id: carId,
         after_event: afterEvent.trim() || null,
         job_date: jobDate || null,
-        released_by: userData.user?.email ?? null,
+        released_by: email,
         released_at: new Date().toISOString(),
         status: releaseInfo?.status === "published" ? "published" : "draft",
         version_number: releaseInfo?.version_number ?? 0,
@@ -348,10 +365,9 @@ export default function ChiefEveningJobListPage() {
   }
 
   async function markDraft(customMessage?: string) {
-    const { data: userData, error: userError } = await supabase.auth.getUser();
+    const email = await checkManageAccess();
 
-    if (userError) {
-      setErrorMessage(`User check failed: ${userError.message}`);
+    if (!email) {
       return false;
     }
 
@@ -360,7 +376,7 @@ export default function ChiefEveningJobListPage() {
         car_id: carId,
         after_event: afterEvent.trim() || null,
         job_date: jobDate || null,
-        released_by: userData.user?.email ?? null,
+        released_by: email,
         released_at: new Date().toISOString(),
         status: "draft",
         version_number: releaseInfo?.version_number ?? 0,
@@ -392,6 +408,13 @@ export default function ChiefEveningJobListPage() {
     setMessage("");
     setErrorMessage("");
 
+    const email = await checkManageAccess();
+
+    if (!email) {
+      setPublishingJobList(false);
+      return;
+    }
+
     if (jobs.length === 0) {
       setErrorMessage("Add or update evening jobs before publishing the list.");
       return;
@@ -415,18 +438,9 @@ export default function ChiefEveningJobListPage() {
 
     setPublishingJobList(true);
 
-    const { data: userData, error: userError } = await supabase.auth.getUser();
-
-    if (userError) {
-      setErrorMessage(`User check failed: ${userError.message}`);
-      setPublishingJobList(false);
-      return;
-    }
-
     const currentVersion = releaseInfo?.version_number ?? 0;
     const nextVersion = currentVersion + 1;
     const now = new Date().toISOString();
-    const email = userData.user?.email ?? null;
 
     const { error } = await supabase.from("evening_job_list_releases").upsert(
       {
@@ -489,6 +503,12 @@ export default function ChiefEveningJobListPage() {
   async function updateFromTemplate() {
     setMessage("");
     setErrorMessage("");
+
+    const email = await checkManageAccess();
+
+    if (!email) {
+      return;
+    }
 
     const selectedTemplate = templates.find(
       (template) => template.id === selectedTemplateId,
@@ -585,6 +605,12 @@ export default function ChiefEveningJobListPage() {
   }
 
   async function clearStandardJobs() {
+    const email = await checkManageAccess();
+
+    if (!email) {
+      return;
+    }
+
     const confirmed = window.confirm(
       `Clear STANDARD evening prep jobs for Car ${carId}?\n\nThis removes only the template evening prep jobs. Special jobs and release details will be kept.\n\nThe list will be marked as draft until published again.`,
     );
@@ -620,6 +646,12 @@ export default function ChiefEveningJobListPage() {
   }
 
   async function updateJobText(job: EveningJobRow, text: string) {
+    const email = await checkManageAccess();
+
+    if (!email) {
+      return;
+    }
+
     const previousText = job.job_text;
     const cleanPreviousText = previousText.trim();
     const cleanNewText = text.trim();
@@ -638,6 +670,7 @@ export default function ChiefEveningJobListPage() {
       .from("evening_job_progress")
       .update({
         job_text: text,
+        updated_by: email,
         updated_at: new Date().toISOString(),
       });
 
@@ -673,6 +706,12 @@ export default function ChiefEveningJobListPage() {
   }
 
   async function addSpecialJob() {
+    const email = await checkManageAccess();
+
+    if (!email) {
+      return;
+    }
+
     const text = newSpecialJob.trim();
 
     setMessage("");
@@ -684,16 +723,6 @@ export default function ChiefEveningJobListPage() {
     }
 
     setAddingSpecialJob(true);
-
-    const { data: userData, error: userError } = await supabase.auth.getUser();
-
-    if (userError) {
-      setErrorMessage(`User check failed: ${userError.message}`);
-      setAddingSpecialJob(false);
-      return;
-    }
-
-    const userEmail = userData.user?.email ?? null;
 
     const existingSpecialIds = jobs
       .filter((job) => job.section === "special")
@@ -712,7 +741,7 @@ export default function ChiefEveningJobListPage() {
       section: "special" as const,
       done: false,
       notes: null,
-      updated_by: userEmail,
+      updated_by: email,
       updated_at: now,
     };
 
@@ -738,6 +767,12 @@ export default function ChiefEveningJobListPage() {
   }
 
   async function removeJob(job: EveningJobRow) {
+    const email = await checkManageAccess();
+
+    if (!email) {
+      return;
+    }
+
     const confirmed = window.confirm(
       `Remove this evening prep job?\n\n${job.job_text}`,
     );
@@ -795,6 +830,12 @@ export default function ChiefEveningJobListPage() {
   }
 
   async function clearJobNote(job: EveningJobRow) {
+    const email = await checkManageAccess();
+
+    if (!email) {
+      return;
+    }
+
     const confirmed = window.confirm(
       `Clear this mechanic note?\n\nTask:\n${job.job_text}`,
     );
@@ -807,16 +848,6 @@ export default function ChiefEveningJobListPage() {
     setClearingNoteKey(key);
     setMessage("");
     setErrorMessage("");
-
-    const { data: userData, error: userError } = await supabase.auth.getUser();
-
-    if (userError) {
-      setErrorMessage(`User check failed: ${userError.message}`);
-      setClearingNoteKey(null);
-      return;
-    }
-
-    const email = userData.user?.email ?? "chief";
 
     const { error } = await supabase
       .from("evening_job_progress")
@@ -855,6 +886,12 @@ export default function ChiefEveningJobListPage() {
   }
 
   async function clearAllJobs() {
+    const email = await checkManageAccess();
+
+    if (!email) {
+      return;
+    }
+
     const confirmed = window.confirm(
       `Clear ALL evening prep jobs for Car ${carId}?\n\nThis will remove standard evening prep jobs, special evening prep jobs, notes and the published/release details from the mechanic page.\n\nMechanics will receive a popup notification.`,
     );

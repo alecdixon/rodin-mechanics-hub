@@ -4,7 +4,11 @@ import { ChangeEvent, useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
-import { getAssignedCar, getUserRole } from "@/lib/userAccess";
+import {
+  getAssignedCar,
+  getUserRole,
+  hasPermission,
+} from "@/lib/userAccess";
 import LogoutButton from "@/app/components/LogoutButton";
 
 type DashboardCar = {
@@ -728,13 +732,24 @@ export default function DashboardPage() {
       const email = data.user?.email ?? "";
       const role = getUserRole(email);
 
-      if (role === "mechanic") {
+      if (role === "number1_mechanic") {
         const carId = getAssignedCar(email);
-        router.replace(`/car/${carId}/job-list`);
+
+        if (carId) {
+          router.replace(`/car/${carId}/job-list`);
+          return;
+        }
+
+        router.replace("/login");
         return;
       }
 
-      if (role !== "chief") {
+      if (role === "number2_mechanic") {
+        router.replace("/team-jobs");
+        return;
+      }
+
+      if (!hasPermission(email, "dashboard:view")) {
         router.replace("/login");
         return;
       }
@@ -983,7 +998,7 @@ export default function DashboardPage() {
   if (loading) {
     return (
       <main className="flex min-h-screen items-center justify-center bg-[#0d0f12] text-zinc-400">
-        Loading chief dashboard...
+        Loading dashboard...
       </main>
     );
   }

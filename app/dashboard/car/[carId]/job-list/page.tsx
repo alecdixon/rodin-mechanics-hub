@@ -282,7 +282,7 @@ export default function ChiefJobListEditorPage() {
 
     const role = getUserRole(data.user?.email ?? "");
 
-    if (role !== "chief") {
+    if (role !== "chief_mechanic") {
       router.replace("/dashboard");
       return;
     }

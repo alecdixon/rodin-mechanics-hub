@@ -4,15 +4,18 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useParams, usePathname, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
-import { getAssignedCar, getUserRole } from "@/lib/userAccess";
+import {
+  canAccessCarPages,
+  getAssignedCar,
+  getUserRole,
+  type UserRole,
+} from "@/lib/userAccess";
 import JobListNotificationModal from "@/app/components/JobListNotificationModal";
 import TeamJobsNotificationModal from "@/app/components/TeamJobsNotificationModal";
 
 type Props = {
   children: React.ReactNode;
 };
-
-type UserRole = "chief" | "mechanic" | "unknown";
 
 export default function CarLayout({ children }: Props) {
   const router = useRouter();
@@ -44,29 +47,28 @@ export default function CarLayout({ children }: Props) {
 
       if (!mounted) return;
 
-      if (userRole === "chief") {
-        setRole("chief");
-        setLoading(false);
+      if (userRole === "number2_mechanic") {
+        router.replace("/team-jobs");
         return;
       }
 
-      if (userRole === "mechanic") {
-        if (!assignedCar) {
-          router.replace("/login");
-          return;
-        }
+      if (!Number.isFinite(numericCarId)) {
+        router.replace("/login");
+        return;
+      }
 
-        if (String(assignedCar) !== carId) {
+      if (!canAccessCarPages(email, numericCarId)) {
+        if (userRole === "number1_mechanic" && assignedCar) {
           router.replace(`/car/${assignedCar}/job-list`);
           return;
         }
 
-        setRole("mechanic");
-        setLoading(false);
+        router.replace("/login");
         return;
       }
 
-      router.replace("/login");
+      setRole(userRole);
+      setLoading(false);
     }
 
     checkAccess();
@@ -74,7 +76,7 @@ export default function CarLayout({ children }: Props) {
     return () => {
       mounted = false;
     };
-  }, [carId, router]);
+  }, [carId, numericCarId, router]);
 
   const navItems = useMemo(
     () => [
@@ -88,7 +90,7 @@ export default function CarLayout({ children }: Props) {
       },
       {
         name: "Team Jobs",
-        href: `/car/${carId}/team-jobs`,
+        href: "/team-jobs",
       },
       {
         name: "Clutch Measurement",
@@ -113,12 +115,12 @@ export default function CarLayout({ children }: Props) {
   return (
     <div className="flex min-h-screen bg-black text-white">
       <aside className="w-64 shrink-0 border-r border-neutral-800 bg-neutral-950 p-5">
-        {role === "chief" ? (
+        {role === "chief_mechanic" || role === "engineer" ? (
           <Link
             href="/dashboard"
             className="text-sm text-red-400 hover:text-red-300"
           >
-            ← Chief Dashboard
+            ← Dashboard
           </Link>
         ) : (
           <p className="text-sm text-neutral-500">Car Workspace</p>
@@ -131,15 +133,21 @@ export default function CarLayout({ children }: Props) {
 
           <h2 className="mt-2 text-xl font-bold">Car {carId}</h2>
 
-          {role === "chief" && (
+          {role === "chief_mechanic" && (
             <p className="mt-2 rounded-full border border-red-900/50 bg-red-950/30 px-3 py-1 text-xs text-red-300">
               Chief mechanic access
             </p>
           )}
 
-          {role === "mechanic" && (
+          {role === "number1_mechanic" && (
             <p className="mt-2 rounded-full border border-neutral-800 bg-black px-3 py-1 text-xs text-neutral-300">
-              Mechanic access
+              Number 1 mechanic access
+            </p>
+          )}
+
+          {role === "engineer" && (
+            <p className="mt-2 rounded-full border border-blue-900/50 bg-blue-950/30 px-3 py-1 text-xs text-blue-300">
+              Engineer access
             </p>
           )}
         </div>
@@ -164,7 +172,7 @@ export default function CarLayout({ children }: Props) {
             );
           })}
 
-          {role === "chief" && (
+          {role === "chief_mechanic" && (
             <div className="mt-6 space-y-2 border-t border-neutral-800 pt-6">
               <p className="mb-2 text-xs uppercase tracking-[0.25em] text-neutral-500">
                 Chief Tools
@@ -206,10 +214,10 @@ export default function CarLayout({ children }: Props) {
 
       <JobListNotificationModal
         carId={numericCarId}
-        enabled={role === "mechanic" && Number.isFinite(numericCarId)}
+        enabled={role === "number1_mechanic" && Number.isFinite(numericCarId)}
       />
 
-      <TeamJobsNotificationModal enabled={role === "mechanic"} />
+      <TeamJobsNotificationModal enabled={role === "number1_mechanic"} />
     </div>
   );
 }

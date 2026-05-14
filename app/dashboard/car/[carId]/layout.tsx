@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useParams, usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
-import { getUserRole } from "@/lib/userAccess";
+import { hasPermission } from "@/lib/userAccess";
 
 type Props = {
   children: React.ReactNode;
@@ -69,11 +69,16 @@ export default function ChiefCarLayout({ children }: Props) {
 
   useEffect(() => {
     async function checkAccess() {
-      const { data } = await supabase.auth.getUser();
-      const email = data.user?.email ?? "";
-      const role = getUserRole(email);
+      const { data, error } = await supabase.auth.getUser();
 
-      if (role !== "chief") {
+      if (error || !data.user?.email) {
+        router.replace("/login");
+        return;
+      }
+
+      const email = data.user.email.trim().toLowerCase();
+
+      if (!hasPermission(email, "dashboard:view")) {
         router.replace("/dashboard");
         return;
       }
@@ -90,7 +95,7 @@ export default function ChiefCarLayout({ children }: Props) {
       items: [
         {
           href: "/dashboard",
-          title: "Chief Dashboard",
+          title: "Dashboard",
           description: "Return to the main car overview",
         },
       ],
@@ -117,6 +122,11 @@ export default function ChiefCarLayout({ children }: Props) {
           href: `/dashboard/car/${carId}/evening-job-list`,
           title: "Evening Prep Job List",
           description: "Set, check and modify evening preparation jobs",
+        },
+        {
+          href: "/dashboard/team-jobs",
+          title: "Team Jobs",
+          description: "Add and publish team-wide jobs",
         },
       ],
     },
@@ -148,6 +158,11 @@ export default function ChiefCarLayout({ children }: Props) {
           title: "Mechanic Evening View",
           description: "Open the mechanic evening preparation list",
         },
+        {
+          href: "/team-jobs",
+          title: "Shared Team Jobs View",
+          description: "Open the team-wide jobs page",
+        },
       ],
     },
   ];
@@ -155,7 +170,7 @@ export default function ChiefCarLayout({ children }: Props) {
   if (loading) {
     return (
       <main className="flex min-h-screen items-center justify-center bg-[#0d0f12] text-zinc-400">
-        Checking chief access...
+        Checking dashboard access...
       </main>
     );
   }
@@ -193,7 +208,7 @@ export default function ChiefCarLayout({ children }: Props) {
         <div className="flex items-start justify-between gap-4">
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.35em] text-red-400">
-              Chief Car Hub
+              Car Hub
             </p>
 
             <h2 className="mt-3 text-3xl font-semibold text-zinc-100">
@@ -201,8 +216,7 @@ export default function ChiefCarLayout({ children }: Props) {
             </h2>
 
             <p className="mt-2 text-sm leading-6 text-zinc-500">
-              Navigate between all chief mechanic pages and mechanic views for
-              this car.
+              Navigate between dashboard pages and mechanic views for this car.
             </p>
           </div>
 

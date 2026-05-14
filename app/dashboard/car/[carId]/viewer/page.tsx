@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
-import { getUserRole } from "@/lib/userAccess";
+import { hasPermission } from "@/lib/userAccess";
 import LogoutButton from "@/app/components/LogoutButton";
 
 type JobRow = {
@@ -311,6 +311,7 @@ function PlateTable({
 export default function ChiefCarViewerPage() {
   const params = useParams();
   const router = useRouter();
+
   const carId = Number(params.carId);
 
   const [loading, setLoading] = useState(true);
@@ -336,14 +337,41 @@ export default function ChiefCarViewerPage() {
   const [errorMessage, setErrorMessage] = useState("");
   const [message, setMessage] = useState("");
   const [clearingNoteKey, setClearingNoteKey] = useState<string | null>(null);
+  const [canEditJobNotes, setCanEditJobNotes] = useState(false);
+
+  async function checkAccess() {
+    if (!Number.isFinite(carId)) {
+      router.replace("/dashboard");
+      return null;
+    }
+
+    const { data: userData, error: userError } = await supabase.auth.getUser();
+
+    if (userError || !userData.user?.email) {
+      router.replace("/login");
+      return null;
+    }
+
+    const email = userData.user.email.trim().toLowerCase();
+
+    const allowed =
+      hasPermission(email, "dashboard:view") && hasPermission(email, "cars:view");
+
+    if (!allowed) {
+      router.replace("/dashboard");
+      return null;
+    }
+
+    setCanEditJobNotes(hasPermission(email, "job_lists:edit"));
+
+    return email;
+  }
 
   useEffect(() => {
     async function loadViewer() {
-      const { data: userData } = await supabase.auth.getUser();
-      const role = getUserRole(userData.user?.email ?? "");
+      const email = await checkAccess();
 
-      if (role !== "chief") {
-        router.replace("/dashboard");
+      if (!email) {
         return;
       }
 
@@ -405,7 +433,11 @@ export default function ChiefCarViewerPage() {
       setLoading(false);
     }
 
-    if (carId) loadViewer();
+    if (carId) {
+      loadViewer();
+    }
+
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [carId, router]);
 
   async function openClutchPdf(record: ClutchRecord, key: string) {
@@ -439,14 +471,16 @@ export default function ChiefCarViewerPage() {
       return;
     }
 
-    setErrorMessage(
-      "No PDF is linked to this clutch measurement record yet.",
-    );
-
+    setErrorMessage("No PDF is linked to this clutch measurement record yet.");
     setOpeningPdfKey(null);
   }
 
   async function clearJobNote(job: JobRow) {
+    if (!canEditJobNotes) {
+      setErrorMessage("You do not have permission to clear mechanic notes.");
+      return;
+    }
+
     const confirmed = window.confirm(
       `Clear this mechanic note?\n\nTask:\n${job.job_text}`,
     );
@@ -460,8 +494,12 @@ export default function ChiefCarViewerPage() {
     setMessage("");
     setErrorMessage("");
 
-    const { data: userData } = await supabase.auth.getUser();
-    const email = userData.user?.email ?? "chief";
+    const email = await checkAccess();
+
+    if (!email) {
+      setClearingNoteKey(null);
+      return;
+    }
 
     const { error } = await supabase
       .from("job_progress")
@@ -582,7 +620,7 @@ export default function ChiefCarViewerPage() {
       <div className="mb-8 flex flex-wrap items-start justify-between gap-4">
         <div>
           <p className="text-xs uppercase tracking-[0.3em] text-red-400">
-            Chief Viewer
+            Car Viewer
           </p>
 
           <h1 className="mt-3 text-4xl font-semibold">
@@ -596,12 +634,14 @@ export default function ChiefCarViewerPage() {
         </div>
 
         <div className="flex flex-wrap gap-3">
-          <Link
-            href={`/dashboard/car/${carId}/job-list`}
-            className="rounded-xl bg-red-700 px-5 py-3 text-sm font-semibold hover:bg-red-600"
-          >
-            Edit Job List
-          </Link>
+          {canEditJobNotes && (
+            <Link
+              href={`/dashboard/car/${carId}/job-list`}
+              className="rounded-xl bg-red-700 px-5 py-3 text-sm font-semibold hover:bg-red-600"
+            >
+              Edit Job List
+            </Link>
+          )}
 
           <LogoutButton />
         </div>
@@ -660,12 +700,14 @@ export default function ChiefCarViewerPage() {
             </div>
           </div>
 
-          <Link
-            href={`/dashboard/car/${carId}/job-list`}
-            className="rounded-xl border border-zinc-700 px-4 py-2 text-sm font-semibold text-zinc-200 hover:border-red-500 hover:text-red-300"
-          >
-            Change Details
-          </Link>
+          {canEditJobNotes && (
+            <Link
+              href={`/dashboard/car/${carId}/job-list`}
+              className="rounded-xl border border-zinc-700 px-4 py-2 text-sm font-semibold text-zinc-200 hover:border-red-500 hover:text-red-300"
+            >
+              Change Details
+            </Link>
+          )}
         </div>
       </section>
 
@@ -804,6 +846,7 @@ export default function ChiefCarViewerPage() {
 
           {(clutchDateFilter || clutchSearchFilter) && (
             <button
+              type="button"
               onClick={() => {
                 setClutchDateFilter("");
                 setClutchSearchFilter("");
@@ -1001,6 +1044,7 @@ export default function ChiefCarViewerPage() {
 
           {(dateFilter || trackFilter !== "all") && (
             <button
+              type="button"
               onClick={() => {
                 setDateFilter("");
                 setTrackFilter("all");
@@ -1020,6 +1064,7 @@ export default function ChiefCarViewerPage() {
               filteredPostEventRows.map((sheet) => (
                 <button
                   key={sheet.id}
+                  type="button"
                   onClick={() => setSelectedSheet(sheet)}
                   className="w-full rounded-2xl border border-zinc-800 bg-[#0d0f12] p-4 text-left transition hover:border-red-500/70 hover:bg-[#15191f]"
                 >
@@ -1147,7 +1192,7 @@ export default function ChiefCarViewerPage() {
                     <button
                       type="button"
                       onClick={() => clearJobNote(job)}
-                      disabled={isClearing}
+                      disabled={isClearing || !canEditJobNotes}
                       className="rounded-lg border border-red-900/70 px-4 py-2 text-xs font-semibold text-red-300 transition hover:border-red-500 hover:bg-red-950/40 disabled:cursor-not-allowed disabled:opacity-50"
                     >
                       {isClearing ? "Clearing..." : "Clear Note"}
@@ -1206,6 +1251,7 @@ export default function ChiefCarViewerPage() {
                 </button>
 
                 <button
+                  type="button"
                   onClick={() => setSelectedClutchRecord(null)}
                   className="rounded-xl border border-zinc-700 px-5 py-3 text-sm font-semibold text-zinc-200 hover:border-red-500 hover:text-red-300"
                 >
@@ -1298,6 +1344,7 @@ export default function ChiefCarViewerPage() {
               </div>
 
               <button
+                type="button"
                 onClick={() => setSelectedSheet(null)}
                 className="rounded-xl border border-zinc-700 px-5 py-3 text-sm font-semibold text-zinc-200 hover:border-red-500 hover:text-red-300"
               >
@@ -1307,15 +1354,23 @@ export default function ChiefCarViewerPage() {
 
             <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
               <DetailField label="Chassis" value={selectedSheet.chassis} />
+
               <DetailField label="Driver" value={selectedSheet.driver} />
-              <DetailField label="Engine No." value={selectedSheet.engine_no} />
+
+              <DetailField
+                label="Engine No."
+                value={selectedSheet.engine_no}
+              />
 
               <DetailField
                 label="Hours Remaining"
                 value={selectedSheet.hours_remaining}
               />
 
-              <DetailField label="Gearbox No." value={selectedSheet.gearbox_no} />
+              <DetailField
+                label="Gearbox No."
+                value={selectedSheet.gearbox_no}
+              />
             </div>
 
             <div className="mt-6 grid gap-4 md:grid-cols-3">

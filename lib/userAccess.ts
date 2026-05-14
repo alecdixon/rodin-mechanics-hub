@@ -1,47 +1,263 @@
-export type UserRole = "chief" | "mechanic" | "unknown";
+export type UserRole =
+  | "chief_mechanic"
+  | "number1_mechanic"
+  | "number2_mechanic"
+  | "engineer"
+  | "unknown";
 
-const CHIEF_MECHANIC_EMAILS = ["dan.crain@rodinmotorsport.com"];
+export type Permission =
+  | "dashboard:view"
+  | "cars:view"
+  | "cars:manage"
+  | "job_lists:view"
+  | "job_lists:edit"
+  | "evening_jobs:view"
+  | "evening_jobs:edit"
+  | "team_jobs:view"
+  | "team_jobs:create"
+  | "team_jobs:publish"
+  | "team_jobs:complete"
+  | "post_event:view"
+  | "post_event:edit"
+  | "clutch:view"
+  | "clutch:edit"
+  | "calendar:manage";
 
-const MECHANIC_CAR_ASSIGNMENTS: Record<string, number> = {
-  "simon.crain@rodinmotorsport.com": 1,
-  "olli.moss@rodinmotorsport.com": 2,
-  "jack.carter@rodinmotorsport.com": 3,
+type UserAccess = {
+  role: UserRole;
+  assignedCar: number | null;
+  permissions: Permission[];
+};
+
+const ALL_PERMISSIONS: Permission[] = [
+  "dashboard:view",
+  "cars:view",
+  "cars:manage",
+  "job_lists:view",
+  "job_lists:edit",
+  "evening_jobs:view",
+  "evening_jobs:edit",
+  "team_jobs:view",
+  "team_jobs:create",
+  "team_jobs:publish",
+  "team_jobs:complete",
+  "post_event:view",
+  "post_event:edit",
+  "clutch:view",
+  "clutch:edit",
+  "calendar:manage",
+];
+
+const NUMBER1_MECHANIC_PERMISSIONS: Permission[] = [
+  "job_lists:view",
+  "job_lists:edit",
+  "evening_jobs:view",
+  "evening_jobs:edit",
+  "team_jobs:view",
+  "team_jobs:complete",
+  "post_event:view",
+  "post_event:edit",
+  "clutch:view",
+  "clutch:edit",
+];
+
+const NUMBER2_MECHANIC_PERMISSIONS: Permission[] = [
+  "team_jobs:view",
+  "team_jobs:complete",
+];
+
+const ENGINEER_PERMISSIONS: Permission[] = [
+  "dashboard:view",
+  "cars:view",
+  "team_jobs:view",
+  "post_event:view",
+  "clutch:view",
+];
+
+const USER_ACCESS: Record<string, UserAccess> = {
+  "dan.crain@rodinmotorsport.com": {
+    role: "chief_mechanic",
+    assignedCar: null,
+    permissions: ALL_PERMISSIONS,
+  },
+
+  "simon.crain@rodinmotorsport.com": {
+    role: "number1_mechanic",
+    assignedCar: 1,
+    permissions: NUMBER1_MECHANIC_PERMISSIONS,
+  },
+
+  "olli.moss@rodinmotorsport.com": {
+    role: "number1_mechanic",
+    assignedCar: 2,
+    permissions: NUMBER1_MECHANIC_PERMISSIONS,
+  },
+
+  "jack.carter@rodinmotorsport.com": {
+    role: "number1_mechanic",
+    assignedCar: 3,
+    permissions: NUMBER1_MECHANIC_PERMISSIONS,
+  },
+
+  /*
+   * Number 2 mechanics.
+   * Add their real login emails here.
+   * They will only be able to access /team-jobs.
+   */
+  "ben.southern@rodinmotorsport.com": {
+    role: "number2_mechanic",
+    assignedCar: null,
+    permissions: NUMBER2_MECHANIC_PERMISSIONS,
+  },
+  "charlie.lawman@rodinmotorsport.com": {
+    role: "number2_mechanic",
+    assignedCar: null,
+    permissions: NUMBER2_MECHANIC_PERMISSIONS,
+  },
+
+  /*
+   * Future engineer example.
+   * Leave this commented or replace with real engineer emails later.
+   */
+  /*
+  "engineer.example@rodinmotorsport.com": {
+    role: "engineer",
+    assignedCar: null,
+    permissions: ENGINEER_PERMISSIONS,
+  },
+  */
 };
 
 export function normaliseEmail(email: string | null | undefined): string {
   return email?.trim().toLowerCase() ?? "";
 }
 
-export function getUserRole(email: string | null | undefined): UserRole {
+export function getUserAccess(
+  email: string | null | undefined,
+): UserAccess {
   const cleanEmail = normaliseEmail(email);
 
-  if (CHIEF_MECHANIC_EMAILS.includes(cleanEmail)) {
-    return "chief";
-  }
+  return (
+    USER_ACCESS[cleanEmail] ?? {
+      role: "unknown",
+      assignedCar: null,
+      permissions: [],
+    }
+  );
+}
 
-  if (MECHANIC_CAR_ASSIGNMENTS[cleanEmail]) {
-    return "mechanic";
-  }
-
-  return "unknown";
+export function getUserRole(email: string | null | undefined): UserRole {
+  return getUserAccess(email).role;
 }
 
 export function getAssignedCar(email: string | null | undefined): number | null {
-  const cleanEmail = normaliseEmail(email);
-  return MECHANIC_CAR_ASSIGNMENTS[cleanEmail] ?? null;
+  return getUserAccess(email).assignedCar;
+}
+
+export function getUserPermissions(
+  email: string | null | undefined,
+): Permission[] {
+  return getUserAccess(email).permissions;
+}
+
+export function hasPermission(
+  email: string | null | undefined,
+  permission: Permission,
+): boolean {
+  return getUserAccess(email).permissions.includes(permission);
+}
+
+export function hasAnyPermission(
+  email: string | null | undefined,
+  permissions: Permission[],
+): boolean {
+  const userPermissions = getUserAccess(email).permissions;
+
+  return permissions.some((permission) => userPermissions.includes(permission));
+}
+
+export function canAccessDashboard(email: string | null | undefined): boolean {
+  return hasPermission(email, "dashboard:view");
+}
+
+export function canManageCars(email: string | null | undefined): boolean {
+  return hasPermission(email, "cars:manage");
+}
+
+export function canAccessTeamJobs(email: string | null | undefined): boolean {
+  return hasPermission(email, "team_jobs:view");
+}
+
+export function canCompleteTeamJobs(email: string | null | undefined): boolean {
+  return hasPermission(email, "team_jobs:complete");
+}
+
+export function canManageTeamJobs(email: string | null | undefined): boolean {
+  return (
+    hasPermission(email, "team_jobs:create") &&
+    hasPermission(email, "team_jobs:publish")
+  );
+}
+
+export function canAccessCarPages(
+  email: string | null | undefined,
+  carId: number,
+): boolean {
+  const access = getUserAccess(email);
+
+  if (access.role === "chief_mechanic") {
+    return true;
+  }
+
+  if (access.role === "engineer") {
+    return hasPermission(email, "cars:view");
+  }
+
+  if (access.role === "number1_mechanic") {
+    return access.assignedCar === carId;
+  }
+
+  return false;
 }
 
 export function getLoginRedirect(email: string | null | undefined): string {
-  const role = getUserRole(email);
+  const access = getUserAccess(email);
 
-  if (role === "chief") {
+  if (access.role === "chief_mechanic") {
     return "/dashboard";
   }
 
-  if (role === "mechanic") {
-    const carId = getAssignedCar(email);
-    return `/car/${carId}`;
+  if (access.role === "number1_mechanic" && access.assignedCar) {
+    return `/car/${access.assignedCar}/job-list`;
+  }
+
+  if (access.role === "number2_mechanic") {
+    return "/team-jobs";
+  }
+
+  if (access.role === "engineer") {
+    return "/dashboard";
   }
 
   return "/login";
+}
+
+/*
+ * Backwards compatibility helpers.
+ * These let old pages that still check "chief" or "mechanic" be updated gradually.
+ */
+export function isChiefMechanic(email: string | null | undefined): boolean {
+  return getUserRole(email) === "chief_mechanic";
+}
+
+export function isNumber1Mechanic(email: string | null | undefined): boolean {
+  return getUserRole(email) === "number1_mechanic";
+}
+
+export function isNumber2Mechanic(email: string | null | undefined): boolean {
+  return getUserRole(email) === "number2_mechanic";
+}
+
+export function isEngineer(email: string | null | undefined): boolean {
+  return getUserRole(email) === "engineer";
 }

@@ -1,10 +1,13 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
-import { getAssignedCar, getUserRole } from "@/lib/userAccess";
+import {
+  getAssignedCar,
+  getUserRole,
+  hasPermission,
+} from "@/lib/userAccess";
 import LogoutButton from "@/app/components/LogoutButton";
 
 type JobSection = "standard" | "special";
@@ -31,17 +34,32 @@ type EveningJobRelease = {
 
 function niceDate(value: string | null | undefined) {
   if (!value) return "No date set";
-  return new Date(value).toLocaleDateString("en-GB");
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return "No date set";
+  }
+
+  return date.toLocaleDateString("en-GB");
 }
 
 function niceDateTime(value: string | null | undefined) {
   if (!value) return "No timestamp";
-  return new Date(value).toLocaleString("en-GB");
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return "No timestamp";
+  }
+
+  return date.toLocaleString("en-GB");
 }
 
 export default function MechanicEveningJobListPage() {
   const params = useParams();
   const router = useRouter();
+
   const carId = Number(params.carId);
 
   const [loading, setLoading] = useState(true);
@@ -56,6 +74,8 @@ export default function MechanicEveningJobListPage() {
   const [savingJobKey, setSavingJobKey] = useState<string | null>(null);
   const [savingNote, setSavingNote] = useState(false);
 
+  const [canEditEveningJobs, setCanEditEveningJobs] = useState(false);
+
   const [message, setMessage] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
 
@@ -64,20 +84,45 @@ export default function MechanicEveningJobListPage() {
     setMessage("");
     setErrorMessage("");
 
-    const { data: userData } = await supabase.auth.getUser();
-    const email = userData.user?.email ?? "";
-    const role = getUserRole(email);
-    const assignedCar = getAssignedCar(email);
-
-    if (role === "mechanic" && Number(assignedCar) !== carId) {
-      router.replace(`/car/${assignedCar}/evening-job-list`);
-      return;
-    }
-
-    if (role !== "mechanic" && role !== "chief") {
+    if (!Number.isFinite(carId)) {
       router.replace("/login");
       return;
     }
+
+    const { data: userData, error: userError } = await supabase.auth.getUser();
+
+    if (userError || !userData.user?.email) {
+      router.replace("/login");
+      return;
+    }
+
+    const email = userData.user.email.trim().toLowerCase();
+    const role = getUserRole(email);
+    const assignedCar = getAssignedCar(email);
+
+    if (role === "number2_mechanic") {
+      router.replace("/team-jobs");
+      return;
+    }
+
+    if (!hasPermission(email, "evening_jobs:view")) {
+      router.replace("/login");
+      return;
+    }
+
+    if (role === "number1_mechanic") {
+      if (!assignedCar) {
+        router.replace("/login");
+        return;
+      }
+
+      if (Number(assignedCar) !== carId) {
+        router.replace(`/car/${assignedCar}/evening-job-list`);
+        return;
+      }
+    }
+
+    setCanEditEveningJobs(hasPermission(email, "evening_jobs:edit"));
 
     const { data: releaseData, error: releaseError } = await supabase
       .from("evening_job_list_releases")
@@ -112,9 +157,15 @@ export default function MechanicEveningJobListPage() {
     if (carId) {
       loadEveningJobs();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [carId]);
 
   async function toggleJob(job: EveningJobRow) {
+    if (!canEditEveningJobs) {
+      setErrorMessage("You do not have permission to update evening jobs.");
+      return;
+    }
+
     const jobKey = `${job.section}-${job.job_id}`;
     const nextDone = !job.done;
     const now = new Date().toISOString();
@@ -124,7 +175,7 @@ export default function MechanicEveningJobListPage() {
     setErrorMessage("");
 
     const { data: userData } = await supabase.auth.getUser();
-    const email = userData.user?.email ?? "unknown";
+    const email = userData.user?.email?.trim().toLowerCase() ?? "unknown";
 
     setJobs((current) =>
       current.map((item) =>
@@ -161,6 +212,11 @@ export default function MechanicEveningJobListPage() {
   }
 
   function openNote(job: EveningJobRow) {
+    if (!canEditEveningJobs) {
+      setErrorMessage("You do not have permission to edit evening job notes.");
+      return;
+    }
+
     setNoteJob(job);
     setNoteText(job.notes ?? "");
   }
@@ -168,13 +224,18 @@ export default function MechanicEveningJobListPage() {
   async function saveNote() {
     if (!noteJob) return;
 
+    if (!canEditEveningJobs) {
+      setErrorMessage("You do not have permission to edit evening job notes.");
+      return;
+    }
+
     setSavingNote(true);
     setMessage("");
     setErrorMessage("");
 
     const now = new Date().toISOString();
     const { data: userData } = await supabase.auth.getUser();
-    const email = userData.user?.email ?? "unknown";
+    const email = userData.user?.email?.trim().toLowerCase() ?? "unknown";
 
     const cleanNote = noteText.trim() || null;
 
@@ -251,6 +312,13 @@ export default function MechanicEveningJobListPage() {
             Tick off evening preparation jobs as they are completed. Add notes
             where the chief mechanic needs extra information.
           </p>
+
+          {!canEditEveningJobs && (
+            <p className="mt-4 rounded-xl border border-yellow-800 bg-yellow-950/30 px-4 py-3 text-sm text-yellow-200">
+              Your login can view this list, but cannot mark jobs complete or
+              edit notes.
+            </p>
+          )}
         </div>
 
         <LogoutButton />
@@ -357,7 +425,7 @@ export default function MechanicEveningJobListPage() {
 
                     <button
                       type="button"
-                      disabled={isSaving}
+                      disabled={isSaving || !canEditEveningJobs}
                       onClick={() => toggleJob(job)}
                       className={`grid h-8 w-8 place-items-center rounded-lg border text-sm font-bold transition disabled:cursor-not-allowed disabled:opacity-50 ${
                         job.done
@@ -396,7 +464,8 @@ export default function MechanicEveningJobListPage() {
                     <button
                       type="button"
                       onClick={() => openNote(job)}
-                      className="rounded-lg border border-zinc-700 px-3 py-2 text-xs font-semibold text-zinc-300 hover:border-red-500 hover:text-red-300"
+                      disabled={!canEditEveningJobs}
+                      className="rounded-lg border border-zinc-700 px-3 py-2 text-xs font-semibold text-zinc-300 hover:border-red-500 hover:text-red-300 disabled:cursor-not-allowed disabled:opacity-50"
                     >
                       {job.notes?.trim() ? "Edit Note" : "Add Note"}
                     </button>
@@ -456,7 +525,7 @@ export default function MechanicEveningJobListPage() {
 
                     <button
                       type="button"
-                      disabled={isSaving}
+                      disabled={isSaving || !canEditEveningJobs}
                       onClick={() => toggleJob(job)}
                       className={`grid h-8 w-8 place-items-center rounded-lg border text-sm font-bold transition disabled:cursor-not-allowed disabled:opacity-50 ${
                         job.done
@@ -495,7 +564,8 @@ export default function MechanicEveningJobListPage() {
                     <button
                       type="button"
                       onClick={() => openNote(job)}
-                      className="rounded-lg border border-red-900/60 px-3 py-2 text-xs font-semibold text-zinc-300 hover:border-red-500 hover:text-red-300"
+                      disabled={!canEditEveningJobs}
+                      className="rounded-lg border border-red-900/60 px-3 py-2 text-xs font-semibold text-zinc-300 hover:border-red-500 hover:text-red-300 disabled:cursor-not-allowed disabled:opacity-50"
                     >
                       {job.notes?.trim() ? "Edit Note" : "Add Note"}
                     </button>
@@ -512,6 +582,27 @@ export default function MechanicEveningJobListPage() {
           )}
         </div>
       </section>
+
+      {mechanicNotes.length > 0 && (
+        <section className="mt-6 rounded-3xl border border-zinc-800 bg-[#14181d] p-6 shadow-xl">
+          <h2 className="text-2xl font-semibold">Notes Summary</h2>
+
+          <div className="mt-4 space-y-3">
+            {mechanicNotes.map((job) => (
+              <div
+                key={`${job.section}-${job.job_id}-note-summary`}
+                className="rounded-xl border border-zinc-800 bg-[#0d0f12] p-4"
+              >
+                <p className="text-sm font-semibold text-zinc-100">
+                  {job.job_text}
+                </p>
+
+                <p className="mt-2 text-sm text-zinc-400">{job.notes}</p>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
 
       {noteJob && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4">

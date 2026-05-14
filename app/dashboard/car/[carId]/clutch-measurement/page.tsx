@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
-import { getUserRole } from "@/lib/userAccess";
+import { getUserRole, hasPermission } from "@/lib/userAccess";
 import LogoutButton from "@/app/components/LogoutButton";
 
 type ClutchRecord = Record<string, unknown> & {
@@ -287,9 +287,9 @@ export default function ChiefClutchMeasurementPage() {
     setErrorMessage("");
 
     const { data: userData } = await supabase.auth.getUser();
-    const role = getUserRole(userData.user?.email ?? "");
+    const email = getUserRole(userData.user?.email ?? "");
 
-    if (role !== "chief") {
+    if (!hasPermission(email, "clutch:view")){
       router.replace("/dashboard");
       return;
     }
