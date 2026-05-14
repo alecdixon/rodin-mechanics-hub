@@ -6,6 +6,7 @@ import { useParams, usePathname, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import { getAssignedCar, getUserRole } from "@/lib/userAccess";
 import JobListNotificationModal from "@/app/components/JobListNotificationModal";
+import TeamJobsNotificationModal from "@/app/components/TeamJobsNotificationModal";
 
 type Props = {
   children: React.ReactNode;
@@ -84,6 +85,10 @@ export default function CarLayout({ children }: Props) {
       {
         name: "Evening Job List",
         href: `/car/${carId}/evening-job-list`,
+      },
+      {
+        name: "Team Jobs",
+        href: `/car/${carId}/team-jobs`,
       },
       {
         name: "Clutch Measurement",
@@ -185,6 +190,13 @@ export default function CarLayout({ children }: Props) {
               >
                 Edit Evening Job List
               </Link>
+
+              <Link
+                href="/dashboard/team-jobs"
+                className="block rounded-lg border border-red-800 bg-red-950/30 px-4 py-3 text-sm font-semibold text-red-200 hover:border-red-500"
+              >
+                Manage Team Jobs
+              </Link>
             </div>
           )}
         </nav>
@@ -196,6 +208,8 @@ export default function CarLayout({ children }: Props) {
         carId={numericCarId}
         enabled={role === "mechanic" && Number.isFinite(numericCarId)}
       />
+
+      <TeamJobsNotificationModal enabled={role === "mechanic"} />
     </div>
   );
 }

@@ -1008,6 +1008,13 @@ export default function DashboardPage() {
           </div>
 
           <div className="flex flex-wrap gap-3">
+            <Link
+              href="/dashboard/team-jobs"
+              className="rounded-xl border border-red-800 bg-red-950/30 px-5 py-3 text-sm font-semibold text-red-200 hover:border-red-500 hover:bg-red-950/50"
+            >
+              Team Jobs
+            </Link>
+
             <button
               type="button"
               onClick={() => setCarSettingsOpen((current) => !current)}
@@ -1341,6 +1348,12 @@ export default function DashboardPage() {
                             href={`/dashboard/car/${car.id}/evening-job-list`}
                             title="Evening Prep Job List"
                             description="Set, check and modify evening prep jobs"
+                          />
+
+                          <CardLink
+                            href="/dashboard/team-jobs"
+                            title="Team Jobs"
+                            description="Add and publish team-wide jobs for all mechanics"
                           />
                         </div>
                       </div>
