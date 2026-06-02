@@ -94,6 +94,7 @@ export default function ChiefPostEventPage() {
   const [trackFilter, setTrackFilter] = useState("all");
   const [driverFilter, setDriverFilter] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
+  const [openingPdf, setOpeningPdf] = useState(false);
 
   async function checkAccess() {
     if (!Number.isFinite(carId)) {
@@ -142,6 +143,41 @@ export default function ChiefPostEventPage() {
 
     setSheets((data ?? []) as PostEventSheet[]);
     setLoading(false);
+  }
+
+  async function openSelectedPdf() {
+    if (!selectedSheet) return;
+
+    setOpeningPdf(true);
+    setErrorMessage("");
+
+    try {
+      if (selectedSheet.pdf_url) {
+        window.open(selectedSheet.pdf_url, "_blank", "noopener,noreferrer");
+        setOpeningPdf(false);
+        return;
+      }
+
+      if (!selectedSheet.pdf_path) {
+        throw new Error("No PDF has been saved for this sheet.");
+      }
+
+      const { data, error } = await supabase.storage
+        .from("post-event-sheets")
+        .createSignedUrl(selectedSheet.pdf_path, 60 * 10);
+
+      if (error || !data?.signedUrl) {
+        throw new Error(error?.message || "Could not create PDF link.");
+      }
+
+      window.open(data.signedUrl, "_blank", "noopener,noreferrer");
+    } catch (error) {
+      setErrorMessage(
+        error instanceof Error ? error.message : "Could not open PDF.",
+      );
+    }
+
+    setOpeningPdf(false);
   }
 
   useEffect(() => {
@@ -485,13 +521,26 @@ export default function ChiefPostEventPage() {
                 </p>
               </div>
 
-              <button
-                type="button"
-                onClick={() => setSelectedSheet(null)}
-                className="rounded-xl border border-zinc-700 px-5 py-3 text-sm font-semibold text-zinc-200 hover:border-red-500 hover:text-red-300"
-              >
-                Close
-              </button>
+              <div className="flex flex-wrap gap-3">
+                {(selectedSheet.pdf_url || selectedSheet.pdf_path) && (
+                  <button
+                    type="button"
+                    onClick={openSelectedPdf}
+                    disabled={openingPdf}
+                    className="rounded-xl bg-red-700 px-5 py-3 text-sm font-semibold text-white hover:bg-red-600 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {openingPdf ? "Opening PDF..." : "View PDF"}
+                  </button>
+                )}
+
+                <button
+                  type="button"
+                  onClick={() => setSelectedSheet(null)}
+                  className="rounded-xl border border-zinc-700 px-5 py-3 text-sm font-semibold text-zinc-200 hover:border-red-500 hover:text-red-300"
+                >
+                  Close
+                </button>
+              </div>
             </div>
 
             <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
@@ -548,13 +597,26 @@ export default function ChiefPostEventPage() {
 
             {(selectedSheet.pdf_url || selectedSheet.pdf_path) && (
               <div className="mt-6 rounded-2xl border border-red-900/50 bg-[#181315] p-5">
-                <p className="text-xs font-semibold uppercase tracking-[0.22em] text-red-400">
-                  Saved PDF
-                </p>
+                <div className="flex flex-wrap items-center justify-between gap-4">
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-[0.22em] text-red-400">
+                      Saved PDF
+                    </p>
 
-                <p className="mt-3 break-words text-sm text-zinc-300">
-                  {selectedSheet.pdf_url || selectedSheet.pdf_path}
-                </p>
+                    <p className="mt-3 break-words text-sm text-zinc-300">
+                      {selectedSheet.pdf_url || selectedSheet.pdf_path}
+                    </p>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={openSelectedPdf}
+                    disabled={openingPdf}
+                    className="rounded-xl bg-red-700 px-5 py-3 text-sm font-semibold text-white hover:bg-red-600 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {openingPdf ? "Opening PDF..." : "View PDF"}
+                  </button>
+                </div>
               </div>
             )}
           </div>
