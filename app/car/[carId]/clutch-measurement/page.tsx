@@ -20,7 +20,6 @@ type ClutchMeasurementRecord = {
   clutch_no?: string | null;
   job_id_no?: string | null;
   measurement_date?: string | null;
-  distance_km?: number | null;
   driven_plates?: PlateRow[] | null;
   intermediate_plates?: PlateRow[] | null;
   original_stack_height?: number | null;
@@ -72,6 +71,15 @@ function backlash(row: PlateRow): number | null {
   if (values.length < 2) return null;
 
   return Math.max(...values) - Math.min(...values);
+}
+
+function totalMeanStackHeight(drivenPlates: PlateRow[], intermediatePlates: PlateRow[]) {
+  const allRows = [...drivenPlates, ...intermediatePlates];
+  const means = allRows.map(mean).filter((value): value is number => value !== null);
+
+  if (means.length === 0) return null;
+
+  return means.reduce((sum, value) => sum + value, 0);
 }
 
 function fmt(value: number | null | undefined, decimals = 3) {
@@ -130,7 +138,6 @@ async function buildPdf({
   clutchNo,
   jobIdNo,
   measurementDate,
-  distanceKm,
   drivenPlates,
   intermediatePlates,
   originalStackHeight,
@@ -148,7 +155,6 @@ async function buildPdf({
   clutchNo: string;
   jobIdNo: string;
   measurementDate: string;
-  distanceKm: string;
   drivenPlates: PlateRow[];
   intermediatePlates: PlateRow[];
   originalStackHeight: string;
@@ -173,25 +179,11 @@ async function buildPdf({
   const mid = rgb(0.78, 0.78, 0.78);
   const white = rgb(1, 1, 1);
 
-  function text(
-    value: string,
-    x: number,
-    y: number,
-    size = 9,
-    font = regular,
-    color = black
-  ) {
+  function text(value: string, x: number, y: number, size = 9, font = regular, color = black) {
     page.drawText(value || "", { x, y, size, font, color });
   }
 
-  function box(
-    x: number,
-    y: number,
-    width: number,
-    height: number,
-    fill = white,
-    border = mid
-  ) {
+  function box(x: number, y: number, width: number, height: number, fill = white, border = mid) {
     page.drawRectangle({
       x,
       y,
@@ -228,8 +220,7 @@ async function buildPdf({
   valueBox("Job ID No:", jobIdNo, 285, 505, 245);
   valueBox("Clutch No:", clutchNo, 30, 480, 230);
   valueBox("Date:", measurementDate, 285, 480, 245);
-  valueBox("Distance km:", distanceKm, 30, 455, 230);
-  valueBox("Current shim:", currentShimInstalled, 285, 455, 245);
+  valueBox("Current shim:", currentShimInstalled, 30, 455, 500);
 
   sectionTitle("DRIVEN PLATES", 30, 420, 500);
 
@@ -248,14 +239,7 @@ async function buildPdf({
   y -= 20;
 
   drivenPlates.forEach((row) => {
-    const rowValues = [
-      String(row.no),
-      row.a,
-      row.b,
-      row.c,
-      fmt(mean(row)),
-      fmt(backlash(row)),
-    ];
+    const rowValues = [String(row.no), row.a, row.b, row.c, fmt(mean(row)), fmt(backlash(row))];
 
     x = tableX;
     rowValues.forEach((v, i) => {
@@ -281,14 +265,7 @@ async function buildPdf({
   y -= 20;
 
   intermediatePlates.forEach((row) => {
-    const rowValues = [
-      String(row.no),
-      row.a,
-      row.b,
-      row.c,
-      fmt(mean(row)),
-      fmt(backlash(row)),
-    ];
+    const rowValues = [String(row.no), row.a, row.b, row.c, fmt(mean(row)), fmt(backlash(row))];
 
     x = tableX;
     rowValues.forEach((v, i) => {
@@ -364,15 +341,11 @@ export default function ClutchMeasurementPage() {
   const [jobIdNo, setJobIdNo] = useState("");
   const [carName, setCarName] = useState("");
   const [measurementDate, setMeasurementDate] = useState(todayString());
-  const [distanceKm, setDistanceKm] = useState("");
 
   const [drivenPlates, setDrivenPlates] = useState<PlateRow[]>(EMPTY_DRIVEN_PLATES);
-  const [intermediatePlates, setIntermediatePlates] = useState<PlateRow[]>(
-    EMPTY_INTERMEDIATE_PLATES
-  );
+  const [intermediatePlates, setIntermediatePlates] = useState<PlateRow[]>(EMPTY_INTERMEDIATE_PLATES);
 
   const [originalStackHeight, setOriginalStackHeight] = useState("");
-  const [presentStackHeight, setPresentStackHeight] = useState("");
   const [currentShimInstalled, setCurrentShimInstalled] = useState("");
   const [notes, setNotes] = useState("");
 
@@ -380,14 +353,23 @@ export default function ClutchMeasurementPage() {
   const [message, setMessage] = useState("");
   const [saving, setSaving] = useState(false);
 
+  const presentStackHeightValue = useMemo(
+    () => totalMeanStackHeight(drivenPlates, intermediatePlates),
+    [drivenPlates, intermediatePlates]
+  );
+
+  const presentStackHeight = useMemo(
+    () => (presentStackHeightValue !== null ? fmt(presentStackHeightValue, 3) : ""),
+    [presentStackHeightValue]
+  );
+
   const wearMm = useMemo(() => {
     const original = toNumber(originalStackHeight);
-    const present = toNumber(presentStackHeight);
 
-    if (original === null || present === null) return null;
+    if (original === null || presentStackHeightValue === null) return null;
 
-    return present - original;
-  }, [originalStackHeight, presentStackHeight]);
+    return presentStackHeightValue - original;
+  }, [originalStackHeight, presentStackHeightValue]);
 
   const recommendedShim = useMemo(() => getRecommendedShim(wearMm), [wearMm]);
   const clutchStatus = useMemo(() => getStatus(wearMm), [wearMm]);
@@ -431,11 +413,9 @@ export default function ClutchMeasurementPage() {
     setJobIdNo("");
     setCarName("");
     setMeasurementDate(todayString());
-    setDistanceKm("");
     setDrivenPlates(EMPTY_DRIVEN_PLATES);
     setIntermediatePlates(EMPTY_INTERMEDIATE_PLATES);
     setOriginalStackHeight("");
-    setPresentStackHeight("");
     setCurrentShimInstalled("");
     setNotes("");
   }
@@ -453,13 +433,13 @@ export default function ClutchMeasurementPage() {
       return;
     }
 
-    if (toNumber(distanceKm) === null) {
-      setMessage("Please enter distance in km. This is needed for wear plotting.");
+    if (toNumber(originalStackHeight) === null) {
+      setMessage("Please enter the original stack height.");
       return;
     }
 
-    if (toNumber(originalStackHeight) === null || toNumber(presentStackHeight) === null) {
-      setMessage("Please enter original and present stack heights.");
+    if (presentStackHeightValue === null) {
+      setMessage("Please enter at least one plate measurement so Present can be calculated.");
       return;
     }
 
@@ -476,7 +456,6 @@ export default function ClutchMeasurementPage() {
         clutchNo,
         jobIdNo,
         measurementDate,
-        distanceKm,
         drivenPlates,
         intermediatePlates,
         originalStackHeight,
@@ -489,9 +468,9 @@ export default function ClutchMeasurementPage() {
         createdBy: createdBy ?? "",
       });
 
-      const fileName = `${safeFilePart(
-        carName || `car_${carId}`
-      )}_${safeFilePart(clutchNo || "clutch")}_${Date.now()}.pdf`;
+      const fileName = `${safeFilePart(carName || `car_${carId}`)}_${safeFilePart(
+        clutchNo || "clutch"
+      )}_${Date.now()}.pdf`;
 
       const pdfPath = `car-${carId}/${fileName}`;
 
@@ -509,7 +488,7 @@ export default function ClutchMeasurementPage() {
         .upload(pdfPath, pdfBlob, {
           contentType: "application/pdf",
           upsert: false,
-      });
+        });
 
       if (uploadError) {
         setMessage(`PDF upload failed: ${uploadError.message}`);
@@ -524,13 +503,12 @@ export default function ClutchMeasurementPage() {
         clutch_no: clutchNo || null,
         job_id_no: jobIdNo || null,
         measurement_date: measurementDate,
-        distance_km: toNumber(distanceKm),
 
         driven_plates: drivenPlates,
         intermediate_plates: intermediatePlates,
 
         original_stack_height: toNumber(originalStackHeight),
-        present_stack_height: toNumber(presentStackHeight),
+        present_stack_height: presentStackHeightValue,
         wear_mm: wearMm,
         recommended_shim: recommendedShim || null,
         clutch_status: clutchStatus || null,
@@ -582,34 +560,6 @@ export default function ClutchMeasurementPage() {
     window.open(data.signedUrl, "_blank");
   }
 
-  const plotPoints = useMemo(() => {
-    const validRows = rows
-      .filter((row) => row.distance_km !== null && row.distance_km !== undefined)
-      .filter((row) => row.wear_mm !== null && row.wear_mm !== undefined)
-      .map((row) => ({
-        distance: Number(row.distance_km),
-        wear: Math.abs(Number(row.wear_mm)),
-      }))
-      .sort((a, b) => a.distance - b.distance);
-
-    if (validRows.length === 0) return [];
-
-    const minDistance = Math.min(...validRows.map((p) => p.distance));
-    const maxDistance = Math.max(...validRows.map((p) => p.distance));
-    const maxWear = Math.max(...validRows.map((p) => p.wear), 0.1);
-
-    return validRows.map((point) => {
-      const x =
-        maxDistance === minDistance
-          ? 40
-          : 40 + ((point.distance - minDistance) / (maxDistance - minDistance)) * 300;
-
-      const y = 150 - (point.wear / maxWear) * 110;
-
-      return { ...point, x, y };
-    });
-  }, [rows]);
-
   return (
     <main className="min-h-screen bg-[#0d0f12] p-6 text-zinc-100">
       <div className="mx-auto max-w-7xl">
@@ -622,8 +572,9 @@ export default function ClutchMeasurementPage() {
               Car {carId} Carbon Clutch Measurement
             </h1>
             <p className="mt-3 max-w-3xl text-sm text-zinc-400">
-              Fill out the clutch sheet, generate the PDF, and store the measured
-              wear against distance so clutch degradation can be plotted over time.
+              Fill out the clutch sheet, generate the PDF, and store the measured stack
+              height. Present stack height is calculated automatically from the sum of
+              every driven and intermediate plate Mean value.
             </p>
           </div>
 
@@ -701,23 +652,18 @@ export default function ClutchMeasurementPage() {
                     />
                   </Field>
 
-                  <Field label="Distance km">
+                  <Field label="Current Shim Installed">
                     <input
-                      value={distanceKm}
-                      onChange={(e) => setDistanceKm(e.target.value)}
+                      value={currentShimInstalled}
+                      onChange={(e) => setCurrentShimInstalled(e.target.value)}
                       className="input"
-                      placeholder="Required for wear plot"
-                      inputMode="decimal"
+                      placeholder="e.g. 0.25 mm"
                     />
                   </Field>
                 </div>
               </div>
 
-              <PlateTable
-                title="Driven Plates"
-                rows={drivenPlates}
-                onChange={updateDrivenPlate}
-              />
+              <PlateTable title="Driven Plates" rows={drivenPlates} onChange={updateDrivenPlate} />
 
               <PlateTable
                 title="Intermediate Plates"
@@ -730,7 +676,7 @@ export default function ClutchMeasurementPage() {
                   Stack Heights
                 </h3>
 
-                <div className="mt-4 grid gap-4 md:grid-cols-4">
+                <div className="mt-4 grid gap-4 md:grid-cols-3">
                   <Field label="Original">
                     <input
                       value={originalStackHeight}
@@ -742,13 +688,9 @@ export default function ClutchMeasurementPage() {
                   </Field>
 
                   <Field label="Present">
-                    <input
-                      value={presentStackHeight}
-                      onChange={(e) => setPresentStackHeight(e.target.value)}
-                      className="input"
-                      placeholder="mm"
-                      inputMode="decimal"
-                    />
+                    <div className="readonly-box">
+                      {presentStackHeight ? `${presentStackHeight} mm` : "-"}
+                    </div>
                   </Field>
 
                   <Field label="Wear">
@@ -756,16 +698,11 @@ export default function ClutchMeasurementPage() {
                       {wearMm !== null ? `${fmt(wearMm, 3)} mm` : "-"}
                     </div>
                   </Field>
-
-                  <Field label="Current Shim Installed">
-                    <input
-                      value={currentShimInstalled}
-                      onChange={(e) => setCurrentShimInstalled(e.target.value)}
-                      className="input"
-                      placeholder="e.g. 0.25 mm"
-                    />
-                  </Field>
                 </div>
+
+                <p className="mt-3 text-xs text-zinc-500">
+                  Present = sum of all calculated Mean values from driven and intermediate plates.
+                </p>
               </div>
 
               <div className="mt-6 rounded-2xl border border-zinc-800 bg-[#0d0f12] p-5">
@@ -827,6 +764,10 @@ export default function ClutchMeasurementPage() {
 
                 <div className="mt-4 space-y-3 text-sm">
                   <ResultLine
+                    label="Present Stack Height"
+                    value={presentStackHeight ? `${presentStackHeight} mm` : "-"}
+                  />
+                  <ResultLine
                     label="Current Wear"
                     value={wearMm !== null ? `${fmt(Math.abs(wearMm), 3)} mm` : "-"}
                   />
@@ -844,39 +785,6 @@ export default function ClutchMeasurementPage() {
 
                 {message && <p className="mt-4 text-sm text-zinc-400">{message}</p>}
               </div>
-
-              <div className="rounded-2xl border border-zinc-800 bg-[#0d0f12] p-5">
-                <h3 className="text-lg font-semibold">Wear vs Distance</h3>
-
-                {plotPoints.length < 2 ? (
-                  <p className="mt-4 text-sm text-zinc-500">
-                    Add at least two saved measurements with distance to plot wear.
-                  </p>
-                ) : (
-                  <svg viewBox="0 0 380 180" className="mt-4 h-48 w-full">
-                    <line x1="40" y1="150" x2="360" y2="150" stroke="#52525b" />
-                    <line x1="40" y1="20" x2="40" y2="150" stroke="#52525b" />
-
-                    <polyline
-                      fill="none"
-                      stroke="#dc2626"
-                      strokeWidth="3"
-                      points={plotPoints.map((p) => `${p.x},${p.y}`).join(" ")}
-                    />
-
-                    {plotPoints.map((p, index) => (
-                      <circle key={index} cx={p.x} cy={p.y} r="4" fill="#ef4444" />
-                    ))}
-
-                    <text x="40" y="172" fill="#a1a1aa" fontSize="10">
-                      Distance
-                    </text>
-                    <text x="5" y="18" fill="#a1a1aa" fontSize="10">
-                      Wear
-                    </text>
-                  </svg>
-                )}
-              </div>
             </aside>
           </div>
         </section>
@@ -889,9 +797,9 @@ export default function ClutchMeasurementPage() {
               <thead className="bg-[#0d0f12] text-zinc-300">
                 <tr>
                   <th className="px-4 py-3 text-left">Date</th>
-                  <th className="px-4 py-3 text-left">Distance</th>
                   <th className="px-4 py-3 text-left">Serial</th>
                   <th className="px-4 py-3 text-left">Clutch</th>
+                  <th className="px-4 py-3 text-left">Present</th>
                   <th className="px-4 py-3 text-left">Wear</th>
                   <th className="px-4 py-3 text-left">Shim</th>
                   <th className="px-4 py-3 text-left">Status</th>
@@ -912,13 +820,13 @@ export default function ClutchMeasurementPage() {
                       <td className="px-4 py-3 text-zinc-300">
                         {row.measurement_date || "-"}
                       </td>
-                      <td className="px-4 py-3 text-zinc-300">
-                        {row.distance_km !== null && row.distance_km !== undefined
-                          ? `${row.distance_km} km`
-                          : "-"}
-                      </td>
                       <td className="px-4 py-3">{row.serial_no || "-"}</td>
                       <td className="px-4 py-3">{row.clutch_no || "-"}</td>
+                      <td className="px-4 py-3 text-zinc-300">
+                        {row.present_stack_height !== null && row.present_stack_height !== undefined
+                          ? `${Number(row.present_stack_height).toFixed(3)} mm`
+                          : "-"}
+                      </td>
                       <td className="px-4 py-3">
                         {row.wear_mm !== null && row.wear_mm !== undefined
                           ? `${Math.abs(Number(row.wear_mm)).toFixed(3)} mm`
@@ -1048,9 +956,7 @@ function PlateTable({
                 ))}
 
                 <td className="px-3 py-2 text-zinc-300">{fmt(mean(row)) || "-"}</td>
-                <td className="px-3 py-2 text-zinc-300">
-                  {fmt(backlash(row)) || "-"}
-                </td>
+                <td className="px-3 py-2 text-zinc-300">{fmt(backlash(row)) || "-"}</td>
               </tr>
             ))}
           </tbody>
