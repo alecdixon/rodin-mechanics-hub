@@ -711,23 +711,7 @@ export default function MechanicJobListPage() {
         </div>
       </section>
 
-      <section className="mb-6 rounded-3xl border border-zinc-800 bg-[#14181d] p-6 shadow-xl">
-        <div className="mb-5">
-          <h2 className="text-2xl font-semibold">Standard Jobs</h2>
-
-          <p className="mt-1 text-sm text-zinc-500">
-            Released preparation list for this car.
-          </p>
-        </div>
-
-        <div className="space-y-2">
-          {standardJobs.map((job, index) =>
-            renderJobCard(job, index, "standard"),
-          )}
-        </div>
-      </section>
-
-      <section className="rounded-3xl border border-red-900/50 bg-[#181315] p-6 shadow-xl">
+      <section className="mb-6 rounded-3xl border border-red-900/50 bg-[#181315] p-6 shadow-xl">
         <div className="mb-5">
           <h2 className="text-2xl font-semibold text-red-200">
             Special Jobs
@@ -749,6 +733,22 @@ export default function MechanicJobListPage() {
             )}
           </div>
         )}
+      </section>
+
+      <section className="rounded-3xl border border-zinc-800 bg-[#14181d] p-6 shadow-xl">
+        <div className="mb-5">
+          <h2 className="text-2xl font-semibold">Standard Jobs</h2>
+
+          <p className="mt-1 text-sm text-zinc-500">
+            Released preparation list for this car.
+          </p>
+        </div>
+
+        <div className="space-y-2">
+          {standardJobs.map((job, index) =>
+            renderJobCard(job, index, "standard"),
+          )}
+        </div>
       </section>
     </main>
   );

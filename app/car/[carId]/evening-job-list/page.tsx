@@ -385,105 +385,7 @@ export default function MechanicEveningJobListPage() {
         </div>
       </section>
 
-      <section className="mb-6 rounded-3xl border border-zinc-800 bg-[#14181d] p-6 shadow-xl">
-        <div className="mb-5 flex flex-wrap items-start justify-between gap-4">
-          <div>
-            <h2 className="text-2xl font-semibold">Standard Evening Jobs</h2>
-
-            <p className="mt-1 text-sm text-zinc-500">
-              Released evening preparation list for this car.
-            </p>
-          </div>
-
-          <div className="rounded-2xl border border-zinc-700 bg-[#0d0f12] px-4 py-3 text-sm font-semibold text-zinc-300">
-            {standardJobs.filter((job) => job.done).length} /{" "}
-            {standardJobs.length}
-          </div>
-        </div>
-
-        <div className="space-y-2">
-          {standardJobs.length === 0 ? (
-            <div className="rounded-2xl border border-dashed border-zinc-700 bg-[#0d0f12] p-6 text-sm text-zinc-500">
-              No standard evening prep jobs released yet.
-            </div>
-          ) : (
-            standardJobs.map((job, index) => {
-              const jobKey = `${job.section}-${job.job_id}`;
-              const isSaving = savingJobKey === jobKey;
-
-              return (
-                <div
-                  key={jobKey}
-                  className={`rounded-xl border p-4 transition ${
-                    job.done
-                      ? "border-green-900/70 bg-green-950/10"
-                      : "border-zinc-800 bg-[#0d0f12]"
-                  }`}
-                >
-                  <div className="grid grid-cols-[38px_44px_1fr_auto] items-center gap-3">
-                    <span className="text-sm text-zinc-500">{index + 1}</span>
-
-                    <button
-                      type="button"
-                      disabled={isSaving || !canEditEveningJobs}
-                      onClick={() => toggleJob(job)}
-                      className={`grid h-8 w-8 place-items-center rounded-lg border text-sm font-bold transition disabled:cursor-not-allowed disabled:opacity-50 ${
-                        job.done
-                          ? "border-green-500 bg-green-600 text-white"
-                          : "border-zinc-700 bg-black text-zinc-400 hover:border-red-500"
-                      }`}
-                    >
-                      {job.done ? "✓" : ""}
-                    </button>
-
-                    <div>
-                      <p
-                        className={`text-sm ${
-                          job.done
-                            ? "text-zinc-500 line-through"
-                            : "text-zinc-100"
-                        }`}
-                      >
-                        {job.job_text}
-                      </p>
-
-                      <div className="mt-1 flex flex-wrap gap-3 text-xs text-zinc-500">
-                        <span>{job.done ? "Complete" : "Open"}</span>
-                        {job.updated_by && <span>By {job.updated_by}</span>}
-                        {job.updated_at && (
-                          <span>{niceDateTime(job.updated_at)}</span>
-                        )}
-                        {job.notes?.trim() && (
-                          <span className="font-semibold text-red-300">
-                            Has note
-                          </span>
-                        )}
-                      </div>
-                    </div>
-
-                    <button
-                      type="button"
-                      onClick={() => openNote(job)}
-                      disabled={!canEditEveningJobs}
-                      className="rounded-lg border border-zinc-700 px-3 py-2 text-xs font-semibold text-zinc-300 hover:border-red-500 hover:text-red-300 disabled:cursor-not-allowed disabled:opacity-50"
-                    >
-                      {job.notes?.trim() ? "Edit Note" : "Add Note"}
-                    </button>
-                  </div>
-
-                  {job.notes?.trim() && (
-                    <div className="mt-3 rounded-xl border border-red-900/40 bg-[#181315] p-3 text-sm text-red-100">
-                      {job.notes}
-                    </div>
-                  )}
-                </div>
-              );
-            })
-          )}
-        </div>
-      </section>
-
-      <section className="rounded-3xl border border-red-900/50 bg-[#181315] p-6 shadow-xl">
+      <section className="mb-6 rounded-3xl border border-red-900/50 bg-[#181315] p-6 shadow-xl">
         <div className="mb-5 flex flex-wrap items-start justify-between gap-4">
           <div>
             <h2 className="text-2xl font-semibold text-red-100">
@@ -566,6 +468,104 @@ export default function MechanicEveningJobListPage() {
                       onClick={() => openNote(job)}
                       disabled={!canEditEveningJobs}
                       className="rounded-lg border border-red-900/60 px-3 py-2 text-xs font-semibold text-zinc-300 hover:border-red-500 hover:text-red-300 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      {job.notes?.trim() ? "Edit Note" : "Add Note"}
+                    </button>
+                  </div>
+
+                  {job.notes?.trim() && (
+                    <div className="mt-3 rounded-xl border border-red-900/40 bg-[#181315] p-3 text-sm text-red-100">
+                      {job.notes}
+                    </div>
+                  )}
+                </div>
+              );
+            })
+          )}
+        </div>
+      </section>
+
+      <section className="mb-6 rounded-3xl border border-zinc-800 bg-[#14181d] p-6 shadow-xl">
+        <div className="mb-5 flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <h2 className="text-2xl font-semibold">Standard Evening Jobs</h2>
+
+            <p className="mt-1 text-sm text-zinc-500">
+              Released evening preparation list for this car.
+            </p>
+          </div>
+
+          <div className="rounded-2xl border border-zinc-700 bg-[#0d0f12] px-4 py-3 text-sm font-semibold text-zinc-300">
+            {standardJobs.filter((job) => job.done).length} /{" "}
+            {standardJobs.length}
+          </div>
+        </div>
+
+        <div className="space-y-2">
+          {standardJobs.length === 0 ? (
+            <div className="rounded-2xl border border-dashed border-zinc-700 bg-[#0d0f12] p-6 text-sm text-zinc-500">
+              No standard evening prep jobs released yet.
+            </div>
+          ) : (
+            standardJobs.map((job, index) => {
+              const jobKey = `${job.section}-${job.job_id}`;
+              const isSaving = savingJobKey === jobKey;
+
+              return (
+                <div
+                  key={jobKey}
+                  className={`rounded-xl border p-4 transition ${
+                    job.done
+                      ? "border-green-900/70 bg-green-950/10"
+                      : "border-zinc-800 bg-[#0d0f12]"
+                  }`}
+                >
+                  <div className="grid grid-cols-[38px_44px_1fr_auto] items-center gap-3">
+                    <span className="text-sm text-zinc-500">{index + 1}</span>
+
+                    <button
+                      type="button"
+                      disabled={isSaving || !canEditEveningJobs}
+                      onClick={() => toggleJob(job)}
+                      className={`grid h-8 w-8 place-items-center rounded-lg border text-sm font-bold transition disabled:cursor-not-allowed disabled:opacity-50 ${
+                        job.done
+                          ? "border-green-500 bg-green-600 text-white"
+                          : "border-zinc-700 bg-black text-zinc-400 hover:border-red-500"
+                      }`}
+                    >
+                      {job.done ? "✓" : ""}
+                    </button>
+
+                    <div>
+                      <p
+                        className={`text-sm ${
+                          job.done
+                            ? "text-zinc-500 line-through"
+                            : "text-zinc-100"
+                        }`}
+                      >
+                        {job.job_text}
+                      </p>
+
+                      <div className="mt-1 flex flex-wrap gap-3 text-xs text-zinc-500">
+                        <span>{job.done ? "Complete" : "Open"}</span>
+                        {job.updated_by && <span>By {job.updated_by}</span>}
+                        {job.updated_at && (
+                          <span>{niceDateTime(job.updated_at)}</span>
+                        )}
+                        {job.notes?.trim() && (
+                          <span className="font-semibold text-red-300">
+                            Has note
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => openNote(job)}
+                      disabled={!canEditEveningJobs}
+                      className="rounded-lg border border-zinc-700 px-3 py-2 text-xs font-semibold text-zinc-300 hover:border-red-500 hover:text-red-300 disabled:cursor-not-allowed disabled:opacity-50"
                     >
                       {job.notes?.trim() ? "Edit Note" : "Add Note"}
                     </button>
