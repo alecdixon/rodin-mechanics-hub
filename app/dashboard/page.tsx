@@ -91,6 +91,20 @@ type ClutchWearPoint = {
 
 const DEFAULT_CAR_COLOUR = "#b91c1c";
 
+function clutchDisplayName(clutch: ClutchInventoryItem) {
+  const label = clutch.label?.trim();
+
+  if (label) {
+    return `${clutch.serial_no} · ${label}`;
+  }
+
+  return clutch.serial_no;
+}
+
+function carDisplayName(car: Pick<CarProgress, "id" | "name">) {
+  return `${car.name} / Car ${car.id}`;
+}
+
 function niceDate(value: string | null | undefined) {
   if (!value) return "—";
 
@@ -866,6 +880,28 @@ export default function DashboardPage() {
       .sort((a, b) => a.sort_order - b.sort_order || a.id - b.id);
   }, [cars]);
 
+  const activeClutches = useMemo(() => {
+    return clutches
+      .filter((clutch) => clutch.active)
+      .sort((a, b) => a.serial_no.localeCompare(b.serial_no));
+  }, [clutches]);
+
+  const spareActiveClutches = useMemo(() => {
+    return activeClutches.filter((clutch) => clutch.current_car_id === null);
+  }, [activeClutches]);
+
+  const currentClutchByCarId = useMemo(() => {
+    const map = new Map<number, ClutchInventoryItem>();
+
+    activeClutches.forEach((clutch) => {
+      if (clutch.current_car_id !== null) {
+        map.set(clutch.current_car_id, clutch);
+      }
+    });
+
+    return map;
+  }, [activeClutches]);
+
   const clutchWearPoints = useMemo<ClutchWearPoint[]>(() => {
     const carColourMap = new Map<number, { name: string; colour: string }>();
 
@@ -1020,6 +1056,19 @@ export default function DashboardPage() {
 
     setAddingClutch(true);
 
+    if (currentCarId !== null) {
+      const { error: clearError } = await supabase
+        .from("clutch_inventory")
+        .update({ current_car_id: null })
+        .eq("current_car_id", currentCarId);
+
+      if (clearError) {
+        setErrorMessage(clearError.message);
+        setAddingClutch(false);
+        return;
+      }
+    }
+
     const { error } = await supabase.from("clutch_inventory").insert({
       serial_no: serial,
       label: label || null,
@@ -1038,11 +1087,68 @@ export default function DashboardPage() {
     setNewClutchLabel("");
     setNewClutchCarId("spare");
     setNewClutchNotes("");
-    setMessage(`Added clutch ${serial}.`);
+    setMessage(
+      currentCarId === null
+        ? `Added spare clutch ${serial}.`
+        : `Added clutch ${serial} and allocated it to car ID ${currentCarId}.`,
+    );
 
     await loadClutches();
     setAddingClutch(false);
   }
+
+  async function allocateClutch(clutchId: string, carId: number | null) {
+    const clutch = clutches.find((item) => item.id === clutchId);
+
+    setMessage("");
+    setErrorMessage("");
+
+    if (!clutch) {
+      setErrorMessage("Could not find that clutch in the current inventory.");
+      return;
+    }
+
+    if (carId !== null && !cars.some((car) => car.id === carId)) {
+      setErrorMessage("That car does not exist in dashboard_cars.");
+      return;
+    }
+
+    setSavingClutchId(clutchId);
+
+    if (carId !== null) {
+      const { error: clearError } = await supabase
+        .from("clutch_inventory")
+        .update({ current_car_id: null })
+        .eq("current_car_id", carId)
+        .neq("id", clutchId);
+
+      if (clearError) {
+        setErrorMessage(clearError.message);
+        setSavingClutchId(null);
+        return;
+      }
+    }
+
+    const { error } = await supabase
+      .from("clutch_inventory")
+      .update({ current_car_id: carId, active: true })
+      .eq("id", clutchId);
+
+    if (error) {
+      setErrorMessage(error.message);
+      setSavingClutchId(null);
+      return;
+    }
+
+    setSavingClutchId(null);
+    setMessage(
+      carId === null
+        ? `Moved clutch ${clutch.serial_no} to spare.`
+        : `Allocated clutch ${clutch.serial_no} to car ID ${carId}.`,
+    );
+    await loadClutches();
+  }
+
 
   async function updateClutch(clutch: ClutchInventoryItem) {
     const serial = clutch.serial_no.trim();
@@ -1071,12 +1177,26 @@ export default function DashboardPage() {
       return;
     }
 
+    if (clutch.current_car_id !== null) {
+      const { error: clearError } = await supabase
+        .from("clutch_inventory")
+        .update({ current_car_id: null })
+        .eq("current_car_id", clutch.current_car_id)
+        .neq("id", clutch.id);
+
+      if (clearError) {
+        setErrorMessage(clearError.message);
+        setSavingClutchId(null);
+        return;
+      }
+    }
+
     const { error } = await supabase
       .from("clutch_inventory")
       .update({
         serial_no: serial,
         label,
-        current_car_id: clutch.current_car_id,
+        current_car_id: clutch.active ? clutch.current_car_id : null,
         active: clutch.active,
         notes,
       })
@@ -1092,6 +1212,7 @@ export default function DashboardPage() {
     setMessage(`Clutch ${serial} saved.`);
     await loadClutches();
   }
+
 
   async function removeClutch(clutch: ClutchInventoryItem) {
     const confirmed = window.confirm(
@@ -1423,6 +1544,108 @@ export default function DashboardPage() {
             </div>
           </div>
 
+          <div className="mt-6 rounded-2xl border border-red-900/40 bg-[#181315] p-5">
+            <div className="flex flex-wrap items-start justify-between gap-4">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.35em] text-red-400">
+                  Car Clutch Allocation
+                </p>
+
+                <h3 className="mt-3 text-2xl font-semibold text-red-100">
+                  Allocate Clutches to Cars
+                </h3>
+
+                <p className="mt-2 max-w-3xl text-sm text-zinc-400">
+                  This is the quick chief mechanic view. Select the current clutch for each car.
+                  The clutch wear record stays with the clutch serial number when it moves between cars.
+                </p>
+              </div>
+
+              <div className="rounded-xl border border-zinc-700 bg-black px-4 py-3 text-sm font-semibold text-red-300">
+                {spareActiveClutches.length} spare
+              </div>
+            </div>
+
+            <div className="mt-5 grid gap-3">
+              {activeCars.length === 0 ? (
+                <div className="rounded-2xl border border-dashed border-zinc-700 bg-[#0d0f12] p-5 text-sm text-zinc-500">
+                  No active cars available for clutch allocation.
+                </div>
+              ) : (
+                activeCars.map((car) => {
+                  const fittedClutch = currentClutchByCarId.get(car.id);
+                  const options = activeClutches.filter(
+                    (clutch) =>
+                      clutch.current_car_id === null || clutch.current_car_id === car.id,
+                  );
+
+                  return (
+                    <div
+                      key={`clutch-allocation-${car.id}`}
+                      className="grid gap-3 rounded-2xl border border-zinc-800 bg-[#0d0f12] p-4 lg:grid-cols-[260px_1fr_auto]"
+                    >
+                      <div className="flex items-center gap-3">
+                        <span
+                          className="h-12 w-2 rounded-full"
+                          style={{ backgroundColor: car.colour }}
+                        />
+
+                        <div>
+                          <p className="text-lg font-semibold text-zinc-100">
+                            {car.name}
+                          </p>
+
+                          <p className="text-xs uppercase tracking-[0.22em] text-zinc-500">
+                            Car ID {car.id}
+                          </p>
+                        </div>
+                      </div>
+
+                      <label>
+                        <span className="text-xs uppercase tracking-[0.22em] text-zinc-500">
+                          Current clutch
+                        </span>
+
+                        <select
+                          value={fittedClutch?.id ?? "spare"}
+                          onChange={(event) => {
+                            if (event.target.value === "spare") {
+                              if (fittedClutch) {
+                                allocateClutch(fittedClutch.id, null);
+                              }
+                              return;
+                            }
+
+                            allocateClutch(event.target.value, car.id);
+                          }}
+                          className="mt-2 w-full rounded-xl border border-zinc-700 bg-[#111418] px-4 py-3 text-sm text-zinc-100 outline-none focus:border-red-500"
+                        >
+                          <option value="spare">No clutch fitted / spare</option>
+                          {options.map((clutch) => (
+                            <option key={clutch.id} value={clutch.id}>
+                              {clutchDisplayName(clutch)}
+                              {clutch.current_car_id === car.id ? " — fitted" : ""}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+
+                      <div className="flex items-end gap-2">
+                        <button
+                          type="button"
+                          onClick={() => fittedClutch && allocateClutch(fittedClutch.id, null)}
+                          disabled={!fittedClutch || savingClutchId === fittedClutch.id}
+                          className="rounded-xl border border-zinc-700 px-4 py-3 text-sm font-semibold text-zinc-300 hover:border-red-500 hover:text-red-300 disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          Move to Spare
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          </div>
 
           <div className="mt-6 rounded-2xl border border-zinc-800 bg-[#0d0f12] p-5">
             <div className="flex flex-wrap items-start justify-between gap-4">
@@ -1435,7 +1658,7 @@ export default function DashboardPage() {
 
                 <p className="mt-2 max-w-3xl text-sm text-zinc-400">
                   Add clutch serial numbers, allocate them to cars, or leave them as spare.
-                  Measurement history should follow the clutch serial, even when the clutch moves car.
+                  Only one active clutch is kept allocated to each car; changing the dropdown moves the previous clutch back to spare.
                 </p>
               </div>
 
@@ -1522,9 +1745,9 @@ export default function DashboardPage() {
                             className="w-full rounded-xl border border-zinc-700 bg-[#111418] px-3 py-2 text-sm text-zinc-100 outline-none focus:border-red-500"
                           >
                             <option value="spare">Spare clutch</option>
-                            {cars.map((car) => (
+                            {activeCars.map((car) => (
                               <option key={car.id} value={car.id}>
-                                {car.name} / Car {car.id}
+                                {carDisplayName(car)}
                               </option>
                             ))}
                           </select>
@@ -1625,9 +1848,9 @@ export default function DashboardPage() {
                   className="rounded-xl border border-red-900/50 bg-[#0d0f12] px-4 py-3 text-sm text-zinc-100 outline-none focus:border-red-500"
                 >
                   <option value="spare">Spare clutch</option>
-                  {cars.map((car) => (
+                  {activeCars.map((car) => (
                     <option key={car.id} value={car.id}>
-                      {car.name} / Car {car.id}
+                      {carDisplayName(car)}
                     </option>
                   ))}
                 </select>
