@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import nodemailer from "nodemailer";
 
+export const runtime = "nodejs";
+
 type DrainOutPayload = {
   id?: string;
   car_id: number;
@@ -27,27 +29,31 @@ export async function POST(request: Request) {
   try {
     const payload = (await request.json()) as DrainOutPayload;
 
-    if (!payload.car_id || !payload.rig || payload.drain_out_figure === undefined) {
+    if (
+      !payload.car_id ||
+      !payload.rig ||
+      payload.drain_out_figure === undefined
+    ) {
       return NextResponse.json(
         { error: "Missing drain out payload fields." },
-        { status: 400 }
+        { status: 400 },
       );
     }
 
-    const gmailUser = process.env.GMAIL_USER;
-    const gmailAppPassword = process.env.GMAIL_APP_PASSWORD;
+    const gmailUser = process.env.GMAIL_USER?.trim();
+    const gmailAppPassword = process.env.GMAIL_APP_PASSWORD?.replace(/\s/g, "");
 
     if (!gmailUser) {
       return NextResponse.json(
         { error: "GMAIL_USER is not configured in Vercel." },
-        { status: 500 }
+        { status: 500 },
       );
     }
 
     if (!gmailAppPassword) {
       return NextResponse.json(
         { error: "GMAIL_APP_PASSWORD is not configured in Vercel." },
-        { status: 500 }
+        { status: 500 },
       );
     }
 
@@ -58,12 +64,14 @@ export async function POST(request: Request) {
         {
           error: `No drain out engineer email configured for car ${payload.car_id}. Add DRAIN_OUT_ENGINEER_EMAIL_CAR_${payload.car_id} in Vercel.`,
         },
-        { status: 500 }
+        { status: 500 },
       );
     }
 
     const carLabel = payload.car_name || `Car ${payload.car_id}`;
-    const figure = `${payload.drain_out_figure} ${payload.units || "kg"}`.trim();
+    const figure = `${payload.drain_out_figure} ${
+      payload.units || "kg"
+    }`.trim();
 
     const transporter = nodemailer.createTransport({
       service: "gmail",
@@ -114,7 +122,7 @@ export async function POST(request: Request) {
             ? error.message
             : "Drain out notification failed.",
       },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }
