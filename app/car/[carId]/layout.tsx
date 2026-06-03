@@ -17,6 +17,16 @@ type Props = {
   children: React.ReactNode;
 };
 
+type NavItem = {
+  name: string;
+  href: string;
+  description?: string;
+};
+
+function isRouteActive(pathname: string, href: string) {
+  return pathname === href || pathname.startsWith(`${href}/`);
+}
+
 export default function CarLayout({ children }: Props) {
   const router = useRouter();
   const params = useParams();
@@ -52,7 +62,7 @@ export default function CarLayout({ children }: Props) {
         return;
       }
 
-      if (!Number.isFinite(numericCarId)) {
+      if (!Number.isFinite(numericCarId) || numericCarId <= 0) {
         router.replace("/login");
         return;
       }
@@ -76,29 +86,61 @@ export default function CarLayout({ children }: Props) {
     return () => {
       mounted = false;
     };
-  }, [carId, numericCarId, router]);
+  }, [numericCarId, router]);
 
-  const navItems = useMemo(
+  const navItems = useMemo<NavItem[]>(
     () => [
       {
         name: "Job List",
         href: `/car/${carId}/job-list`,
+        description: "Workshop job checklist",
       },
       {
         name: "Evening Job List",
         href: `/car/${carId}/evening-job-list`,
+        description: "Evening prep checklist",
       },
       {
         name: "Team Jobs",
         href: "/team-jobs",
+        description: "Team-wide jobs",
       },
       {
         name: "Clutch Measurement",
         href: `/car/${carId}/clutch-measurement`,
+        description: "Measure and save clutch sheet",
+      },
+      {
+        name: "Drain Out",
+        href: `/car/${carId}/drain-out`,
+        description: "Report Rig 1 / Rig 2 drain out figure",
       },
       {
         name: "Post Event",
         href: `/car/${carId}/post-event`,
+        description: "Post-event report",
+      },
+    ],
+    [carId],
+  );
+
+  const chiefItems = useMemo<NavItem[]>(
+    () => [
+      {
+        name: "Chief Viewer",
+        href: `/dashboard/car/${carId}/viewer`,
+      },
+      {
+        name: "Edit Job List",
+        href: `/dashboard/car/${carId}/job-list`,
+      },
+      {
+        name: "Edit Evening Job List",
+        href: `/dashboard/car/${carId}/evening-job-list`,
+      },
+      {
+        name: "Manage Team Jobs",
+        href: "/dashboard/team-jobs",
       },
     ],
     [carId],
@@ -154,7 +196,8 @@ export default function CarLayout({ children }: Props) {
 
         <nav className="mt-8 space-y-2">
           {navItems.map((item) => {
-            const active = pathname === item.href;
+            const active = isRouteActive(pathname, item.href);
+            const isDrainOut = item.name === "Drain Out";
 
             return (
               <Link
@@ -164,10 +207,18 @@ export default function CarLayout({ children }: Props) {
                   "block rounded-lg border px-4 py-3 text-sm transition",
                   active
                     ? "border-red-500 bg-red-950/40 text-red-100"
-                    : "border-neutral-800 bg-black text-neutral-200 hover:border-red-500",
+                    : isDrainOut
+                      ? "border-red-900/70 bg-red-950/20 text-red-100 hover:border-red-500 hover:bg-red-950/40"
+                      : "border-neutral-800 bg-black text-neutral-200 hover:border-red-500",
                 ].join(" ")}
               >
-                {item.name}
+                <span className="block font-semibold">{item.name}</span>
+
+                {isDrainOut && (
+                  <span className="mt-1 block text-xs font-normal leading-4 text-red-300/80">
+                    Rig 1 / Rig 2 figure
+                  </span>
+                )}
               </Link>
             );
           })}
@@ -178,33 +229,24 @@ export default function CarLayout({ children }: Props) {
                 Chief Tools
               </p>
 
-              <Link
-                href={`/dashboard/car/${carId}/viewer`}
-                className="block rounded-lg border border-red-800 bg-red-950/30 px-4 py-3 text-sm font-semibold text-red-200 hover:border-red-500"
-              >
-                Chief Viewer
-              </Link>
+              {chiefItems.map((item) => {
+                const active = isRouteActive(pathname, item.href);
 
-              <Link
-                href={`/dashboard/car/${carId}/job-list`}
-                className="block rounded-lg border border-red-800 bg-red-950/30 px-4 py-3 text-sm font-semibold text-red-200 hover:border-red-500"
-              >
-                Edit Job List
-              </Link>
-
-              <Link
-                href={`/dashboard/car/${carId}/evening-job-list`}
-                className="block rounded-lg border border-red-800 bg-red-950/30 px-4 py-3 text-sm font-semibold text-red-200 hover:border-red-500"
-              >
-                Edit Evening Job List
-              </Link>
-
-              <Link
-                href="/dashboard/team-jobs"
-                className="block rounded-lg border border-red-800 bg-red-950/30 px-4 py-3 text-sm font-semibold text-red-200 hover:border-red-500"
-              >
-                Manage Team Jobs
-              </Link>
+                return (
+                  <Link
+                    key={item.name}
+                    href={item.href}
+                    className={[
+                      "block rounded-lg border px-4 py-3 text-sm font-semibold transition",
+                      active
+                        ? "border-red-500 bg-red-950/50 text-red-100"
+                        : "border-red-800 bg-red-950/30 text-red-200 hover:border-red-500",
+                    ].join(" ")}
+                  >
+                    {item.name}
+                  </Link>
+                );
+              })}
             </div>
           )}
         </nav>
