@@ -1,7 +1,5 @@
 import { NextResponse } from "next/server";
-import { Resend } from "resend";
-
-const resend = new Resend(process.env.RESEND_API_KEY);
+import nodemailer from "nodemailer";
 
 type DrainOutPayload = {
   id?: string;
@@ -36,15 +34,24 @@ export async function POST(request: Request) {
       );
     }
 
-    if (!process.env.RESEND_API_KEY) {
+    const gmailUser = process.env.GMAIL_USER;
+    const gmailAppPassword = process.env.GMAIL_APP_PASSWORD;
+
+    if (!gmailUser) {
       return NextResponse.json(
-        { error: "RESEND_API_KEY is not configured." },
+        { error: "GMAIL_USER is not configured in Vercel." },
+        { status: 500 }
+      );
+    }
+
+    if (!gmailAppPassword) {
+      return NextResponse.json(
+        { error: "GMAIL_APP_PASSWORD is not configured in Vercel." },
         { status: 500 }
       );
     }
 
     const to = getEngineerEmailForCar(Number(payload.car_id));
-    const from = process.env.EMAIL_FROM || "Drain Out Reports <onboarding@resend.dev>";
 
     if (!to) {
       return NextResponse.json(
@@ -56,10 +63,18 @@ export async function POST(request: Request) {
     }
 
     const carLabel = payload.car_name || `Car ${payload.car_id}`;
-    const figure = `${payload.drain_out_figure} ${payload.units || ""}`.trim();
+    const figure = `${payload.drain_out_figure} ${payload.units || "kg"}`.trim();
 
-    const { error } = await resend.emails.send({
-      from,
+    const transporter = nodemailer.createTransport({
+      service: "gmail",
+      auth: {
+        user: gmailUser,
+        pass: gmailAppPassword,
+      },
+    });
+
+    await transporter.sendMail({
+      from: `"Drain Out Reports" <${gmailUser}>`,
       to,
       subject: `Drain Out Report - ${carLabel} - ${payload.rig} - ${figure}`,
       text: [
@@ -89,10 +104,6 @@ export async function POST(request: Request) {
         </div>
       `,
     });
-
-    if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 });
-    }
 
     return NextResponse.json({ ok: true, sent_to: to });
   } catch (error) {
