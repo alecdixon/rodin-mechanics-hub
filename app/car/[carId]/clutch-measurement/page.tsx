@@ -14,7 +14,7 @@ type PlateRow = {
 
 
 type ClutchInventoryItem = {
-  id: string;
+  id: string | number;
   serial_no: string;
   label?: string | null;
   status?: string | null;
@@ -397,7 +397,8 @@ export default function ClutchMeasurementPage() {
   );
 
   const selectedClutch = useMemo(
-    () => clutchInventory.find((clutch) => clutch.id === selectedClutchId) ?? null,
+    () =>
+      clutchInventory.find((clutch) => String(clutch.id) === selectedClutchId) ?? null,
     [clutchInventory, selectedClutchId]
   );
 
@@ -511,7 +512,7 @@ export default function ClutchMeasurementPage() {
       activeClutches.find((clutch) => clutch.current_car_id === carId) ?? null;
 
     if (defaultClutch) {
-      setSelectedClutchId(defaultClutch.id);
+      setSelectedClutchId(String(defaultClutch.id));
       setSerialNo(defaultClutch.serial_no || "");
       await loadLatestShimForSerial(defaultClutch.serial_no || "");
     } else {
@@ -530,6 +531,18 @@ export default function ClutchMeasurementPage() {
     loadCarAndClutches();
   }, [carId]);
 
+  useEffect(() => {
+    if (!selectedClutch) {
+      setSerialNo("");
+      setCurrentShimInstalled("");
+      return;
+    }
+
+    const nextSerial = selectedClutch.serial_no || "";
+    setSerialNo(nextSerial);
+    void loadLatestShimForSerial(nextSerial);
+  }, [selectedClutch?.id]);
+
   function updateDrivenPlate(index: number, key: keyof PlateRow, value: string) {
     setDrivenPlates((current) =>
       current.map((row, i) => (i === index ? { ...row, [key]: value } : row))
@@ -545,7 +558,7 @@ export default function ClutchMeasurementPage() {
   async function handleSelectedClutchChange(clutchId: string) {
     setSelectedClutchId(clutchId);
 
-    const clutch = clutchInventory.find((item) => item.id === clutchId);
+    const clutch = clutchInventory.find((item) => String(item.id) === clutchId);
 
     if (!clutch) {
       setSerialNo("");
@@ -559,7 +572,7 @@ export default function ClutchMeasurementPage() {
 
   function resetForm() {
     const clutch =
-      clutchInventory.find((item) => item.id === selectedClutchId) ??
+      clutchInventory.find((item) => String(item.id) === selectedClutchId) ??
       clutchInventory.find((item) => item.current_car_id === carId) ??
       null;
 
@@ -815,7 +828,7 @@ export default function ClutchMeasurementPage() {
                       </option>
 
                       {sortedClutchInventory.map((clutch) => (
-                        <option key={clutch.id} value={clutch.id}>
+                        <option key={clutch.id} value={String(clutch.id)}>
                           {clutchDisplayName(clutch)} — {clutchAllocationLabel(clutch, carId)}
                         </option>
                       ))}
