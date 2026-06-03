@@ -1236,6 +1236,33 @@ export default function DashboardPage() {
     await loadClutches();
   }
 
+  async function deleteClutch(clutch: ClutchInventoryItem) {
+    const confirmed = window.confirm(
+      `Delete clutch ${clutch.serial_no} from the inventory? Only do this if it was added by mistake.`,
+    );
+
+    if (!confirmed) return;
+
+    setSavingClutchId(clutch.id);
+    setMessage("");
+    setErrorMessage("");
+
+    const { error } = await supabase
+      .from("clutch_inventory")
+      .delete()
+      .eq("id", clutch.id);
+
+    if (error) {
+      setErrorMessage(error.message);
+      setSavingClutchId(null);
+      return;
+    }
+
+    setSavingClutchId(null);
+    setMessage(`Deleted clutch ${clutch.serial_no}.`);
+    await loadClutches();
+  }
+
   async function handleCalendarCsvUpload(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
     if (!file) return;
@@ -1652,7 +1679,7 @@ export default function DashboardPage() {
                 <h3 className="mt-3 text-2xl font-semibold">Manage Clutches</h3>
 
                 <p className="mt-2 max-w-3xl text-sm text-zinc-400">
-                  Add clutch serial numbers, allocate them to cars, or leave them as spare.
+                  Add clutch serial numbers, allocate them to cars, move them back to spare, or delete an inventory row if it was added by mistake.
                   Only one clutch is kept allocated to each car; changing the dropdown moves the previous clutch back to spare.
                 </p>
               </div>
@@ -1782,6 +1809,15 @@ export default function DashboardPage() {
                               className="rounded-lg border border-zinc-700 px-3 py-2 text-xs font-semibold text-zinc-300 hover:border-red-500 hover:text-red-300 disabled:cursor-not-allowed disabled:opacity-50"
                             >
                               Move Spare
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => deleteClutch(clutch)}
+                              disabled={savingClutchId === clutch.id}
+                              className="rounded-lg border border-red-900/70 px-3 py-2 text-xs font-semibold text-red-300 hover:bg-red-950/40 disabled:cursor-not-allowed disabled:opacity-50"
+                            >
+                              Delete
                             </button>
                           </div>
                         </td>
