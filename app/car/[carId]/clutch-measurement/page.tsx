@@ -12,6 +12,18 @@ type PlateRow = {
   c: string;
 };
 
+
+type ClutchInventoryItem = {
+  id: string;
+  serial_no: string;
+  label?: string | null;
+  status?: string | null;
+  current_car_id: number | null;
+  active?: boolean | null;
+  notes?: string | null;
+  created_at?: string | null;
+};
+
 type ClutchMeasurementRecord = {
   id?: string;
   car_id: number;
@@ -46,6 +58,31 @@ const EMPTY_INTERMEDIATE_PLATES: PlateRow[] = [
   { no: 2, a: "", b: "", c: "" },
   { no: 3, a: "", b: "", c: "" },
 ];
+
+
+function clutchDisplayName(clutch: ClutchInventoryItem) {
+  const serial = clutch.serial_no || "Unknown serial";
+  const label = clutch.label?.trim();
+
+  return label ? `${serial} · ${label}` : serial;
+}
+
+function clutchAllocationLabel(clutch: ClutchInventoryItem, carId: number) {
+  if (clutch.current_car_id === carId) return "Default for this car";
+  if (clutch.current_car_id === null || clutch.current_car_id === undefined) return "Spare";
+  return `Allocated to car ${clutch.current_car_id}`;
+}
+
+function sortClutchesForCar(clutches: ClutchInventoryItem[], carId: number) {
+  return [...clutches].sort((a, b) => {
+    const aRank = a.current_car_id === carId ? 0 : a.current_car_id == null ? 1 : 2;
+    const bRank = b.current_car_id === carId ? 0 : b.current_car_id == null ? 1 : 2;
+
+    if (aRank !== bRank) return aRank - bRank;
+
+    return (a.serial_no || "").localeCompare(b.serial_no || "");
+  });
+}
 
 function toNumber(value: string | number | null | undefined): number | null {
   if (value === null || value === undefined || value === "") return null;
@@ -342,6 +379,10 @@ export default function ClutchMeasurementPage() {
   const [carName, setCarName] = useState("");
   const [measurementDate, setMeasurementDate] = useState(todayString());
 
+  const [clutchInventory, setClutchInventory] = useState<ClutchInventoryItem[]>([]);
+  const [selectedClutchId, setSelectedClutchId] = useState<string>("");
+  const [clutchLoading, setClutchLoading] = useState(true);
+
   const [drivenPlates, setDrivenPlates] = useState<PlateRow[]>(EMPTY_DRIVEN_PLATES);
   const [intermediatePlates, setIntermediatePlates] = useState<PlateRow[]>(EMPTY_INTERMEDIATE_PLATES);
 
@@ -352,6 +393,25 @@ export default function ClutchMeasurementPage() {
   const [rows, setRows] = useState<ClutchMeasurementRecord[]>([]);
   const [message, setMessage] = useState("");
   const [saving, setSaving] = useState(false);
+
+  const sortedClutchInventory = useMemo(
+    () => sortClutchesForCar(clutchInventory, carId),
+    [clutchInventory, carId]
+  );
+
+  const allocatedClutch = useMemo(
+    () => clutchInventory.find((clutch) => clutch.current_car_id === carId) ?? null,
+    [clutchInventory, carId]
+  );
+
+  const selectedClutch = useMemo(
+    () => clutchInventory.find((clutch) => clutch.id === selectedClutchId) ?? null,
+    [clutchInventory, selectedClutchId]
+  );
+
+  const selectedClutchIsDefault = Boolean(
+    selectedClutch && allocatedClutch && selectedClutch.id === allocatedClutch.id
+  );
 
   const presentStackHeightValue = useMemo(
     () => totalMeanStackHeight(drivenPlates, intermediatePlates),
@@ -391,8 +451,65 @@ export default function ClutchMeasurementPage() {
     setRows((data ?? []) as ClutchMeasurementRecord[]);
   }
 
+  async function loadCarAndClutches() {
+    if (!carId) return;
+
+    setClutchLoading(true);
+
+    const [{ data: carData, error: carError }, { data: clutchData, error: clutchError }] =
+      await Promise.all([
+        supabase
+          .from("dashboard_cars")
+          .select("name")
+          .eq("id", carId)
+          .maybeSingle(),
+        supabase
+          .from("clutch_inventory")
+          .select("id, serial_no, label, status, current_car_id, active, notes, created_at")
+          .order("serial_no", { ascending: true }),
+      ]);
+
+    if (carError) {
+      setMessage(carError.message);
+    }
+
+    if (clutchError) {
+      setMessage(clutchError.message);
+      setClutchLoading(false);
+      return;
+    }
+
+    if (carData?.name) {
+      setCarName(carData.name);
+    }
+
+    const activeClutches = ((clutchData ?? []) as ClutchInventoryItem[]).filter(
+      (clutch) => clutch.active !== false
+    );
+
+    setClutchInventory(activeClutches);
+
+    const defaultClutch =
+      activeClutches.find((clutch) => clutch.current_car_id === carId) ?? null;
+
+    if (defaultClutch) {
+      setSelectedClutchId(defaultClutch.id);
+      setSerialNo(defaultClutch.serial_no || "");
+      setClutchNo(defaultClutch.label || defaultClutch.serial_no || "");
+    } else {
+      setSelectedClutchId("");
+      setSerialNo("");
+      setClutchNo("");
+    }
+
+    setClutchLoading(false);
+  }
+
   useEffect(() => {
-    if (carId) loadRows();
+    if (!carId) return;
+
+    loadRows();
+    loadCarAndClutches();
   }, [carId]);
 
   function updateDrivenPlate(index: number, key: keyof PlateRow, value: string) {
@@ -407,11 +524,30 @@ export default function ClutchMeasurementPage() {
     );
   }
 
+  function handleSelectedClutchChange(clutchId: string) {
+    setSelectedClutchId(clutchId);
+
+    const clutch = clutchInventory.find((item) => item.id === clutchId);
+
+    if (!clutch) {
+      setSerialNo("");
+      setClutchNo("");
+      return;
+    }
+
+    setSerialNo(clutch.serial_no || "");
+    setClutchNo(clutch.label || clutch.serial_no || "");
+  }
+
   function resetForm() {
-    setSerialNo("");
-    setClutchNo("");
+    const clutch =
+      clutchInventory.find((item) => item.id === selectedClutchId) ??
+      clutchInventory.find((item) => item.current_car_id === carId) ??
+      null;
+
+    setSerialNo(clutch?.serial_no || "");
+    setClutchNo(clutch?.label || clutch?.serial_no || "");
     setJobIdNo("");
-    setCarName("");
     setMeasurementDate(todayString());
     setDrivenPlates(EMPTY_DRIVEN_PLATES);
     setIntermediatePlates(EMPTY_INTERMEDIATE_PLATES);
@@ -430,6 +566,11 @@ export default function ClutchMeasurementPage() {
 
     if (!measurementDate) {
       setMessage("Please enter a measurement date.");
+      return;
+    }
+
+    if (!serialNo.trim()) {
+      setMessage("Please select or enter the clutch serial number before saving.");
       return;
     }
 
@@ -601,6 +742,97 @@ export default function ClutchMeasurementPage() {
         <section className="mt-8 rounded-3xl border border-zinc-800 bg-[#14181d] p-6 shadow-2xl">
           <div className="grid gap-6 xl:grid-cols-[1.2fr_0.8fr]">
             <div>
+              <div
+                className={[
+                  "mb-6 rounded-2xl border p-5",
+                  selectedClutchIsDefault
+                    ? "border-emerald-500/50 bg-emerald-950/15"
+                    : selectedClutch
+                    ? "border-yellow-500/60 bg-yellow-950/20"
+                    : "border-red-500/60 bg-red-950/20",
+                ].join(" ")}
+              >
+                <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-[0.3em] text-red-400">
+                      Fitted Clutch Selection
+                    </p>
+
+                    <h2 className="mt-2 text-2xl font-semibold">
+                      {allocatedClutch
+                        ? `Default fitted clutch: ${clutchDisplayName(allocatedClutch)}`
+                        : "No clutch is currently allocated to this car"}
+                    </h2>
+
+                    <p className="mt-2 max-w-3xl text-sm text-zinc-400">
+                      This sheet automatically selects the clutch allocated to Car {carId}.
+                      If the car is running a different clutch, choose it from the dropdown before saving.
+                      The selected serial number is what will be stored against this measurement and PDF.
+                    </p>
+                  </div>
+
+                  <div
+                    className={[
+                      "rounded-xl border px-4 py-3 text-sm font-semibold",
+                      selectedClutchIsDefault
+                        ? "border-emerald-500/40 bg-emerald-950/30 text-emerald-200"
+                        : selectedClutch
+                        ? "border-yellow-500/40 bg-yellow-950/30 text-yellow-200"
+                        : "border-red-500/40 bg-red-950/30 text-red-200",
+                    ].join(" ")}
+                  >
+                    {selectedClutchIsDefault
+                      ? "Using allocated clutch"
+                      : selectedClutch
+                      ? "Manual clutch override"
+                      : "No clutch selected"}
+                  </div>
+                </div>
+
+                <div className="mt-5 grid gap-4 lg:grid-cols-[1fr_280px]">
+                  <Field label="Selected clutch for this measurement">
+                    <select
+                      value={selectedClutchId}
+                      onChange={(e) => handleSelectedClutchChange(e.target.value)}
+                      className="input"
+                      disabled={clutchLoading}
+                    >
+                      <option value="">
+                        {clutchLoading ? "Loading clutches..." : "Select a clutch"}
+                      </option>
+
+                      {sortedClutchInventory.map((clutch) => (
+                        <option key={clutch.id} value={clutch.id}>
+                          {clutchDisplayName(clutch)} — {clutchAllocationLabel(clutch, carId)}
+                        </option>
+                      ))}
+                    </select>
+                  </Field>
+
+                  <div className="rounded-xl border border-zinc-700 bg-[#101419] px-4 py-3">
+                    <p className="text-xs font-semibold uppercase tracking-[0.18em] text-zinc-500">
+                      Measurement will save as
+                    </p>
+                    <p className="mt-2 text-lg font-bold text-zinc-100">
+                      {serialNo || "No serial selected"}
+                    </p>
+                    <p className="mt-1 text-xs text-zinc-500">
+                      {selectedClutch
+                        ? clutchAllocationLabel(selectedClutch, carId)
+                        : "Choose a clutch before saving."}
+                    </p>
+                  </div>
+                </div>
+
+                {selectedClutch && !selectedClutchIsDefault && (
+                  <div className="mt-4 rounded-xl border border-yellow-500/30 bg-yellow-950/20 p-4 text-sm text-yellow-100">
+                    You are overriding the allocated clutch for this measurement. This is fine if the
+                    car has physically been fitted with this clutch, but check Manage Cars afterwards
+                    if the allocation should be changed permanently.
+                  </div>
+                )}
+              </div>
+
               <div className="rounded-2xl border border-zinc-800 bg-[#0d0f12] p-5">
                 <h2 className="text-2xl font-semibold">
                   AP RACING Carbon Clutch Measurement
@@ -612,8 +844,11 @@ export default function ClutchMeasurementPage() {
                       value={serialNo}
                       onChange={(e) => setSerialNo(e.target.value)}
                       className="input"
-                      placeholder="e.g. 28819"
+                      placeholder="Selected clutch serial"
                     />
+                    <p className="mt-1 text-xs text-zinc-500">
+                      Auto-filled from the clutch dropdown above, but still editable if required.
+                    </p>
                   </Field>
 
                   <Field label="Job ID No.">
@@ -639,7 +874,7 @@ export default function ClutchMeasurementPage() {
                       value={clutchNo}
                       onChange={(e) => setClutchNo(e.target.value)}
                       className="input"
-                      placeholder="e.g. 1"
+                      placeholder="Clutch label / number"
                     />
                   </Field>
 
