@@ -172,8 +172,6 @@ async function buildPdf({
   carId,
   carName,
   serialNo,
-  clutchNo,
-  jobIdNo,
   measurementDate,
   drivenPlates,
   intermediatePlates,
@@ -189,8 +187,6 @@ async function buildPdf({
   carId: number;
   carName: string;
   serialNo: string;
-  clutchNo: string;
-  jobIdNo: string;
   measurementDate: string;
   drivenPlates: PlateRow[];
   intermediatePlates: PlateRow[];
@@ -254,10 +250,8 @@ async function buildPdf({
   text(`Created by: ${createdBy || "-"}`, 560, 540, 8, regular, white);
 
   valueBox("Serial No:", serialNo, 30, 505, 230);
-  valueBox("Job ID No:", jobIdNo, 285, 505, 245);
-  valueBox("Clutch No:", clutchNo, 30, 480, 230);
-  valueBox("Date:", measurementDate, 285, 480, 245);
-  valueBox("Current shim:", currentShimInstalled, 30, 455, 500);
+  valueBox("Date:", measurementDate, 285, 505, 245);
+  valueBox("Current shim:", currentShimInstalled, 30, 480, 500);
 
   sectionTitle("DRIVEN PLATES", 30, 420, 500);
 
@@ -374,8 +368,6 @@ export default function ClutchMeasurementPage() {
   const carId = Number(params.carId);
 
   const [serialNo, setSerialNo] = useState("");
-  const [clutchNo, setClutchNo] = useState("");
-  const [jobIdNo, setJobIdNo] = useState("");
   const [carName, setCarName] = useState("");
   const [measurementDate, setMeasurementDate] = useState(todayString());
 
@@ -451,6 +443,32 @@ export default function ClutchMeasurementPage() {
     setRows((data ?? []) as ClutchMeasurementRecord[]);
   }
 
+  async function loadLatestShimForSerial(serial: string) {
+    const cleanSerial = serial.trim();
+
+    if (!cleanSerial) {
+      setCurrentShimInstalled("");
+      return;
+    }
+
+    const { data, error } = await supabase
+      .from("clutch_measurements")
+      .select("current_shim_installed, created_at")
+      .eq("serial_no", cleanSerial)
+      .not("current_shim_installed", "is", null)
+      .neq("current_shim_installed", "")
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (error) {
+      setMessage(error.message);
+      return;
+    }
+
+    setCurrentShimInstalled(data?.current_shim_installed ?? "");
+  }
+
   async function loadCarAndClutches() {
     if (!carId) return;
 
@@ -495,11 +513,11 @@ export default function ClutchMeasurementPage() {
     if (defaultClutch) {
       setSelectedClutchId(defaultClutch.id);
       setSerialNo(defaultClutch.serial_no || "");
-      setClutchNo(defaultClutch.label || defaultClutch.serial_no || "");
+      await loadLatestShimForSerial(defaultClutch.serial_no || "");
     } else {
       setSelectedClutchId("");
       setSerialNo("");
-      setClutchNo("");
+      setCurrentShimInstalled("");
     }
 
     setClutchLoading(false);
@@ -524,19 +542,19 @@ export default function ClutchMeasurementPage() {
     );
   }
 
-  function handleSelectedClutchChange(clutchId: string) {
+  async function handleSelectedClutchChange(clutchId: string) {
     setSelectedClutchId(clutchId);
 
     const clutch = clutchInventory.find((item) => item.id === clutchId);
 
     if (!clutch) {
       setSerialNo("");
-      setClutchNo("");
+      setCurrentShimInstalled("");
       return;
     }
 
     setSerialNo(clutch.serial_no || "");
-    setClutchNo(clutch.label || clutch.serial_no || "");
+    await loadLatestShimForSerial(clutch.serial_no || "");
   }
 
   function resetForm() {
@@ -546,13 +564,10 @@ export default function ClutchMeasurementPage() {
       null;
 
     setSerialNo(clutch?.serial_no || "");
-    setClutchNo(clutch?.label || clutch?.serial_no || "");
-    setJobIdNo("");
     setMeasurementDate(todayString());
     setDrivenPlates(EMPTY_DRIVEN_PLATES);
     setIntermediatePlates(EMPTY_INTERMEDIATE_PLATES);
     setOriginalStackHeight("");
-    setCurrentShimInstalled("");
     setNotes("");
   }
 
@@ -594,8 +609,6 @@ export default function ClutchMeasurementPage() {
         carId,
         carName,
         serialNo,
-        clutchNo,
-        jobIdNo,
         measurementDate,
         drivenPlates,
         intermediatePlates,
@@ -610,7 +623,7 @@ export default function ClutchMeasurementPage() {
       });
 
       const fileName = `${safeFilePart(carName || `car_${carId}`)}_${safeFilePart(
-        clutchNo || "clutch"
+        serialNo || "clutch"
       )}_${Date.now()}.pdf`;
 
       const pdfPath = `car-${carId}/${fileName}`;
@@ -641,8 +654,8 @@ export default function ClutchMeasurementPage() {
         car_id: carId,
         car_name: carName || null,
         serial_no: serialNo || null,
-        clutch_no: clutchNo || null,
-        job_id_no: jobIdNo || null,
+        clutch_no: null,
+        job_id_no: null,
         measurement_date: measurementDate,
 
         driven_plates: drivenPlates,
@@ -793,7 +806,7 @@ export default function ClutchMeasurementPage() {
                   <Field label="Selected clutch for this measurement">
                     <select
                       value={selectedClutchId}
-                      onChange={(e) => handleSelectedClutchChange(e.target.value)}
+                      onChange={(e) => void handleSelectedClutchChange(e.target.value)}
                       className="input"
                       disabled={clutchLoading}
                     >
@@ -842,22 +855,13 @@ export default function ClutchMeasurementPage() {
                   <Field label="Serial No.">
                     <input
                       value={serialNo}
-                      onChange={(e) => setSerialNo(e.target.value)}
-                      className="input"
-                      placeholder="Selected clutch serial"
+                      readOnly
+                      className="input readonly-input"
+                      placeholder="Select a clutch above"
                     />
                     <p className="mt-1 text-xs text-zinc-500">
-                      Auto-filled from the clutch dropdown above, but still editable if required.
+                      Auto-filled from the selected clutch. Change the clutch using the dropdown above.
                     </p>
-                  </Field>
-
-                  <Field label="Job ID No.">
-                    <input
-                      value={jobIdNo}
-                      onChange={(e) => setJobIdNo(e.target.value)}
-                      className="input"
-                      placeholder="Job ID"
-                    />
                   </Field>
 
                   <Field label="Date">
@@ -866,15 +870,6 @@ export default function ClutchMeasurementPage() {
                       value={measurementDate}
                       onChange={(e) => setMeasurementDate(e.target.value)}
                       className="input"
-                    />
-                  </Field>
-
-                  <Field label="Clutch No.">
-                    <input
-                      value={clutchNo}
-                      onChange={(e) => setClutchNo(e.target.value)}
-                      className="input"
-                      placeholder="Clutch label / number"
                     />
                   </Field>
 
@@ -894,6 +889,9 @@ export default function ClutchMeasurementPage() {
                       className="input"
                       placeholder="e.g. 0.25 mm"
                     />
+                    <p className="mt-1 text-xs text-zinc-500">
+                      Auto-filled from the latest saved measurement for this clutch serial. Edit only if the fitted shim has changed.
+                    </p>
                   </Field>
                 </div>
               </div>
@@ -1033,7 +1031,6 @@ export default function ClutchMeasurementPage() {
                 <tr>
                   <th className="px-4 py-3 text-left">Date</th>
                   <th className="px-4 py-3 text-left">Serial</th>
-                  <th className="px-4 py-3 text-left">Clutch</th>
                   <th className="px-4 py-3 text-left">Present</th>
                   <th className="px-4 py-3 text-left">Wear</th>
                   <th className="px-4 py-3 text-left">Shim</th>
@@ -1045,7 +1042,7 @@ export default function ClutchMeasurementPage() {
               <tbody>
                 {rows.length === 0 ? (
                   <tr>
-                    <td colSpan={8} className="px-4 py-6 text-center text-zinc-500">
+                    <td colSpan={7} className="px-4 py-6 text-center text-zinc-500">
                       No saved clutch measurements.
                     </td>
                   </tr>
@@ -1056,7 +1053,6 @@ export default function ClutchMeasurementPage() {
                         {row.measurement_date || "-"}
                       </td>
                       <td className="px-4 py-3">{row.serial_no || "-"}</td>
-                      <td className="px-4 py-3">{row.clutch_no || "-"}</td>
                       <td className="px-4 py-3 text-zinc-300">
                         {row.present_stack_height !== null && row.present_stack_height !== undefined
                           ? `${Number(row.present_stack_height).toFixed(3)} mm`
@@ -1113,6 +1109,12 @@ export default function ClutchMeasurementPage() {
 
         .input:focus {
           border-color: #ef4444;
+        }
+
+        .readonly-input {
+          color: #d4d4d8;
+          background: #18181b;
+          cursor: not-allowed;
         }
 
         .readonly-box {
