@@ -57,13 +57,19 @@ export default function DrainOutPage() {
   const [message, setMessage] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
 
+  const carName = car?.name || `Car ${carId}`;
+
   const numericDrainOut = useMemo(() => {
     const value = Number(drainOutFigure);
     return Number.isFinite(value) ? value : null;
   }, [drainOutFigure]);
 
   async function loadPageData() {
-    if (!carId) return;
+    if (!Number.isFinite(carId) || carId <= 0) {
+      setErrorMessage("Invalid car ID in URL.");
+      setLoading(false);
+      return;
+    }
 
     setLoading(true);
     setMessage("");
@@ -73,25 +79,30 @@ export default function DrainOutPage() {
     const email = userData.user?.email ?? null;
     setCreatedBy(email);
 
-    const [{ data: carData, error: carError }, { data: recordData, error: recordError }] =
-      await Promise.all([
-        supabase
-          .from("dashboard_cars")
-          .select("id,name,colour")
-          .eq("id", carId)
-          .single(),
-        supabase
-          .from("drain_out_reports")
-          .select("*")
-          .eq("car_id", carId)
-          .order("created_at", { ascending: false }),
-      ]);
+    /*
+      Important:
+      This page should still work even if the car lookup is blocked by RLS
+      or if dashboard_cars does not return a matching row. The drain-out report
+      is still saved against the numeric carId from the URL.
+    */
 
-    if (carError) {
-      setErrorMessage(carError.message);
-      setLoading(false);
-      return;
+    const { data: carData, error: carError } = await supabase
+      .from("dashboard_cars")
+      .select("id,name,colour")
+      .eq("id", carId)
+      .maybeSingle();
+
+    if (!carError && carData) {
+      setCar(carData as DashboardCar);
+    } else {
+      setCar(null);
     }
+
+    const { data: recordData, error: recordError } = await supabase
+      .from("drain_out_reports")
+      .select("*")
+      .eq("car_id", carId)
+      .order("created_at", { ascending: false });
 
     if (recordError) {
       setErrorMessage(recordError.message);
@@ -99,7 +110,6 @@ export default function DrainOutPage() {
       return;
     }
 
-    setCar(carData as DashboardCar);
     setRecords((recordData ?? []) as DrainOutRecord[]);
     setLoading(false);
   }
@@ -113,8 +123,8 @@ export default function DrainOutPage() {
     setMessage("");
     setErrorMessage("");
 
-    if (!carId || !car) {
-      setErrorMessage("Invalid car.");
+    if (!Number.isFinite(carId) || carId <= 0) {
+      setErrorMessage("Invalid car ID in URL.");
       return;
     }
 
@@ -128,7 +138,7 @@ export default function DrainOutPage() {
     try {
       const payload = {
         car_id: carId,
-        car_name: car.name,
+        car_name: carName,
         rig,
         drain_out_figure: numericDrainOut,
         units,
@@ -200,16 +210,16 @@ export default function DrainOutPage() {
               </h1>
 
               <p className="mt-2 text-sm text-zinc-400">
-                {car?.name || `Car ${carId}`} · submit Rig 1 / Rig 2 drain out figures
-                directly to the engineer.
+                {carName} · submit Rig 1 / Rig 2 drain out figures directly to
+                the engineer.
               </p>
             </div>
 
             <Link
-              href={`/dashboard/car/${carId}/viewer`}
+              href={`/car/${carId}/job-list`}
               className="rounded-xl border border-zinc-700 bg-[#1b2026] px-5 py-3 text-sm font-semibold text-zinc-200 hover:border-red-500 hover:text-red-300"
             >
-              Back to Car Overview
+              Back to Job List
             </Link>
           </div>
         </header>
@@ -232,13 +242,11 @@ export default function DrainOutPage() {
               Submit Figure
             </p>
 
-            <h2 className="mt-3 text-2xl font-semibold">
-              Drain Out Report
-            </h2>
+            <h2 className="mt-3 text-2xl font-semibold">Drain Out Report</h2>
 
             <p className="mt-2 max-w-3xl text-sm text-zinc-400">
-              Select the rig, enter the drain out figure, then submit. This saves the
-              value and sends the engineer a notification.
+              Select the rig, enter the drain out figure, then submit. This saves
+              the value and sends the engineer a notification.
             </p>
           </div>
 
@@ -315,9 +323,11 @@ export default function DrainOutPage() {
               </p>
 
               <p className="mt-2 text-sm text-zinc-300">
-                {car?.name || `Car ${carId}`} · {rig} ·{" "}
+                {carName} · {rig} ·{" "}
                 <span className="font-bold text-red-300">
-                  {numericDrainOut !== null ? `${numericDrainOut} ${units}` : "No figure entered"}
+                  {numericDrainOut !== null
+                    ? `${numericDrainOut} ${units}`
+                    : "No figure entered"}
                 </span>
               </p>
             </div>
