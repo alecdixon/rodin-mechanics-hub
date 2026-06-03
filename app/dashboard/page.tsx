@@ -4,11 +4,7 @@ import { ChangeEvent, useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
-import {
-  getAssignedCar,
-  getUserRole,
-  hasPermission,
-} from "@/lib/userAccess";
+import { getAssignedCar, getUserRole, hasPermission } from "@/lib/userAccess";
 import LogoutButton from "@/app/components/LogoutButton";
 
 type DashboardCar = {
@@ -301,13 +297,7 @@ function ProgressDial({
   );
 }
 
-function JobStatusPill({
-  status,
-  colour,
-}: {
-  status: string;
-  colour: string;
-}) {
+function JobStatusPill({ status, colour }: { status: string; colour: string }) {
   return (
     <div
       className="mt-3 inline-flex rounded-full border bg-[#0d0f12] px-3 py-1 text-xs text-zinc-300"
@@ -810,7 +800,13 @@ export default function DashboardPage() {
     }
 
     checkAccess();
-  }, [loadCarsAndProgress, loadCalendar, loadClutchMeasurements, loadClutches, router]);
+  }, [
+    loadCarsAndProgress,
+    loadCalendar,
+    loadClutchMeasurements,
+    loadClutches,
+    router,
+  ]);
 
   useEffect(() => {
     const channel = supabase
@@ -921,7 +917,8 @@ export default function DashboardPage() {
         return {
           id: String(record.id),
           car_id: record.car_id,
-          carName: carDetails?.name || record.car_name || `Car ${record.car_id}`,
+          carName:
+            carDetails?.name || record.car_name || `Car ${record.car_id}`,
           colour: carDetails?.colour || DEFAULT_CAR_COLOUR,
           date: uploadDateOnly,
           labelDate: shortDate(uploadDateOnly),
@@ -1021,13 +1018,12 @@ export default function DashboardPage() {
     setAddingCar(false);
   }
 
-
-
   async function addClutch() {
     const serial = newClutchSerial.trim();
     const label = newClutchLabel.trim();
     const notes = newClutchNotes.trim();
-    const currentCarId = newClutchCarId === "spare" ? null : Number(newClutchCarId);
+    const currentCarId =
+      newClutchCarId === "spare" ? null : Number(newClutchCarId);
 
     setMessage("");
     setErrorMessage("");
@@ -1038,7 +1034,8 @@ export default function DashboardPage() {
     }
 
     const duplicate = clutches.find(
-      (clutch) => clutch.serial_no.trim().toLowerCase() === serial.toLowerCase(),
+      (clutch) =>
+        clutch.serial_no.trim().toLowerCase() === serial.toLowerCase(),
     );
 
     if (duplicate) {
@@ -1145,7 +1142,6 @@ export default function DashboardPage() {
     await loadClutches();
   }
 
-
   async function updateClutch(clutch: ClutchInventoryItem) {
     const serial = clutch.serial_no.trim();
     const label = clutch.label?.trim() || null;
@@ -1207,7 +1203,6 @@ export default function DashboardPage() {
     setMessage(`Clutch ${serial} saved.`);
     await loadClutches();
   }
-
 
   async function removeClutch(clutch: ClutchInventoryItem) {
     const confirmed = window.confirm(
@@ -1396,6 +1391,319 @@ export default function DashboardPage() {
             </p>
           </div>
 
+          <div className="mb-6 rounded-2xl border-2 border-red-700 bg-red-950/20 p-5">
+            <div className="flex flex-wrap items-start justify-between gap-4">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.35em] text-red-400">
+                  Clutch Control - Add / Allocate / Remove
+                </p>
+
+                <h3 className="mt-3 text-2xl font-semibold text-red-100">
+                  Clutch Inventory & Allocation
+                </h3>
+
+                <p className="mt-2 max-w-3xl text-sm text-zinc-400">
+                  This section is deliberately placed at the top of Manage Cars
+                  so the chief mechanic can change the fitted clutch quickly.
+                  Select a clutch against a car, move a fitted clutch back to
+                  spare, edit serial numbers, or add a new clutch.
+                </p>
+              </div>
+
+              <div className="rounded-xl border border-zinc-700 bg-black px-4 py-3 text-sm font-semibold text-red-300">
+                {activeClutches.length} clutch
+                {activeClutches.length === 1 ? "" : "es"} ·{" "}
+                {spareActiveClutches.length} spare
+              </div>
+            </div>
+
+            <div className="mt-5 grid gap-3">
+              {activeCars.length === 0 ? (
+                <div className="rounded-2xl border border-dashed border-zinc-700 bg-[#0d0f12] p-5 text-sm text-zinc-500">
+                  No active cars available for clutch allocation.
+                </div>
+              ) : (
+                activeCars.map((car) => {
+                  const fittedClutch = currentClutchByCarId.get(car.id);
+                  const options = activeClutches.filter(
+                    (clutch) =>
+                      clutch.current_car_id === null ||
+                      clutch.current_car_id === car.id,
+                  );
+
+                  return (
+                    <div
+                      key={`top-clutch-allocation-${car.id}`}
+                      className="grid gap-3 rounded-2xl border border-zinc-800 bg-[#0d0f12] p-4 lg:grid-cols-[260px_1fr_auto]"
+                    >
+                      <div className="flex items-center gap-3">
+                        <span
+                          className="h-12 w-2 rounded-full"
+                          style={{ backgroundColor: car.colour }}
+                        />
+
+                        <div>
+                          <p className="text-lg font-semibold text-zinc-100">
+                            {car.name}
+                          </p>
+
+                          <p className="text-xs uppercase tracking-[0.22em] text-zinc-500">
+                            Car ID {car.id}
+                          </p>
+                        </div>
+                      </div>
+
+                      <label>
+                        <span className="text-xs uppercase tracking-[0.22em] text-zinc-500">
+                          Current clutch
+                        </span>
+
+                        <select
+                          value={fittedClutch?.id ?? "spare"}
+                          onChange={(event) => {
+                            if (event.target.value === "spare") {
+                              if (fittedClutch) {
+                                allocateClutch(fittedClutch.id, null);
+                              }
+                              return;
+                            }
+
+                            allocateClutch(event.target.value, car.id);
+                          }}
+                          className="mt-2 w-full rounded-xl border border-zinc-700 bg-[#111418] px-4 py-3 text-sm text-zinc-100 outline-none focus:border-red-500"
+                        >
+                          <option value="spare">
+                            No clutch fitted / spare
+                          </option>
+                          {options.map((clutch) => (
+                            <option key={clutch.id} value={clutch.id}>
+                              {clutchDisplayName(clutch)}
+                              {clutch.current_car_id === car.id
+                                ? " — fitted"
+                                : ""}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+
+                      <div className="flex items-end gap-2">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            fittedClutch &&
+                            allocateClutch(fittedClutch.id, null)
+                          }
+                          disabled={
+                            !fittedClutch || savingClutchId === fittedClutch.id
+                          }
+                          className="rounded-xl border border-zinc-700 px-4 py-3 text-sm font-semibold text-zinc-300 hover:border-red-500 hover:text-red-300 disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          Move to Spare
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+
+            <div className="mt-6 overflow-x-auto rounded-2xl border border-zinc-800">
+              <table className="w-full min-w-[900px] text-sm">
+                <thead className="bg-zinc-900 text-zinc-300">
+                  <tr>
+                    <th className="px-4 py-3 text-left">Serial No.</th>
+                    <th className="px-4 py-3 text-left">Label</th>
+                    <th className="px-4 py-3 text-left">Allocated To</th>
+                    <th className="px-4 py-3 text-left">Notes</th>
+                    <th className="px-4 py-3 text-left">Actions</th>
+                  </tr>
+                </thead>
+
+                <tbody>
+                  {activeClutches.length === 0 ? (
+                    <tr>
+                      <td
+                        colSpan={5}
+                        className="px-4 py-6 text-center text-zinc-500"
+                      >
+                        No clutches added yet. Use Add Clutch below.
+                      </td>
+                    </tr>
+                  ) : (
+                    activeClutches.map((clutch) => (
+                      <tr
+                        key={`top-clutch-row-${clutch.id}`}
+                        className="border-t border-zinc-800"
+                      >
+                        <td className="px-4 py-3">
+                          <input
+                            value={clutch.serial_no}
+                            onChange={(event) =>
+                              setClutches((current) =>
+                                current.map((item) =>
+                                  item.id === clutch.id
+                                    ? { ...item, serial_no: event.target.value }
+                                    : item,
+                                ),
+                              )
+                            }
+                            className="w-full rounded-xl border border-zinc-700 bg-[#111418] px-3 py-2 text-sm text-zinc-100 outline-none focus:border-red-500"
+                            placeholder="e.g. 28819"
+                          />
+                        </td>
+
+                        <td className="px-4 py-3">
+                          <input
+                            value={clutch.label ?? ""}
+                            onChange={(event) =>
+                              setClutches((current) =>
+                                current.map((item) =>
+                                  item.id === clutch.id
+                                    ? { ...item, label: event.target.value }
+                                    : item,
+                                ),
+                              )
+                            }
+                            className="w-full rounded-xl border border-zinc-700 bg-[#111418] px-3 py-2 text-sm text-zinc-100 outline-none focus:border-red-500"
+                            placeholder="Optional label"
+                          />
+                        </td>
+
+                        <td className="px-4 py-3">
+                          <select
+                            value={clutch.current_car_id ?? "spare"}
+                            onChange={(event) =>
+                              setClutches((current) =>
+                                current.map((item) =>
+                                  item.id === clutch.id
+                                    ? {
+                                        ...item,
+                                        current_car_id:
+                                          event.target.value === "spare"
+                                            ? null
+                                            : Number(event.target.value),
+                                      }
+                                    : item,
+                                ),
+                              )
+                            }
+                            className="w-full rounded-xl border border-zinc-700 bg-[#111418] px-3 py-2 text-sm text-zinc-100 outline-none focus:border-red-500"
+                          >
+                            <option value="spare">Spare clutch</option>
+                            {activeCars.map((car) => (
+                              <option key={car.id} value={car.id}>
+                                {carDisplayName(car)}
+                              </option>
+                            ))}
+                          </select>
+                        </td>
+
+                        <td className="px-4 py-3">
+                          <input
+                            value={clutch.notes ?? ""}
+                            onChange={(event) =>
+                              setClutches((current) =>
+                                current.map((item) =>
+                                  item.id === clutch.id
+                                    ? { ...item, notes: event.target.value }
+                                    : item,
+                                ),
+                              )
+                            }
+                            className="w-full rounded-xl border border-zinc-700 bg-[#111418] px-3 py-2 text-sm text-zinc-100 outline-none focus:border-red-500"
+                            placeholder="Optional notes"
+                          />
+                        </td>
+
+                        <td className="px-4 py-3">
+                          <div className="flex flex-wrap gap-2">
+                            <button
+                              type="button"
+                              onClick={() => updateClutch(clutch)}
+                              disabled={savingClutchId === clutch.id}
+                              className="rounded-lg bg-red-700 px-3 py-2 text-xs font-semibold text-white hover:bg-red-600 disabled:cursor-not-allowed disabled:opacity-50"
+                            >
+                              {savingClutchId === clutch.id
+                                ? "Saving..."
+                                : "Save"}
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => removeClutch(clutch)}
+                              disabled={savingClutchId === clutch.id}
+                              className="rounded-lg border border-zinc-700 px-3 py-2 text-xs font-semibold text-zinc-300 hover:border-red-500 hover:text-red-300 disabled:cursor-not-allowed disabled:opacity-50"
+                            >
+                              Move Spare
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => deleteClutch(clutch)}
+                              disabled={savingClutchId === clutch.id}
+                              className="rounded-lg border border-red-900/70 px-3 py-2 text-xs font-semibold text-red-300 hover:bg-red-950/40 disabled:cursor-not-allowed disabled:opacity-50"
+                            >
+                              Delete
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="mt-6 rounded-2xl border border-red-900/40 bg-[#181315] p-5">
+              <h4 className="text-xl font-semibold text-red-100">Add Clutch</h4>
+
+              <div className="mt-4 grid gap-3 lg:grid-cols-[180px_1fr_220px_1fr_auto]">
+                <input
+                  value={newClutchSerial}
+                  onChange={(event) => setNewClutchSerial(event.target.value)}
+                  placeholder="Serial No. e.g. 28819"
+                  className="rounded-xl border border-red-900/50 bg-[#0d0f12] px-4 py-3 text-sm text-zinc-100 outline-none focus:border-red-500"
+                />
+
+                <input
+                  value={newClutchLabel}
+                  onChange={(event) => setNewClutchLabel(event.target.value)}
+                  placeholder="Label optional"
+                  className="rounded-xl border border-red-900/50 bg-[#0d0f12] px-4 py-3 text-sm text-zinc-100 outline-none focus:border-red-500"
+                />
+
+                <select
+                  value={newClutchCarId}
+                  onChange={(event) => setNewClutchCarId(event.target.value)}
+                  className="rounded-xl border border-red-900/50 bg-[#0d0f12] px-4 py-3 text-sm text-zinc-100 outline-none focus:border-red-500"
+                >
+                  <option value="spare">Spare clutch</option>
+                  {activeCars.map((car) => (
+                    <option key={car.id} value={car.id}>
+                      {carDisplayName(car)}
+                    </option>
+                  ))}
+                </select>
+
+                <input
+                  value={newClutchNotes}
+                  onChange={(event) => setNewClutchNotes(event.target.value)}
+                  placeholder="Notes"
+                  className="rounded-xl border border-red-900/50 bg-[#0d0f12] px-4 py-3 text-sm text-zinc-100 outline-none focus:border-red-500"
+                />
+
+                <button
+                  type="button"
+                  onClick={addClutch}
+                  disabled={addingClutch}
+                  className="rounded-xl bg-red-700 px-5 py-3 text-sm font-semibold text-white hover:bg-red-600 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {addingClutch ? "Adding..." : "Add Clutch"}
+                </button>
+              </div>
+            </div>
+          </div>
+
           <div className="space-y-3">
             {cars.map((car) => (
               <div
@@ -1578,8 +1886,9 @@ export default function DashboardPage() {
                 </h3>
 
                 <p className="mt-2 max-w-3xl text-sm text-zinc-400">
-                  This is the quick chief mechanic view. Select the current clutch for each car.
-                  The clutch wear record stays with the clutch serial number when it moves between cars.
+                  This is the quick chief mechanic view. Select the current
+                  clutch for each car. The clutch wear record stays with the
+                  clutch serial number when it moves between cars.
                 </p>
               </div>
 
@@ -1598,7 +1907,8 @@ export default function DashboardPage() {
                   const fittedClutch = currentClutchByCarId.get(car.id);
                   const options = activeClutches.filter(
                     (clutch) =>
-                      clutch.current_car_id === null || clutch.current_car_id === car.id,
+                      clutch.current_car_id === null ||
+                      clutch.current_car_id === car.id,
                   );
 
                   return (
@@ -1642,11 +1952,15 @@ export default function DashboardPage() {
                           }}
                           className="mt-2 w-full rounded-xl border border-zinc-700 bg-[#111418] px-4 py-3 text-sm text-zinc-100 outline-none focus:border-red-500"
                         >
-                          <option value="spare">No clutch fitted / spare</option>
+                          <option value="spare">
+                            No clutch fitted / spare
+                          </option>
                           {options.map((clutch) => (
                             <option key={clutch.id} value={clutch.id}>
                               {clutchDisplayName(clutch)}
-                              {clutch.current_car_id === car.id ? " — fitted" : ""}
+                              {clutch.current_car_id === car.id
+                                ? " — fitted"
+                                : ""}
                             </option>
                           ))}
                         </select>
@@ -1655,8 +1969,13 @@ export default function DashboardPage() {
                       <div className="flex items-end gap-2">
                         <button
                           type="button"
-                          onClick={() => fittedClutch && allocateClutch(fittedClutch.id, null)}
-                          disabled={!fittedClutch || savingClutchId === fittedClutch.id}
+                          onClick={() =>
+                            fittedClutch &&
+                            allocateClutch(fittedClutch.id, null)
+                          }
+                          disabled={
+                            !fittedClutch || savingClutchId === fittedClutch.id
+                          }
                           className="rounded-xl border border-zinc-700 px-4 py-3 text-sm font-semibold text-zinc-300 hover:border-red-500 hover:text-red-300 disabled:cursor-not-allowed disabled:opacity-50"
                         >
                           Move to Spare
@@ -1679,8 +1998,10 @@ export default function DashboardPage() {
                 <h3 className="mt-3 text-2xl font-semibold">Manage Clutches</h3>
 
                 <p className="mt-2 max-w-3xl text-sm text-zinc-400">
-                  Add clutch serial numbers, allocate them to cars, move them back to spare, or delete an inventory row if it was added by mistake.
-                  Only one clutch is kept allocated to each car; changing the dropdown moves the previous clutch back to spare.
+                  Add clutch serial numbers, allocate them to cars, move them
+                  back to spare, or delete an inventory row if it was added by
+                  mistake. Only one clutch is kept allocated to each car;
+                  changing the dropdown moves the previous clutch back to spare.
                 </p>
               </div>
 
@@ -1704,7 +2025,10 @@ export default function DashboardPage() {
                 <tbody>
                   {clutches.length === 0 ? (
                     <tr>
-                      <td colSpan={5} className="px-4 py-6 text-center text-zinc-500">
+                      <td
+                        colSpan={5}
+                        className="px-4 py-6 text-center text-zinc-500"
+                      >
                         No clutches added yet.
                       </td>
                     </tr>
@@ -1799,7 +2123,9 @@ export default function DashboardPage() {
                               disabled={savingClutchId === clutch.id}
                               className="rounded-lg bg-red-700 px-3 py-2 text-xs font-semibold text-white hover:bg-red-600 disabled:cursor-not-allowed disabled:opacity-50"
                             >
-                              {savingClutchId === clutch.id ? "Saving..." : "Save"}
+                              {savingClutchId === clutch.id
+                                ? "Saving..."
+                                : "Save"}
                             </button>
 
                             <button
@@ -1832,7 +2158,8 @@ export default function DashboardPage() {
               <h4 className="text-xl font-semibold text-red-100">Add Clutch</h4>
 
               <p className="mt-1 text-sm text-zinc-400">
-                Add current car clutches and spare clutches here. Choose “Spare clutch” if it is not fitted to a car.
+                Add current car clutches and spare clutches here. Choose “Spare
+                clutch” if it is not fitted to a car.
               </p>
 
               <div className="mt-4 grid gap-3 lg:grid-cols-[160px_1fr_220px_1fr_auto]">
