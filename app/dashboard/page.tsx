@@ -40,7 +40,6 @@ type ClutchInventoryItem = {
   serial_no: string;
   label: string | null;
   current_car_id: number | null;
-  active: boolean;
   notes: string | null;
   created_at?: string | null;
 };
@@ -763,7 +762,6 @@ export default function DashboardPage() {
     const { data, error } = await supabase
       .from("clutch_inventory")
       .select("*")
-      .order("active", { ascending: false })
       .order("current_car_id", { ascending: true, nullsFirst: false })
       .order("serial_no", { ascending: true });
 
@@ -881,9 +879,8 @@ export default function DashboardPage() {
   }, [cars]);
 
   const activeClutches = useMemo(() => {
-    return clutches
-      .filter((clutch) => clutch.active)
-      .sort((a, b) => a.serial_no.localeCompare(b.serial_no));
+    // The clutch_inventory table does not use an active column, so all rows are treated as available.
+    return [...clutches].sort((a, b) => a.serial_no.localeCompare(b.serial_no));
   }, [clutches]);
 
   const spareActiveClutches = useMemo(() => {
@@ -1073,7 +1070,6 @@ export default function DashboardPage() {
       serial_no: serial,
       label: label || null,
       current_car_id: currentCarId,
-      active: true,
       notes: notes || null,
     });
 
@@ -1131,7 +1127,7 @@ export default function DashboardPage() {
 
     const { error } = await supabase
       .from("clutch_inventory")
-      .update({ current_car_id: carId, active: true })
+      .update({ current_car_id: carId })
       .eq("id", clutchId);
 
     if (error) {
@@ -1196,8 +1192,7 @@ export default function DashboardPage() {
       .update({
         serial_no: serial,
         label,
-        current_car_id: clutch.active ? clutch.current_car_id : null,
-        active: clutch.active,
+        current_car_id: clutch.current_car_id,
         notes,
       })
       .eq("id", clutch.id);
@@ -1216,7 +1211,7 @@ export default function DashboardPage() {
 
   async function removeClutch(clutch: ClutchInventoryItem) {
     const confirmed = window.confirm(
-      `Remove clutch ${clutch.serial_no}? Existing measurement records will not be deleted.`,
+      `Move clutch ${clutch.serial_no} to spare? Existing measurement records will not be deleted.`,
     );
 
     if (!confirmed) return;
@@ -1227,7 +1222,7 @@ export default function DashboardPage() {
 
     const { error } = await supabase
       .from("clutch_inventory")
-      .update({ active: false, current_car_id: null })
+      .update({ current_car_id: null })
       .eq("id", clutch.id);
 
     if (error) {
@@ -1237,7 +1232,7 @@ export default function DashboardPage() {
     }
 
     setSavingClutchId(null);
-    setMessage(`Clutch ${clutch.serial_no} removed from active use.`);
+    setMessage(`Clutch ${clutch.serial_no} moved to spare.`);
     await loadClutches();
   }
 
@@ -1658,24 +1653,23 @@ export default function DashboardPage() {
 
                 <p className="mt-2 max-w-3xl text-sm text-zinc-400">
                   Add clutch serial numbers, allocate them to cars, or leave them as spare.
-                  Only one active clutch is kept allocated to each car; changing the dropdown moves the previous clutch back to spare.
+                  Only one clutch is kept allocated to each car; changing the dropdown moves the previous clutch back to spare.
                 </p>
               </div>
 
               <div className="rounded-xl border border-zinc-700 bg-black px-4 py-3 text-sm font-semibold text-red-300">
-                {clutches.filter((clutch) => clutch.active).length} active
+                {clutches.length} total
               </div>
             </div>
 
             <div className="mt-5 overflow-x-auto rounded-2xl border border-zinc-800">
-              <table className="w-full min-w-[980px] text-sm">
+              <table className="w-full min-w-[900px] text-sm">
                 <thead className="bg-zinc-900 text-zinc-300">
                   <tr>
                     <th className="px-4 py-3 text-left">Serial No.</th>
                     <th className="px-4 py-3 text-left">Label</th>
                     <th className="px-4 py-3 text-left">Allocated To</th>
                     <th className="px-4 py-3 text-left">Notes</th>
-                    <th className="px-4 py-3 text-left">Status</th>
                     <th className="px-4 py-3 text-left">Actions</th>
                   </tr>
                 </thead>
@@ -1683,7 +1677,7 @@ export default function DashboardPage() {
                 <tbody>
                   {clutches.length === 0 ? (
                     <tr>
-                      <td colSpan={6} className="px-4 py-6 text-center text-zinc-500">
+                      <td colSpan={5} className="px-4 py-6 text-center text-zinc-500">
                         No clutches added yet.
                       </td>
                     </tr>
@@ -1771,28 +1765,6 @@ export default function DashboardPage() {
                         </td>
 
                         <td className="px-4 py-3">
-                          <select
-                            value={clutch.active ? "active" : "inactive"}
-                            onChange={(event) =>
-                              setClutches((current) =>
-                                current.map((item) =>
-                                  item.id === clutch.id
-                                    ? {
-                                        ...item,
-                                        active: event.target.value === "active",
-                                      }
-                                    : item,
-                                ),
-                              )
-                            }
-                            className="w-full rounded-xl border border-zinc-700 bg-[#111418] px-3 py-2 text-sm text-zinc-100 outline-none focus:border-red-500"
-                          >
-                            <option value="active">Active</option>
-                            <option value="inactive">Removed</option>
-                          </select>
-                        </td>
-
-                        <td className="px-4 py-3">
                           <div className="flex flex-wrap gap-2">
                             <button
                               type="button"
@@ -1806,10 +1778,10 @@ export default function DashboardPage() {
                             <button
                               type="button"
                               onClick={() => removeClutch(clutch)}
-                              disabled={savingClutchId === clutch.id || !clutch.active}
+                              disabled={savingClutchId === clutch.id}
                               className="rounded-lg border border-zinc-700 px-3 py-2 text-xs font-semibold text-zinc-300 hover:border-red-500 hover:text-red-300 disabled:cursor-not-allowed disabled:opacity-50"
                             >
-                              Remove
+                              Move Spare
                             </button>
                           </div>
                         </td>
