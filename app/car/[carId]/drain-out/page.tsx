@@ -47,7 +47,7 @@ export default function DrainOutPage() {
   const [car, setCar] = useState<DashboardCar | null>(null);
   const [rig, setRig] = useState<(typeof RIG_OPTIONS)[number]>("Rig 1");
   const [drainOutFigure, setDrainOutFigure] = useState("");
-  const [units, setUnits] = useState("ml");
+  const units = "kg";
   const [notes, setNotes] = useState("");
   const [createdBy, setCreatedBy] = useState<string | null>(null);
 
@@ -129,7 +129,7 @@ export default function DrainOutPage() {
     }
 
     if (numericDrainOut === null || numericDrainOut < 0) {
-      setErrorMessage("Enter a valid drain out figure.");
+      setErrorMessage("Enter a valid drain out figure in kg.");
       return;
     }
 
@@ -141,7 +141,7 @@ export default function DrainOutPage() {
         car_name: carName,
         rig,
         drain_out_figure: numericDrainOut,
-        units,
+        units: "kg",
         notes: notes.trim() || null,
         created_by: createdBy,
       };
@@ -210,7 +210,7 @@ export default function DrainOutPage() {
               </h1>
 
               <p className="mt-2 text-sm text-zinc-400">
-                {carName} · submit Rig 1 / Rig 2 drain out figures directly to
+                {carName} · submit Rig 1 / Rig 2 drain out figures in kg directly to
                 the engineer.
               </p>
             </div>
@@ -245,7 +245,7 @@ export default function DrainOutPage() {
             <h2 className="mt-3 text-2xl font-semibold">Drain Out Report</h2>
 
             <p className="mt-2 max-w-3xl text-sm text-zinc-400">
-              Select the rig, enter the drain out figure, then submit. This saves
+              Select the rig, enter the drain out figure in kg, then submit. This saves
               the value and sends the engineer a notification.
             </p>
           </div>
@@ -280,27 +280,20 @@ export default function DrainOutPage() {
                 value={drainOutFigure}
                 onChange={(event) => setDrainOutFigure(event.target.value)}
                 inputMode="decimal"
-                placeholder="e.g. 475"
+                placeholder="e.g. 2.35"
                 className="w-full rounded-xl border border-zinc-700 bg-[#0d0f12] px-4 py-3 text-sm text-zinc-100 outline-none focus:border-red-500"
               />
             </label>
 
-            <label>
+            <div>
               <span className="mb-2 block text-xs font-semibold uppercase tracking-[0.2em] text-zinc-500">
                 Units
               </span>
 
-              <select
-                value={units}
-                onChange={(event) => setUnits(event.target.value)}
-                className="w-full rounded-xl border border-zinc-700 bg-[#0d0f12] px-4 py-3 text-sm text-zinc-100 outline-none focus:border-red-500"
-              >
-                <option value="ml">ml</option>
-                <option value="L">L</option>
-                <option value="g">g</option>
-                <option value="kg">kg</option>
-              </select>
-            </label>
+              <div className="rounded-xl border border-zinc-700 bg-[#0d0f12] px-4 py-3 text-sm font-bold text-red-300">
+                kg
+              </div>
+            </div>
           </div>
 
           <label className="mt-4 block">
