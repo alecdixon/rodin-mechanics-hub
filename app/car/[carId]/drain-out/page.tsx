@@ -26,10 +26,24 @@ type DrainOutRecord = {
 type EngineerOption = {
   name: string;
   email: string;
-  role?: string;
+  role: string;
 };
 
 const RIG_OPTIONS = ["Rig 1", "Rig 2"] as const;
+
+/*
+  Update these driver names whenever the car allocation changes.
+
+  This controls what the mechanic sees in:
+  - the Car box
+  - the notification preview
+  - the saved car_name sent to the email route
+*/
+const DRIVER_BY_CAR_ID: Record<number, string> = {
+  1: "Rehm",
+  2: "Pulling",
+  3: "Car 3 Driver",
+};
 
 const ENGINEER_OPTIONS: EngineerOption[] = [
   {
@@ -87,12 +101,14 @@ export default function DrainOutPage() {
   const [message, setMessage] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
 
-  const carName = car?.name || `Car ${carId}`;
+  const rawCarName = car?.name || `Car ${carId}`;
+  const driverName = DRIVER_BY_CAR_ID[carId] || rawCarName;
+  const carDisplayLabel = `Car ${carId} - ${driverName}`;
 
   const selectedEngineer = useMemo(() => {
     return (
       ENGINEER_OPTIONS.find(
-        (engineer) => engineer.email === selectedEngineerEmail
+        (engineer) => engineer.email === selectedEngineerEmail,
       ) || null
     );
   }, [selectedEngineerEmail]);
@@ -146,7 +162,7 @@ export default function DrainOutPage() {
     if (!selectedEngineerEmail && ENGINEER_OPTIONS.length > 0) {
       const preferredCarEngineer =
         ENGINEER_OPTIONS.find((engineer) =>
-          engineer.role?.toLowerCase().includes(`car ${carId}`)
+          engineer.role.toLowerCase().includes(`car ${carId}`),
         ) || ENGINEER_OPTIONS[0];
 
       setSelectedEngineerEmail(preferredCarEngineer.email);
@@ -184,7 +200,7 @@ export default function DrainOutPage() {
     try {
       const payload = {
         car_id: carId,
-        car_name: carName,
+        car_name: carDisplayLabel,
         rig,
         drain_out_figure: numericDrainOut,
         units: "kg",
@@ -209,6 +225,7 @@ export default function DrainOutPage() {
         },
         body: JSON.stringify({
           ...inserted,
+          car_name: carDisplayLabel,
           engineer_name: selectedEngineer.name,
           engineer_email: selectedEngineer.email,
         }),
@@ -216,15 +233,26 @@ export default function DrainOutPage() {
 
       if (!notifyResponse.ok) {
         const body = await notifyResponse.json().catch(() => null);
+
+        const readableError = [
+          body?.error,
+          body?.likely_cause ? `Cause: ${body.likely_cause}` : null,
+          body?.fix ? `Fix: ${body.fix}` : null,
+          body?.technical_error ? `Technical: ${body.technical_error}` : null,
+        ]
+          .filter(Boolean)
+          .join("\n\n");
+
         throw new Error(
-          body?.error ||
-            "Drain out saved, but the engineer notification failed."
+          readableError ||
+            "Drain out saved, but the engineer notification failed.",
         );
       }
 
       setMessage(
-        `Drain out report submitted and sent to ${selectedEngineer.name}.`
+        `Drain out report submitted for ${carDisplayLabel} and sent to ${selectedEngineer.name}.`,
       );
+
       setDrainOutFigure("");
       setNotes("");
       await loadPageData();
@@ -232,7 +260,7 @@ export default function DrainOutPage() {
       setErrorMessage(
         error instanceof Error
           ? error.message
-          : "Failed to submit drain out report."
+          : "Failed to submit drain out report.",
       );
     } finally {
       setSaving(false);
@@ -262,9 +290,15 @@ export default function DrainOutPage() {
               </h1>
 
               <p className="mt-2 text-sm text-zinc-400">
-                {carName} · record Rig 1 / Rig 2 drain out figures and send the
-                result directly to the selected engineer.
+                {carDisplayLabel} · record Rig 1 / Rig 2 drain out figures and
+                send the result directly to the selected engineer.
               </p>
+
+              {rawCarName !== driverName && (
+                <p className="mt-2 text-xs text-zinc-500">
+                  Dashboard car label: {rawCarName}
+                </p>
+              )}
             </div>
 
             <Link
@@ -277,13 +311,13 @@ export default function DrainOutPage() {
         </header>
 
         {message && (
-          <div className="mb-6 rounded-2xl border border-green-800 bg-green-950/20 p-4 text-sm text-green-300">
+          <div className="mb-6 whitespace-pre-line rounded-2xl border border-green-800 bg-green-950/20 p-4 text-sm text-green-300">
             {message}
           </div>
         )}
 
         {errorMessage && (
-          <div className="mb-6 rounded-2xl border border-red-900 bg-red-950/40 p-4 text-sm text-red-200">
+          <div className="mb-6 whitespace-pre-line rounded-2xl border border-red-900 bg-red-950/40 p-4 text-sm text-red-200">
             {errorMessage}
           </div>
         )}
@@ -306,10 +340,10 @@ export default function DrainOutPage() {
 
             <div className="rounded-2xl border border-zinc-800 bg-[#0d0f12] px-4 py-3">
               <p className="text-xs uppercase tracking-[0.25em] text-zinc-500">
-                Car
+                Car / Driver
               </p>
               <p className="mt-1 text-lg font-semibold text-zinc-100">
-                {carName}
+                {carDisplayLabel}
               </p>
             </div>
           </div>
@@ -322,7 +356,9 @@ export default function DrainOutPage() {
 
               <select
                 value={selectedEngineerEmail}
-                onChange={(event) => setSelectedEngineerEmail(event.target.value)}
+                onChange={(event) =>
+                  setSelectedEngineerEmail(event.target.value)
+                }
                 className="w-full rounded-xl border border-zinc-700 bg-[#0d0f12] px-4 py-3 text-sm text-zinc-100 outline-none focus:border-red-500"
               >
                 {ENGINEER_OPTIONS.length === 0 ? (
@@ -426,11 +462,11 @@ export default function DrainOutPage() {
 
               <p className="mt-2 text-sm text-zinc-300">
                 {selectedEngineer ? selectedEngineer.name : "No engineer"} ·{" "}
-                {carName} · {rig} ·{" "}
+                {carDisplayLabel} · {rig} ·{" "}
                 <span className="font-bold text-red-300">
                   {numericDrainOut !== null
                     ? `${numericDrainOut} ${units}`
-                    : "No figure entered"}
+                    : `0 ${units}`}
                 </span>
               </p>
             </div>
@@ -449,13 +485,14 @@ export default function DrainOutPage() {
         <section className="mt-8 rounded-3xl border border-zinc-800 bg-[#14181d] p-6">
           <h2 className="text-2xl font-semibold">Previous Drain Out Reports</h2>
 
-          <div className="mt-4 overflow-hidden rounded-2xl border border-zinc-800">
-            <table className="w-full text-sm">
+          <div className="mt-4 overflow-x-auto rounded-2xl border border-zinc-800">
+            <table className="w-full min-w-[760px] text-sm">
               <thead className="bg-[#0d0f12] text-zinc-300">
                 <tr>
                   <th className="px-4 py-3 text-left">Date</th>
                   <th className="px-4 py-3 text-left">Rig</th>
                   <th className="px-4 py-3 text-left">Figure</th>
+                  <th className="px-4 py-3 text-left">Car / Driver</th>
                   <th className="px-4 py-3 text-left">Notes</th>
                   <th className="px-4 py-3 text-left">Submitted By</th>
                 </tr>
@@ -465,7 +502,7 @@ export default function DrainOutPage() {
                 {records.length === 0 ? (
                   <tr>
                     <td
-                      colSpan={5}
+                      colSpan={6}
                       className="px-4 py-6 text-center text-zinc-500"
                     >
                       No drain out reports saved yet.
@@ -480,6 +517,9 @@ export default function DrainOutPage() {
                       <td className="px-4 py-3">{record.rig}</td>
                       <td className="px-4 py-3 font-semibold text-red-300">
                         {record.drain_out_figure} {record.units}
+                      </td>
+                      <td className="px-4 py-3 text-zinc-300">
+                        {record.car_name || `Car ${record.car_id}`}
                       </td>
                       <td className="px-4 py-3 text-zinc-300">
                         {record.notes || "—"}
