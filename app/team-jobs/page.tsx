@@ -142,6 +142,10 @@ export default function TeamJobsPage() {
     : 0;
 
   function backHref() {
+    if (userRole === "number2_mechanic") {
+      return "/drain-out";
+    }
+
     if (userRole === "chief_mechanic" || userRole === "engineer") {
       return "/dashboard";
     }
@@ -150,27 +154,23 @@ export default function TeamJobsPage() {
       return `/car/${assignedCar}/job-list`;
     }
 
-    if (userRole === "number2_mechanic") {
-      return "/drain-out";
-    }
-
     return "/login";
   }
 
   function backLabel() {
     if (userRole === "number2_mechanic") {
-      return "← Back to Drain Out";
+      return "Back to Drain Out";
     }
 
     if (userRole === "number1_mechanic") {
-      return "← Back to Car Jobs";
+      return "Back to Car Jobs";
     }
 
     if (userRole === "chief_mechanic" || userRole === "engineer") {
-      return "← Back to Dashboard";
+      return "Back to Dashboard";
     }
 
-    return "← Back";
+    return "Back";
   }
 
   function priorityClass(priority: Priority) {
@@ -346,7 +346,7 @@ export default function TeamJobsPage() {
                   href={backHref()}
                   className="rounded-xl border border-neutral-700 bg-neutral-900 px-5 py-3 text-sm font-semibold text-neutral-200 transition hover:border-red-500 hover:text-red-300"
                 >
-                  {backLabel()}
+                  ← {backLabel()}
                 </Link>
               </div>
 
