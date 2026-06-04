@@ -5,12 +5,6 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 
-type DashboardCar = {
-  id: number;
-  name: string;
-  colour: string | null;
-};
-
 type DrainOutRecord = {
   id: string;
   car_id: number;
@@ -24,46 +18,36 @@ type DrainOutRecord = {
 };
 
 type EngineerAllocation = {
+  id: string;
   carId: number;
   driverName: string;
   engineerName: string;
   engineerEmail: string;
-  engineerRole: string;
 };
 
 const RIG_OPTIONS = ["Rig 1", "Rig 2"] as const;
 
-/*
-  Engineer / car / driver allocation.
-
-  Selecting the engineer now controls:
-  - the active car ID
-  - the driver name shown on the page
-  - the car/driver label saved to Supabase
-  - the car/driver label sent to the email API
-  - the previous reports shown below
-*/
 const ENGINEER_ALLOCATIONS: EngineerAllocation[] = [
   {
+    id: "car-1",
     carId: 1,
     driverName: "Rehm",
     engineerName: "Engineer Car 1",
     engineerEmail: process.env.NEXT_PUBLIC_DRAIN_OUT_ENGINEER_EMAIL_CAR_1 || "",
-    engineerRole: "Car 1 Engineer",
   },
   {
+    id: "car-2",
     carId: 2,
     driverName: "Molnar",
     engineerName: "Engineer Car 2",
     engineerEmail: process.env.NEXT_PUBLIC_DRAIN_OUT_ENGINEER_EMAIL_CAR_2 || "",
-    engineerRole: "Car 2 Engineer",
   },
   {
+    id: "car-3",
     carId: 3,
     driverName: "Pulling",
     engineerName: "Engineer Car 3",
     engineerEmail: process.env.NEXT_PUBLIC_DRAIN_OUT_ENGINEER_EMAIL_CAR_3 || "",
-    engineerRole: "Car 3 Engineer",
   },
 ].filter((allocation) => allocation.engineerEmail.trim().length > 0);
 
@@ -82,19 +66,22 @@ function formatDate(value: string | null) {
   });
 }
 
+function getInitialAllocationId(routeCarId: number) {
+  const routeAllocation = ENGINEER_ALLOCATIONS.find(
+    (allocation) => allocation.carId === routeCarId,
+  );
+
+  return routeAllocation?.id || ENGINEER_ALLOCATIONS[0]?.id || "";
+}
+
 export default function DrainOutPage() {
   const params = useParams();
   const routeCarId = Number(params.carId);
 
-  const [selectedCarId, setSelectedCarId] = useState<number>(() => {
-    if (Number.isFinite(routeCarId) && routeCarId > 0) {
-      return routeCarId;
-    }
+  const [selectedAllocationId, setSelectedAllocationId] = useState(() =>
+    getInitialAllocationId(routeCarId),
+  );
 
-    return ENGINEER_ALLOCATIONS[0]?.carId || 1;
-  });
-
-  const [car, setCar] = useState<DashboardCar | null>(null);
   const [rig, setRig] = useState<(typeof RIG_OPTIONS)[number]>("Rig 1");
   const [drainOutFigure, setDrainOutFigure] = useState("");
   const units = "kg";
@@ -110,88 +97,87 @@ export default function DrainOutPage() {
   const selectedAllocation = useMemo(() => {
     return (
       ENGINEER_ALLOCATIONS.find(
-        (allocation) => allocation.carId === selectedCarId,
-      ) || ENGINEER_ALLOCATIONS[0] || null
+        (allocation) => allocation.id === selectedAllocationId,
+      ) ||
+      ENGINEER_ALLOCATIONS[0] ||
+      null
     );
-  }, [selectedCarId]);
+  }, [selectedAllocationId]);
 
-  const activeCarId = selectedAllocation?.carId || selectedCarId || routeCarId;
-  const driverName = selectedAllocation?.driverName || `Car ${activeCarId}`;
-  const carDisplayLabel = `Car ${activeCarId} - ${driverName}`;
-  const dashboardCarLabel = car?.name || `Car ${activeCarId}`;
+  const activeCarId = selectedAllocation?.carId ?? 0;
+  const activeDriverName = selectedAllocation?.driverName ?? "Unknown Driver";
+  const activeEngineerName =
+    selectedAllocation?.engineerName ?? "No engineer selected";
+  const activeEngineerEmail = selectedAllocation?.engineerEmail ?? "";
+  const carDisplayLabel = activeCarId
+    ? `Car ${activeCarId} - ${activeDriverName}`
+    : "No car selected";
 
   const numericDrainOut = useMemo(() => {
     const value = Number(drainOutFigure);
     return Number.isFinite(value) ? value : null;
   }, [drainOutFigure]);
 
-  async function loadPageData(carIdToLoad: number) {
-    if (!Number.isFinite(carIdToLoad) || carIdToLoad <= 0) {
-      setErrorMessage("Invalid car ID selected.");
+  useEffect(() => {
+    const nextAllocationId = getInitialAllocationId(routeCarId);
+
+    if (nextAllocationId) {
+      setSelectedAllocationId(nextAllocationId);
+    }
+  }, [routeCarId]);
+
+  useEffect(() => {
+    async function loadPageData() {
+      if (!selectedAllocation) {
+        setLoading(false);
+        setErrorMessage(
+          "No engineer allocations are configured. Add NEXT_PUBLIC_DRAIN_OUT_ENGINEER_EMAIL_CAR_1, NEXT_PUBLIC_DRAIN_OUT_ENGINEER_EMAIL_CAR_2 and NEXT_PUBLIC_DRAIN_OUT_ENGINEER_EMAIL_CAR_3 in Vercel.",
+        );
+        return;
+      }
+
+      setLoading(true);
+      setMessage("");
+      setErrorMessage("");
+
+      const { data: userData } = await supabase.auth.getUser();
+      setCreatedBy(userData.user?.email ?? null);
+
+      const { data: recordData, error: recordError } = await supabase
+        .from("drain_out_reports")
+        .select("*")
+        .eq("car_id", selectedAllocation.carId)
+        .order("created_at", { ascending: false });
+
+      if (recordError) {
+        setErrorMessage(recordError.message);
+        setLoading(false);
+        return;
+      }
+
+      setRecords((recordData ?? []) as DrainOutRecord[]);
       setLoading(false);
-      return;
     }
 
-    setLoading(true);
-    setMessage("");
-    setErrorMessage("");
+    loadPageData();
+  }, [selectedAllocation]);
 
-    const { data: userData } = await supabase.auth.getUser();
-    const email = userData.user?.email ?? null;
-    setCreatedBy(email);
-
-    const { data: carData, error: carError } = await supabase
-      .from("dashboard_cars")
-      .select("id,name,colour")
-      .eq("id", carIdToLoad)
-      .maybeSingle();
-
-    if (!carError && carData) {
-      setCar(carData as DashboardCar);
-    } else {
-      setCar(null);
-    }
+  async function reloadRecordsForActiveCar() {
+    if (!selectedAllocation) return;
 
     const { data: recordData, error: recordError } = await supabase
       .from("drain_out_reports")
       .select("*")
-      .eq("car_id", carIdToLoad)
+      .eq("car_id", selectedAllocation.carId)
       .order("created_at", { ascending: false });
 
     if (recordError) {
       setErrorMessage(recordError.message);
-      setLoading(false);
       return;
     }
 
     setRecords((recordData ?? []) as DrainOutRecord[]);
-    setLoading(false);
   }
-
-  useEffect(() => {
-    if (ENGINEER_ALLOCATIONS.length === 0) {
-      setLoading(false);
-      setErrorMessage(
-        "No engineers are configured. Add NEXT_PUBLIC_DRAIN_OUT_ENGINEER_EMAIL_CAR_1, _CAR_2 and _CAR_3 in Vercel.",
-      );
-      return;
-    }
-
-    const allocationForRoute =
-      ENGINEER_ALLOCATIONS.find(
-        (allocation) => allocation.carId === routeCarId,
-      ) || ENGINEER_ALLOCATIONS[0];
-
-    setSelectedCarId(allocationForRoute.carId);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [routeCarId]);
-
-  useEffect(() => {
-    if (!selectedAllocation) return;
-
-    loadPageData(selectedAllocation.carId);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedAllocation?.carId]);
 
   async function submitDrainOut() {
     setMessage("");
@@ -199,11 +185,6 @@ export default function DrainOutPage() {
 
     if (!selectedAllocation) {
       setErrorMessage("Select an engineer to notify.");
-      return;
-    }
-
-    if (!Number.isFinite(activeCarId) || activeCarId <= 0) {
-      setErrorMessage("Invalid car selected.");
       return;
     }
 
@@ -216,7 +197,7 @@ export default function DrainOutPage() {
 
     try {
       const payload = {
-        car_id: activeCarId,
+        car_id: selectedAllocation.carId,
         car_name: carDisplayLabel,
         rig,
         drain_out_figure: numericDrainOut,
@@ -242,7 +223,7 @@ export default function DrainOutPage() {
         },
         body: JSON.stringify({
           ...inserted,
-          car_id: activeCarId,
+          car_id: selectedAllocation.carId,
           car_name: carDisplayLabel,
           engineer_name: selectedAllocation.engineerName,
           engineer_email: selectedAllocation.engineerEmail,
@@ -268,12 +249,12 @@ export default function DrainOutPage() {
       }
 
       setMessage(
-        `Drain out report submitted for ${carDisplayLabel} and sent to ${selectedAllocation.engineerName}.`,
+        `Drain out report submitted for ${carDisplayLabel} and sent to ${selectedAllocation.engineerEmail}.`,
       );
 
       setDrainOutFigure("");
       setNotes("");
-      await loadPageData(activeCarId);
+      await reloadRecordsForActiveCar();
     } catch (error) {
       setErrorMessage(
         error instanceof Error
@@ -308,19 +289,13 @@ export default function DrainOutPage() {
               </h1>
 
               <p className="mt-2 text-sm text-zinc-400">
-                Select the engineer allocation first. The page will then use the
-                matching car and driver for the drain out report.
+                Select the engineer allocation. The selected engineer controls
+                the car number, driver name and email recipient.
               </p>
-
-              {dashboardCarLabel !== carDisplayLabel && (
-                <p className="mt-2 text-xs text-zinc-500">
-                  Dashboard car label: {dashboardCarLabel}
-                </p>
-              )}
             </div>
 
             <Link
-              href={`/car/${activeCarId}/job-list`}
+              href={`/car/${activeCarId || routeCarId}/job-list`}
               className="rounded-xl border border-zinc-700 bg-[#1b2026] px-5 py-3 text-sm font-semibold text-zinc-200 hover:border-red-500 hover:text-red-300"
             >
               Back to Job List
@@ -351,8 +326,8 @@ export default function DrainOutPage() {
 
               <p className="mt-2 max-w-3xl text-sm text-zinc-400">
                 Choose the engineer, choose the rig, enter the drain out figure
-                in kg, then submit. The selected engineer determines the car and
-                driver used for the report.
+                in kg, then submit. The preview below shows exactly what will be
+                sent.
               </p>
             </div>
 
@@ -361,7 +336,7 @@ export default function DrainOutPage() {
                 Car / Driver
               </p>
               <p className="mt-1 text-lg font-semibold text-zinc-100">
-                {carDisplayLabel}
+                Car {activeCarId} - {activeDriverName}
               </p>
             </div>
           </div>
@@ -373,9 +348,9 @@ export default function DrainOutPage() {
               </span>
 
               <select
-                value={selectedAllocation?.carId || ""}
+                value={selectedAllocationId}
                 onChange={(event) => {
-                  setSelectedCarId(Number(event.target.value));
+                  setSelectedAllocationId(event.target.value);
                   setDrainOutFigure("");
                   setNotes("");
                   setMessage("");
@@ -387,7 +362,7 @@ export default function DrainOutPage() {
                   <option value="">No engineers configured</option>
                 ) : (
                   ENGINEER_ALLOCATIONS.map((allocation) => (
-                    <option key={allocation.carId} value={allocation.carId}>
+                    <option key={allocation.id} value={allocation.id}>
                       {allocation.engineerName} — Car {allocation.carId} —{" "}
                       {allocation.driverName}
                     </option>
@@ -444,19 +419,17 @@ export default function DrainOutPage() {
           {selectedAllocation && (
             <div className="mt-4 rounded-2xl border border-zinc-800 bg-[#101317] p-4">
               <p className="text-xs uppercase tracking-[0.25em] text-zinc-500">
-                Selected Allocation
+                Selected Notification Target
               </p>
 
               <div className="mt-2 flex flex-wrap items-center justify-between gap-3">
                 <div>
                   <p className="font-semibold text-zinc-100">
-                    {selectedAllocation.engineerName}
+                    Car {selectedAllocation.carId} -{" "}
+                    {selectedAllocation.driverName}
                   </p>
                   <p className="text-sm text-zinc-400">
-                    {selectedAllocation.engineerRole} · Car{" "}
-                    {selectedAllocation.carId} · {selectedAllocation.driverName}
-                  </p>
-                  <p className="mt-1 text-xs text-zinc-500">
+                    {selectedAllocation.engineerName} ·{" "}
                     {selectedAllocation.engineerEmail}
                   </p>
                 </div>
@@ -488,8 +461,8 @@ export default function DrainOutPage() {
               </p>
 
               <p className="mt-2 text-sm text-zinc-300">
-                {selectedAllocation?.engineerName || "No engineer"} ·{" "}
-                {carDisplayLabel} · {rig} ·{" "}
+                Car {activeCarId} · {activeDriverName} · {activeEngineerEmail} ·{" "}
+                {rig} ·{" "}
                 <span className="font-bold text-red-300">
                   {numericDrainOut !== null
                     ? `${numericDrainOut} ${units}`
@@ -510,15 +483,13 @@ export default function DrainOutPage() {
         </section>
 
         <section className="mt-8 rounded-3xl border border-zinc-800 bg-[#14181d] p-6">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <h2 className="text-2xl font-semibold">
-                Previous Drain Out Reports
-              </h2>
-              <p className="mt-1 text-sm text-zinc-500">
-                Showing saved reports for {carDisplayLabel}.
-              </p>
-            </div>
+          <div>
+            <h2 className="text-2xl font-semibold">
+              Previous Drain Out Reports
+            </h2>
+            <p className="mt-1 text-sm text-zinc-500">
+              Showing saved reports for Car {activeCarId} - {activeDriverName}.
+            </p>
           </div>
 
           <div className="mt-4 overflow-x-auto rounded-2xl border border-zinc-800">
@@ -541,7 +512,8 @@ export default function DrainOutPage() {
                       colSpan={6}
                       className="px-4 py-6 text-center text-zinc-500"
                     >
-                      No drain out reports saved yet for {carDisplayLabel}.
+                      No drain out reports saved yet for Car {activeCarId} -{" "}
+                      {activeDriverName}.
                     </td>
                   </tr>
                 ) : (
