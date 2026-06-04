@@ -31,18 +31,6 @@ type CarDrainOutAllocation = {
 
 const RIG_OPTIONS = ["Rig 1", "Rig 2"] as const;
 
-const SESSION_OPTIONS = [
-  "FP1",
-  "FP2",
-  "FP3",
-  "Qualifying",
-  "Race 1",
-  "Race 2",
-  "Race 3",
-  "Test",
-  "Other",
-] as const;
-
 const CIRCUIT_OPTIONS = [
   "Oulton Park",
   "Silverstone",
@@ -126,9 +114,7 @@ export default function DrainOutPage() {
   );
 
   const [reportDate, setReportDate] = useState(getTodayIsoDate());
-  const [session, setSession] =
-    useState<(typeof SESSION_OPTIONS)[number]>("FP1");
-  const [customSession, setCustomSession] = useState("");
+  const [session, setSession] = useState("");
 
   const [circuit, setCircuit] =
     useState<(typeof CIRCUIT_OPTIONS)[number]>("Oulton Park");
@@ -172,9 +158,8 @@ export default function DrainOutPage() {
   const selectedCarHasEmail = activeEngineerEmail.trim().length > 0;
 
   const finalSession = useMemo(() => {
-    if (session === "Other") return customSession.trim();
-    return session;
-  }, [session, customSession]);
+    return session.trim();
+  }, [session]);
 
   const finalCircuit = useMemo(() => {
     if (circuit === "Other") return customCircuit.trim();
@@ -499,22 +484,12 @@ export default function DrainOutPage() {
                   Session
                 </span>
 
-                <select
+                <input
                   value={session}
-                  onChange={(event) => {
-                    setSession(
-                      event.target.value as (typeof SESSION_OPTIONS)[number],
-                    );
-                    setCustomSession("");
-                  }}
+                  onChange={(event) => setSession(event.target.value)}
+                  placeholder="e.g. FP1, Qualifying, Race 1, Test Day"
                   className="w-full rounded-xl border border-zinc-700 bg-[#0d0f12] px-4 py-3 text-sm text-zinc-100 outline-none focus:border-red-500"
-                >
-                  {SESSION_OPTIONS.map((option) => (
-                    <option key={option} value={option}>
-                      {option}
-                    </option>
-                  ))}
-                </select>
+                />
               </label>
 
               <label>
@@ -541,37 +516,20 @@ export default function DrainOutPage() {
               </label>
             </div>
 
-            {(session === "Other" || circuit === "Other") && (
-              <div className="mt-4 grid gap-4 md:grid-cols-2">
-                {session === "Other" && (
-                  <label>
-                    <span className="mb-2 block text-xs font-semibold uppercase tracking-[0.2em] text-zinc-500">
-                      Custom Session
-                    </span>
+            {circuit === "Other" && (
+              <div className="mt-4">
+                <label>
+                  <span className="mb-2 block text-xs font-semibold uppercase tracking-[0.2em] text-zinc-500">
+                    Custom Circuit
+                  </span>
 
-                    <input
-                      value={customSession}
-                      onChange={(event) => setCustomSession(event.target.value)}
-                      placeholder="e.g. Warm-up"
-                      className="w-full rounded-xl border border-zinc-700 bg-[#0d0f12] px-4 py-3 text-sm text-zinc-100 outline-none focus:border-red-500"
-                    />
-                  </label>
-                )}
-
-                {circuit === "Other" && (
-                  <label>
-                    <span className="mb-2 block text-xs font-semibold uppercase tracking-[0.2em] text-zinc-500">
-                      Custom Circuit
-                    </span>
-
-                    <input
-                      value={customCircuit}
-                      onChange={(event) => setCustomCircuit(event.target.value)}
-                      placeholder="e.g. Red Bull Ring"
-                      className="w-full rounded-xl border border-zinc-700 bg-[#0d0f12] px-4 py-3 text-sm text-zinc-100 outline-none focus:border-red-500"
-                    />
-                  </label>
-                )}
+                  <input
+                    value={customCircuit}
+                    onChange={(event) => setCustomCircuit(event.target.value)}
+                    placeholder="e.g. Red Bull Ring"
+                    className="w-full rounded-xl border border-zinc-700 bg-[#0d0f12] px-4 py-3 text-sm text-zinc-100 outline-none focus:border-red-500"
+                  />
+                </label>
               </div>
             )}
           </div>
