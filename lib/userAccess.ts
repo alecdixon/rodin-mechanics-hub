@@ -21,7 +21,9 @@ export type Permission =
   | "post_event:edit"
   | "clutch:view"
   | "clutch:edit"
-  | "calendar:manage";
+  | "calendar:manage"
+  | "drain_out:view"
+  | "drain_out:manage";
 
 type UserAccess = {
   role: UserRole;
@@ -46,6 +48,8 @@ const ALL_PERMISSIONS: Permission[] = [
   "clutch:view",
   "clutch:edit",
   "calendar:manage",
+  "drain_out:view",
+  "drain_out:manage",
 ];
 
 const NUMBER1_MECHANIC_PERMISSIONS: Permission[] = [
@@ -59,11 +63,13 @@ const NUMBER1_MECHANIC_PERMISSIONS: Permission[] = [
   "post_event:edit",
   "clutch:view",
   "clutch:edit",
+  "drain_out:view",
 ];
 
 const NUMBER2_MECHANIC_PERMISSIONS: Permission[] = [
   "team_jobs:view",
   "team_jobs:complete",
+  "drain_out:view",
 ];
 
 const ENGINEER_PERMISSIONS: Permission[] = [
@@ -101,14 +107,15 @@ const USER_ACCESS: Record<string, UserAccess> = {
 
   /*
    * Number 2 mechanics.
-   * Add their real login emails here.
-   * They will only be able to access /team-jobs.
+   * These users now land on /drain-out first after login.
+   * They can then use the Team Jobs button on the drain-out page.
    */
   "ben.southern@rodinmotorsport.com": {
     role: "number2_mechanic",
     assignedCar: null,
     permissions: NUMBER2_MECHANIC_PERMISSIONS,
   },
+
   "charlie.lawman@rodinmotorsport.com": {
     role: "number2_mechanic",
     assignedCar: null,
@@ -132,9 +139,7 @@ export function normaliseEmail(email: string | null | undefined): string {
   return email?.trim().toLowerCase() ?? "";
 }
 
-export function getUserAccess(
-  email: string | null | undefined,
-): UserAccess {
+export function getUserAccess(email: string | null | undefined): UserAccess {
   const cleanEmail = normaliseEmail(email);
 
   return (
@@ -199,6 +204,14 @@ export function canManageTeamJobs(email: string | null | undefined): boolean {
   );
 }
 
+export function canAccessDrainOut(email: string | null | undefined): boolean {
+  return hasPermission(email, "drain_out:view");
+}
+
+export function canManageDrainOut(email: string | null | undefined): boolean {
+  return hasPermission(email, "drain_out:manage");
+}
+
 export function canAccessCarPages(
   email: string | null | undefined,
   carId: number,
@@ -232,7 +245,7 @@ export function getLoginRedirect(email: string | null | undefined): string {
   }
 
   if (access.role === "number2_mechanic") {
-    return "/team-jobs";
+    return "/drain-out";
   }
 
   if (access.role === "engineer") {
