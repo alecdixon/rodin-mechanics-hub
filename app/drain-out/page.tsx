@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { supabase } from "@/lib/supabase";
+import { getUserRole, type UserRole } from "@/lib/userAccess";
 
 type DrainOutRecord = {
   id: string;
@@ -54,7 +55,10 @@ function formatDate(value: string | null) {
   if (!value) return "—";
 
   const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
+
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
 
   return date.toLocaleString("en-GB", {
     day: "2-digit",
@@ -66,6 +70,8 @@ function formatDate(value: string | null) {
 }
 
 export default function DrainOutPage() {
+  const [userRole, setUserRole] = useState<UserRole>("unknown");
+
   const [selectedAllocationId, setSelectedAllocationId] = useState(
     CAR_ALLOCATIONS[0]?.id || "",
   );
@@ -79,6 +85,7 @@ export default function DrainOutPage() {
   const [records, setRecords] = useState<DrainOutRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+
   const [message, setMessage] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
 
@@ -103,6 +110,9 @@ export default function DrainOutPage() {
     : "No car selected";
 
   const selectedCarHasEmail = activeEngineerEmail.trim().length > 0;
+
+  const showChiefDashboardButton =
+    userRole === "chief_mechanic" || userRole === "engineer";
 
   const numericDrainOut = useMemo(() => {
     const value = Number(drainOutFigure);
@@ -136,7 +146,10 @@ export default function DrainOutPage() {
       setErrorMessage("");
 
       const { data: userData } = await supabase.auth.getUser();
-      setCreatedBy(userData.user?.email ?? null);
+      const email = userData.user?.email ?? null;
+
+      setCreatedBy(email);
+      setUserRole(getUserRole(email));
 
       if (selectedAllocation) {
         await loadRecordsForCar(selectedAllocation.carId);
@@ -280,12 +293,14 @@ export default function DrainOutPage() {
                 Team Jobs
               </Link>
 
-              <Link
-                href="/dashboard"
-                className="rounded-xl border border-zinc-700 bg-[#1b2026] px-5 py-3 text-sm font-semibold text-zinc-200 transition hover:border-red-500 hover:text-red-300"
-              >
-                Chief Dashboard
-              </Link>
+              {showChiefDashboardButton && (
+                <Link
+                  href="/dashboard"
+                  className="rounded-xl border border-zinc-700 bg-[#1b2026] px-5 py-3 text-sm font-semibold text-zinc-200 transition hover:border-red-500 hover:text-red-300"
+                >
+                  Chief Dashboard
+                </Link>
+              )}
             </div>
           </div>
         </header>
