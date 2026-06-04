@@ -150,7 +150,27 @@ export default function TeamJobsPage() {
       return `/car/${assignedCar}/job-list`;
     }
 
-    return "/team-jobs";
+    if (userRole === "number2_mechanic") {
+      return "/drain-out";
+    }
+
+    return "/login";
+  }
+
+  function backLabel() {
+    if (userRole === "number2_mechanic") {
+      return "← Back to Drain Out";
+    }
+
+    if (userRole === "number1_mechanic") {
+      return "← Back to Car Jobs";
+    }
+
+    if (userRole === "chief_mechanic" || userRole === "engineer") {
+      return "← Back to Dashboard";
+    }
+
+    return "← Back";
   }
 
   function priorityClass(priority: Priority) {
@@ -312,14 +332,23 @@ export default function TeamJobsPage() {
     <main className="min-h-screen bg-black p-6 text-white">
       <div className="mx-auto max-w-5xl">
         <header className="mb-6 rounded-3xl border border-neutral-800 bg-neutral-950 p-6">
-          <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+          <div className="flex flex-col gap-5 md:flex-row md:items-start md:justify-between">
             <div>
-              <Link
-                href={backHref()}
-                className="text-sm text-red-400 hover:text-red-300"
-              >
-                ← Back
-              </Link>
+              <div className="flex flex-wrap gap-3">
+                <Link
+                  href="/drain-out"
+                  className="rounded-xl border border-red-600 bg-red-700 px-5 py-3 text-sm font-semibold text-white shadow-lg shadow-red-950/30 transition hover:border-red-400 hover:bg-red-600"
+                >
+                  Drain Out
+                </Link>
+
+                <Link
+                  href={backHref()}
+                  className="rounded-xl border border-neutral-700 bg-neutral-900 px-5 py-3 text-sm font-semibold text-neutral-200 transition hover:border-red-500 hover:text-red-300"
+                >
+                  {backLabel()}
+                </Link>
+              </div>
 
               <p className="mt-5 text-xs uppercase tracking-[0.35em] text-red-500">
                 Rodin Motorsport
