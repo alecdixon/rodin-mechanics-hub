@@ -1345,9 +1345,20 @@ export default function DashboardPage() {
 
           <div className="flex flex-wrap gap-3">
             <Link
+              href="/car/1/drain-out"
+              className="rounded-xl border border-red-600 bg-red-700 px-5 py-3 text-sm font-semibold text-white shadow-lg shadow-red-950/30 hover:border-red-400 hover:bg-red-600"
+            >
+              Drain Out
+              <span className="ml-2 text-xs font-normal text-red-100">
+                Select engineer / car
+              </span>
+            </Link>
+
+            <Link
               href="/dashboard/team-jobs"
               className="rounded-xl border border-red-800 bg-red-950/30 px-5 py-3 text-sm font-semibold text-red-200 hover:border-red-500 hover:bg-red-950/50"
-            >
+            > 
+
               Team Jobs
             </Link>
 
@@ -1355,12 +1366,12 @@ export default function DashboardPage() {
               type="button"
               onClick={() => setCarSettingsOpen((current) => !current)}
               className="rounded-xl border border-zinc-700 bg-[#1b2026] px-5 py-3 text-sm font-semibold text-zinc-200 hover:border-red-500 hover:bg-[#222832]"
-            >
-              {carSettingsOpen ? "Hide Car Settings" : "Manage Cars"}
-            </button>
+          >
+            {carSettingsOpen ? "Hide Car Settings" : "Manage Cars"}
+          </button>
 
-            <LogoutButton />
-          </div>
+        <LogoutButton />
+      </div>
         </div>
       </header>
 
