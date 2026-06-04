@@ -5,14 +5,22 @@ export const runtime = "nodejs";
 
 type DrainOutPayload = {
   id?: string;
+
   car_id: number;
   car_name?: string | null;
+
   rig: string;
   drain_out_figure: number;
   units: string;
+
+  report_date?: string | null;
+  session?: string | null;
+  circuit?: string | null;
+
   notes?: string | null;
   created_by?: string | null;
   created_at?: string | null;
+
   engineer_name?: string | null;
   engineer_email?: string | null;
 };
@@ -38,6 +46,38 @@ function escapeHtml(value: string | number | null | undefined) {
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#039;");
+}
+
+function formatReportDate(value: string | null | undefined) {
+  if (!value) return "Not supplied";
+
+  const date = new Date(`${value}T00:00:00`);
+
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+
+  return date.toLocaleDateString("en-GB", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+  });
+}
+
+function formatSubmittedAt(value: string | null | undefined) {
+  const date = value ? new Date(value) : new Date();
+
+  if (Number.isNaN(date.getTime())) {
+    return value || new Date().toISOString();
+  }
+
+  return date.toLocaleString("en-GB", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
 }
 
 function buildFriendlyEmailError(rawMessage: string) {
@@ -170,10 +210,19 @@ export async function POST(request: Request) {
 
     const engineerName = clean(payload.engineer_name) || "Selected Engineer";
     const carLabel = payload.car_name || `Car ${payload.car_id}`;
+
+    const reportDate = formatReportDate(payload.report_date);
+    const session = clean(payload.session) || "Not supplied";
+    const circuit = clean(payload.circuit) || "Not supplied";
+
     const units = payload.units || "kg";
     const figure = `${payload.drain_out_figure} ${units}`.trim();
-    const submittedAt = payload.created_at || new Date().toISOString();
+
+    const submittedAtRaw = payload.created_at || new Date().toISOString();
+    const submittedAtFormatted = formatSubmittedAt(submittedAtRaw);
+
     const notes = payload.notes || "-";
+    const submittedBy = payload.created_by || "Unknown";
 
     const transporter = nodemailer.createTransport({
       service: "gmail",
@@ -186,70 +235,138 @@ export async function POST(request: Request) {
     await transporter.sendMail({
       from: `"Drain Out Reports" <${gmailUser}>`,
       to,
-      subject: `Drain Out Report - ${carLabel} - ${payload.rig} - ${figure}`,
+      subject: `Drain Out - ${circuit} - ${session} - ${carLabel} - ${figure}`,
       text: [
         "Drain Out Report",
         "",
         `Sent to: ${engineerName} <${to}>`,
         "",
+        "Event Details",
+        `Date: ${reportDate}`,
+        `Circuit: ${circuit}`,
+        `Session: ${session}`,
+        "",
+        "Measurement",
         `Car: ${carLabel}`,
         `Car ID: ${payload.car_id}`,
         `Rig: ${payload.rig}`,
         `Drain out figure: ${figure}`,
-        `Submitted by: ${payload.created_by || "Unknown"}`,
-        `Submitted at: ${submittedAt}`,
+        "",
+        "Submission Details",
+        `Submitted by: ${submittedBy}`,
+        `Submitted at: ${submittedAtFormatted}`,
         "",
         `Notes: ${notes}`,
       ].join("\n"),
       html: `
-        <div style="font-family:Arial,sans-serif;line-height:1.5;color:#111">
-          <div style="max-width:680px;border:1px solid #ddd;border-radius:12px;overflow:hidden">
-            <div style="background:#111827;color:white;padding:18px 22px">
-              <h2 style="margin:0;font-size:22px">Drain Out Report</h2>
-              <p style="margin:6px 0 0;color:#d1d5db">
-                ${escapeHtml(carLabel)} · ${escapeHtml(payload.rig)} · ${escapeHtml(figure)}
+        <div style="font-family:Arial,sans-serif;line-height:1.5;color:#111;background:#f6f7f9;padding:24px">
+          <div style="max-width:720px;margin:0 auto;border:1px solid #ddd;border-radius:14px;overflow:hidden;background:#ffffff">
+            <div style="background:#111827;color:white;padding:20px 24px">
+              <p style="margin:0 0 6px;color:#f87171;font-size:12px;letter-spacing:0.18em;text-transform:uppercase;font-weight:bold">
+                Drain Out Report
+              </p>
+
+              <h2 style="margin:0;font-size:24px">
+                ${escapeHtml(carLabel)}
+              </h2>
+
+              <p style="margin:8px 0 0;color:#d1d5db">
+                ${escapeHtml(circuit)} · ${escapeHtml(session)} · ${escapeHtml(payload.rig)} · ${escapeHtml(figure)}
               </p>
             </div>
 
-            <div style="padding:20px 22px">
-              <table style="border-collapse:collapse;width:100%;font-size:14px">
-                <tr>
-                  <td style="padding:8px 10px;font-weight:bold;border-bottom:1px solid #eee;width:170px">Engineer</td>
-                  <td style="padding:8px 10px;border-bottom:1px solid #eee">${escapeHtml(engineerName)}</td>
-                </tr>
-                <tr>
-                  <td style="padding:8px 10px;font-weight:bold;border-bottom:1px solid #eee">Engineer Email</td>
-                  <td style="padding:8px 10px;border-bottom:1px solid #eee">${escapeHtml(to)}</td>
-                </tr>
-                <tr>
-                  <td style="padding:8px 10px;font-weight:bold;border-bottom:1px solid #eee">Car</td>
-                  <td style="padding:8px 10px;border-bottom:1px solid #eee">${escapeHtml(carLabel)}</td>
-                </tr>
-                <tr>
-                  <td style="padding:8px 10px;font-weight:bold;border-bottom:1px solid #eee">Car ID</td>
-                  <td style="padding:8px 10px;border-bottom:1px solid #eee">${escapeHtml(payload.car_id)}</td>
-                </tr>
-                <tr>
-                  <td style="padding:8px 10px;font-weight:bold;border-bottom:1px solid #eee">Rig</td>
-                  <td style="padding:8px 10px;border-bottom:1px solid #eee">${escapeHtml(payload.rig)}</td>
-                </tr>
-                <tr>
-                  <td style="padding:8px 10px;font-weight:bold;border-bottom:1px solid #eee">Drain Out Figure</td>
-                  <td style="padding:8px 10px;border-bottom:1px solid #eee"><strong>${escapeHtml(figure)}</strong></td>
-                </tr>
-                <tr>
-                  <td style="padding:8px 10px;font-weight:bold;border-bottom:1px solid #eee">Submitted By</td>
-                  <td style="padding:8px 10px;border-bottom:1px solid #eee">${escapeHtml(payload.created_by || "Unknown")}</td>
-                </tr>
-                <tr>
-                  <td style="padding:8px 10px;font-weight:bold;border-bottom:1px solid #eee">Submitted At</td>
-                  <td style="padding:8px 10px;border-bottom:1px solid #eee">${escapeHtml(submittedAt)}</td>
-                </tr>
-                <tr>
-                  <td style="padding:8px 10px;font-weight:bold;vertical-align:top">Notes</td>
-                  <td style="padding:8px 10px">${escapeHtml(notes)}</td>
-                </tr>
-              </table>
+            <div style="padding:22px 24px">
+              <div style="margin-bottom:22px">
+                <h3 style="margin:0 0 10px;font-size:16px;color:#111827">
+                  Event Details
+                </h3>
+
+                <table style="border-collapse:collapse;width:100%;font-size:14px">
+                  <tr>
+                    <td style="padding:9px 10px;font-weight:bold;border-bottom:1px solid #eee;width:180px">Date</td>
+                    <td style="padding:9px 10px;border-bottom:1px solid #eee">${escapeHtml(reportDate)}</td>
+                  </tr>
+                  <tr>
+                    <td style="padding:9px 10px;font-weight:bold;border-bottom:1px solid #eee">Circuit</td>
+                    <td style="padding:9px 10px;border-bottom:1px solid #eee">${escapeHtml(circuit)}</td>
+                  </tr>
+                  <tr>
+                    <td style="padding:9px 10px;font-weight:bold;border-bottom:1px solid #eee">Session</td>
+                    <td style="padding:9px 10px;border-bottom:1px solid #eee">${escapeHtml(session)}</td>
+                  </tr>
+                </table>
+              </div>
+
+              <div style="margin-bottom:22px">
+                <h3 style="margin:0 0 10px;font-size:16px;color:#111827">
+                  Measurement
+                </h3>
+
+                <table style="border-collapse:collapse;width:100%;font-size:14px">
+                  <tr>
+                    <td style="padding:9px 10px;font-weight:bold;border-bottom:1px solid #eee;width:180px">Car</td>
+                    <td style="padding:9px 10px;border-bottom:1px solid #eee">${escapeHtml(carLabel)}</td>
+                  </tr>
+                  <tr>
+                    <td style="padding:9px 10px;font-weight:bold;border-bottom:1px solid #eee">Car ID</td>
+                    <td style="padding:9px 10px;border-bottom:1px solid #eee">${escapeHtml(payload.car_id)}</td>
+                  </tr>
+                  <tr>
+                    <td style="padding:9px 10px;font-weight:bold;border-bottom:1px solid #eee">Rig</td>
+                    <td style="padding:9px 10px;border-bottom:1px solid #eee">${escapeHtml(payload.rig)}</td>
+                  </tr>
+                  <tr>
+                    <td style="padding:9px 10px;font-weight:bold;border-bottom:1px solid #eee">Drain Out Figure</td>
+                    <td style="padding:9px 10px;border-bottom:1px solid #eee">
+                      <strong style="color:#b91c1c">${escapeHtml(figure)}</strong>
+                    </td>
+                  </tr>
+                </table>
+              </div>
+
+              <div style="margin-bottom:22px">
+                <h3 style="margin:0 0 10px;font-size:16px;color:#111827">
+                  Engineer Notification
+                </h3>
+
+                <table style="border-collapse:collapse;width:100%;font-size:14px">
+                  <tr>
+                    <td style="padding:9px 10px;font-weight:bold;border-bottom:1px solid #eee;width:180px">Engineer</td>
+                    <td style="padding:9px 10px;border-bottom:1px solid #eee">${escapeHtml(engineerName)}</td>
+                  </tr>
+                  <tr>
+                    <td style="padding:9px 10px;font-weight:bold;border-bottom:1px solid #eee">Engineer Email</td>
+                    <td style="padding:9px 10px;border-bottom:1px solid #eee">${escapeHtml(to)}</td>
+                  </tr>
+                </table>
+              </div>
+
+              <div style="margin-bottom:22px">
+                <h3 style="margin:0 0 10px;font-size:16px;color:#111827">
+                  Submission Details
+                </h3>
+
+                <table style="border-collapse:collapse;width:100%;font-size:14px">
+                  <tr>
+                    <td style="padding:9px 10px;font-weight:bold;border-bottom:1px solid #eee;width:180px">Submitted By</td>
+                    <td style="padding:9px 10px;border-bottom:1px solid #eee">${escapeHtml(submittedBy)}</td>
+                  </tr>
+                  <tr>
+                    <td style="padding:9px 10px;font-weight:bold;border-bottom:1px solid #eee">Submitted At</td>
+                    <td style="padding:9px 10px;border-bottom:1px solid #eee">${escapeHtml(submittedAtFormatted)}</td>
+                  </tr>
+                </table>
+              </div>
+
+              <div>
+                <h3 style="margin:0 0 10px;font-size:16px;color:#111827">
+                  Notes
+                </h3>
+
+                <div style="border:1px solid #eee;border-radius:10px;background:#f9fafb;padding:12px 14px;font-size:14px;white-space:pre-wrap">
+                  ${escapeHtml(notes)}
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -260,6 +377,9 @@ export async function POST(request: Request) {
       ok: true,
       sent_to: to,
       engineer_name: engineerName,
+      report_date: payload.report_date || null,
+      session,
+      circuit,
     });
   } catch (error) {
     const rawMessage =

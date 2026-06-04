@@ -58,6 +58,24 @@ function niceDateTime(value: string | null | undefined) {
   return date.toLocaleString("en-GB");
 }
 
+function sortJobsOpenFirst(jobs: JobRow[]) {
+  return [...jobs].sort((a, b) => {
+    const aDone = Boolean(a.done);
+    const bDone = Boolean(b.done);
+
+    if (aDone !== bDone) {
+      return aDone ? 1 : -1;
+    }
+
+    if (a.section !== b.section) {
+      if (a.section === "special") return -1;
+      if (b.section === "special") return 1;
+    }
+
+    return a.job_id - b.job_id;
+  });
+}
+
 function StatusPill({
   done,
   notes,
@@ -211,6 +229,7 @@ export default function ChiefJobListEditorPage() {
       .from("job_progress")
       .select("*")
       .eq("car_id", carId)
+      .order("done", { ascending: true })
       .order("section", { ascending: false })
       .order("job_id", { ascending: true });
 
@@ -219,7 +238,9 @@ export default function ChiefJobListEditorPage() {
       return;
     }
 
-    setJobs((data ?? []) as JobRow[]);
+    const loadedJobs = (data ?? []) as JobRow[];
+
+    setJobs(sortJobsOpenFirst(loadedJobs));
   }
 
   async function loadTemplates() {
@@ -629,15 +650,17 @@ export default function ChiefJobListEditorPage() {
     const cleanNewText = text.trim();
     const cleanPreviousText = previousText.trim();
 
-    setJobs((current) =>
-      current.map((item) =>
+    setJobs((current) => {
+      const updated = current.map((item) =>
         item.car_id === job.car_id &&
         item.job_id === job.job_id &&
         item.section === job.section
           ? { ...item, job_text: text }
           : item,
-      ),
-    );
+      );
+
+      return sortJobsOpenFirst(updated);
+    });
 
     let updateQuery = supabase
       .from("job_progress")
@@ -771,8 +794,8 @@ export default function ChiefJobListEditorPage() {
         : `Removed from standard job list: ${job.job_text}`,
     );
 
-    setJobs((current) =>
-      current.filter((item) => {
+    setJobs((current) => {
+      const filtered = current.filter((item) => {
         if (job.id && item.id) {
           return item.id !== job.id;
         }
@@ -782,8 +805,10 @@ export default function ChiefJobListEditorPage() {
           item.job_id === job.job_id &&
           item.section === job.section
         );
-      }),
-    );
+      });
+
+      return sortJobsOpenFirst(filtered);
+    });
 
     await markDraft("Job removed. Publish the job list when ready.");
     await loadJobs();
@@ -883,11 +908,16 @@ export default function ChiefJobListEditorPage() {
     setClearingAllJobs(false);
   }
 
-  const standardJobs = jobs.filter((job) => job.section === "standard");
-  const specialJobs = jobs.filter((job) => job.section === "special");
+  const standardJobs = useMemo(() => {
+    return sortJobsOpenFirst(jobs.filter((job) => job.section === "standard"));
+  }, [jobs]);
+
+  const specialJobs = useMemo(() => {
+    return sortJobsOpenFirst(jobs.filter((job) => job.section === "special"));
+  }, [jobs]);
 
   const totalJobs = jobs.length;
-  const completedJobs = jobs.filter((job) => job.done).length;
+  const completedJobs = jobs.filter((job) => Boolean(job.done)).length;
   const progress = totalJobs ? Math.round((completedJobs / totalJobs) * 100) : 0;
   const outstandingJobs = totalJobs - completedJobs;
   const noteCount = jobs.filter((job) => job.notes?.trim()).length;
@@ -1290,6 +1320,10 @@ export default function ChiefJobListEditorPage() {
               <h2 className="mt-2 text-2xl font-semibold">
                 Workshop Template Jobs
               </h2>
+
+              <p className="mt-1 text-xs text-zinc-500">
+                Open jobs are shown first. Completed jobs drop to the bottom.
+              </p>
             </div>
 
             <div className="rounded-2xl border border-zinc-700 bg-[#0d0f12] px-4 py-3 text-sm font-semibold text-red-300">
@@ -1310,7 +1344,11 @@ export default function ChiefJobListEditorPage() {
                 return (
                   <div
                     key={key}
-                    className="rounded-xl border border-zinc-800 bg-[#0d0f12] p-3"
+                    className={`rounded-xl border p-3 ${
+                      job.done
+                        ? "border-green-900/40 bg-green-950/10 opacity-70"
+                        : "border-zinc-800 bg-[#0d0f12]"
+                    }`}
                   >
                     <div className="grid grid-cols-[42px_1fr_auto] items-center gap-3">
                       <span className="text-sm text-zinc-500">{index + 1}</span>
@@ -1320,7 +1358,9 @@ export default function ChiefJobListEditorPage() {
                         onChange={(event) =>
                           updateJobText(job, event.target.value)
                         }
-                        className="w-full rounded-lg border border-transparent bg-transparent px-2 py-2 text-sm outline-none focus:border-zinc-700 focus:bg-[#14181d]"
+                        className={`w-full rounded-lg border border-transparent bg-transparent px-2 py-2 text-sm outline-none focus:border-zinc-700 focus:bg-[#14181d] ${
+                          job.done ? "text-zinc-500 line-through" : ""
+                        }`}
                       />
 
                       <button
@@ -1357,6 +1397,10 @@ export default function ChiefJobListEditorPage() {
               <h2 className="mt-2 text-2xl font-semibold text-red-100">
                 Car-Specific Work
               </h2>
+
+              <p className="mt-1 text-xs text-zinc-500">
+                Open jobs are shown first. Completed jobs drop to the bottom.
+              </p>
             </div>
 
             <div className="rounded-2xl border border-red-900/50 bg-[#0d0f12] px-4 py-3 text-sm font-semibold text-red-300">
@@ -1377,7 +1421,11 @@ export default function ChiefJobListEditorPage() {
                 return (
                   <div
                     key={key}
-                    className="rounded-xl border border-red-900/40 bg-[#0d0f12] p-3"
+                    className={`rounded-xl border p-3 ${
+                      job.done
+                        ? "border-green-900/40 bg-green-950/10 opacity-70"
+                        : "border-red-900/40 bg-[#0d0f12]"
+                    }`}
                   >
                     <div className="grid grid-cols-[42px_1fr_auto] items-center gap-3">
                       <span className="text-sm text-red-300">{index + 1}</span>
@@ -1387,7 +1435,11 @@ export default function ChiefJobListEditorPage() {
                         onChange={(event) =>
                           updateJobText(job, event.target.value)
                         }
-                        className="w-full rounded-lg border border-transparent bg-transparent px-2 py-2 text-sm text-red-100 outline-none focus:border-red-900/70 focus:bg-[#14181d]"
+                        className={`w-full rounded-lg border border-transparent bg-transparent px-2 py-2 text-sm outline-none focus:border-red-900/70 focus:bg-[#14181d] ${
+                          job.done
+                            ? "text-zinc-500 line-through"
+                            : "text-red-100"
+                        }`}
                       />
 
                       <button

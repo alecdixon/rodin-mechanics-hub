@@ -103,6 +103,19 @@ function niceDateTime(value: string | null | undefined) {
   return date.toLocaleString("en-GB");
 }
 
+function sortJobsOpenFirst(jobs: JobRow[]) {
+  return [...jobs].sort((a, b) => {
+    const aDone = Boolean(a.done);
+    const bDone = Boolean(b.done);
+
+    if (aDone !== bDone) {
+      return aDone ? 1 : -1;
+    }
+
+    return a.job_id - b.job_id;
+  });
+}
+
 function getCompletionUrgency(completionDate: string | null | undefined) {
   if (!completionDate) {
     return {
@@ -223,6 +236,7 @@ export default function MechanicJobListPage() {
         .from("job_progress")
         .select("*")
         .eq("car_id", carId)
+        .order("done", { ascending: true })
         .order("section", { ascending: false })
         .order("job_id", { ascending: true });
 
@@ -232,7 +246,7 @@ export default function MechanicJobListPage() {
         return;
       }
 
-      const cleanJobs = (data ?? []) as JobRow[];
+      const cleanJobs = sortJobsOpenFirst((data ?? []) as JobRow[]);
       setJobs(cleanJobs);
 
       const initialNotes: Record<string, string> = {};
@@ -248,18 +262,20 @@ export default function MechanicJobListPage() {
     loadPage();
   }, [carId]);
 
-  const standardJobs = useMemo(
-    () => jobs.filter((job) => job.section === "standard"),
-    [jobs],
-  );
+  const standardJobs = useMemo(() => {
+    return sortJobsOpenFirst(
+      jobs.filter((job) => job.section === "standard"),
+    );
+  }, [jobs]);
 
-  const specialJobs = useMemo(
-    () => jobs.filter((job) => job.section === "special"),
-    [jobs],
-  );
+  const specialJobs = useMemo(() => {
+    return sortJobsOpenFirst(
+      jobs.filter((job) => job.section === "special"),
+    );
+  }, [jobs]);
 
   const totalJobs = jobs.length;
-  const completedJobs = jobs.filter((job) => job.done).length;
+  const completedJobs = jobs.filter((job) => Boolean(job.done)).length;
   const progress = totalJobs ? Math.round((completedJobs / totalJobs) * 100) : 0;
 
   const completionUrgency = getCompletionUrgency(releaseInfo?.completion_date);
@@ -273,8 +289,8 @@ export default function MechanicJobListPage() {
     setMessage("");
     setErrorMessage("");
 
-    setJobs((current) =>
-      current.map((item) =>
+    setJobs((current) => {
+      const updated = current.map((item) =>
         item.car_id === job.car_id &&
         item.job_id === job.job_id &&
         item.section === job.section
@@ -285,8 +301,10 @@ export default function MechanicJobListPage() {
               updated_at: now,
             }
           : item,
-      ),
-    );
+      );
+
+      return sortJobsOpenFirst(updated);
+    });
 
     const { error } = await supabase
       .from("job_progress")
@@ -302,15 +320,22 @@ export default function MechanicJobListPage() {
     if (error) {
       setErrorMessage(`Autosave failed: ${error.message}`);
 
-      setJobs((current) =>
-        current.map((item) =>
+      setJobs((current) => {
+        const reverted = current.map((item) =>
           item.car_id === job.car_id &&
           item.job_id === job.job_id &&
           item.section === job.section
-            ? { ...item, done: job.done }
+            ? {
+                ...item,
+                done: job.done,
+                updated_by: job.updated_by,
+                updated_at: job.updated_at,
+              }
             : item,
-        ),
-      );
+        );
+
+        return sortJobsOpenFirst(reverted);
+      });
     }
 
     setSavingKey(null);
@@ -355,8 +380,8 @@ export default function MechanicJobListPage() {
       return;
     }
 
-    setJobs((current) =>
-      current.map((item) =>
+    setJobs((current) => {
+      const updated = current.map((item) =>
         item.car_id === job.car_id &&
         item.job_id === job.job_id &&
         item.section === job.section
@@ -367,8 +392,10 @@ export default function MechanicJobListPage() {
               updated_at: now,
             }
           : item,
-      ),
-    );
+      );
+
+      return sortJobsOpenFirst(updated);
+    });
 
     setOpenNoteKey(null);
     setSavingNoteKey(null);
@@ -408,8 +435,8 @@ export default function MechanicJobListPage() {
       [key]: "",
     }));
 
-    setJobs((current) =>
-      current.map((item) =>
+    setJobs((current) => {
+      const updated = current.map((item) =>
         item.car_id === job.car_id &&
         item.job_id === job.job_id &&
         item.section === job.section
@@ -420,8 +447,10 @@ export default function MechanicJobListPage() {
               updated_at: now,
             }
           : item,
-      ),
-    );
+      );
+
+      return sortJobsOpenFirst(updated);
+    });
 
     setOpenNoteKey(null);
     setSavingNoteKey(null);
@@ -442,10 +471,10 @@ export default function MechanicJobListPage() {
     const cardClass =
       variant === "special"
         ? job.done
-          ? "border-green-800/60 bg-green-950/20"
+          ? "border-green-800/60 bg-green-950/20 opacity-70"
           : "border-red-900/40 bg-[#0d0f12] hover:border-red-500/70"
         : job.done
-          ? "border-green-800/60 bg-green-950/20"
+          ? "border-green-800/60 bg-green-950/20 opacity-70"
           : "border-zinc-800 bg-[#0d0f12] hover:border-red-500/70";
 
     const checkBorder =
@@ -590,8 +619,8 @@ export default function MechanicJobListPage() {
           </h1>
 
           <p className="mt-3 max-w-2xl text-sm text-zinc-400">
-            Tick jobs off as they are completed. Add notes where the chief
-            mechanic needs extra information.
+            Tick jobs off as they are completed. Completed jobs automatically
+            move to the bottom of their section.
           </p>
         </div>
 
@@ -718,7 +747,8 @@ export default function MechanicJobListPage() {
           </h2>
 
           <p className="mt-1 text-sm text-zinc-400">
-            Urgent or car-specific jobs released by the chief mechanic.
+            Urgent or car-specific jobs released by the chief mechanic. Open
+            jobs remain at the top.
           </p>
         </div>
 
@@ -740,7 +770,7 @@ export default function MechanicJobListPage() {
           <h2 className="text-2xl font-semibold">Standard Jobs</h2>
 
           <p className="mt-1 text-sm text-zinc-500">
-            Released preparation list for this car.
+            Released preparation list for this car. Open jobs remain at the top.
           </p>
         </div>
 
