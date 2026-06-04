@@ -471,10 +471,10 @@ export default function MechanicJobListPage() {
     const cardClass =
       variant === "special"
         ? job.done
-          ? "border-green-800/60 bg-green-950/20 opacity-70"
+          ? "border-green-800/60 bg-green-950/20 opacity-75"
           : "border-red-900/40 bg-[#0d0f12] hover:border-red-500/70"
         : job.done
-          ? "border-green-800/60 bg-green-950/20 opacity-70"
+          ? "border-green-800/60 bg-green-950/20 opacity-75"
           : "border-zinc-800 bg-[#0d0f12] hover:border-red-500/70";
 
     const checkBorder =
@@ -484,7 +484,7 @@ export default function MechanicJobListPage() {
       variant === "special" ? "text-red-300" : "text-zinc-500";
 
     const textClass = job.done
-      ? "text-zinc-500 line-through"
+      ? "text-zinc-400"
       : variant === "special"
         ? "text-red-100"
         : "text-zinc-100";
@@ -494,7 +494,7 @@ export default function MechanicJobListPage() {
         key={key}
         className={`rounded-xl border p-4 transition ${cardClass}`}
       >
-        <div className="grid grid-cols-[42px_44px_1fr_auto] items-center gap-3">
+        <div className="grid grid-cols-[42px_44px_1fr_auto_auto] items-center gap-3">
           <span className={`text-sm ${numberClass}`}>{index + 1}</span>
 
           <button
@@ -525,6 +525,14 @@ export default function MechanicJobListPage() {
           >
             {hasNote ? "Edit Note" : "Add Note"}
           </button>
+
+          {job.done ? (
+            <span className="whitespace-nowrap rounded-full border border-green-700 bg-green-950/40 px-3 py-1 text-xs font-semibold text-green-300">
+              ✓ Completed
+            </span>
+          ) : (
+            <span className="hidden w-[104px] md:block" />
+          )}
         </div>
 
         {hasNote && !isNoteOpen && (
