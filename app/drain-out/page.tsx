@@ -15,6 +15,10 @@ type DrainOutRecord = {
   notes: string | null;
   created_by: string | null;
   created_at: string | null;
+
+  report_date: string | null;
+  session: string | null;
+  circuit: string | null;
 };
 
 type CarDrainOutAllocation = {
@@ -26,6 +30,31 @@ type CarDrainOutAllocation = {
 };
 
 const RIG_OPTIONS = ["Rig 1", "Rig 2"] as const;
+
+const SESSION_OPTIONS = [
+  "FP1",
+  "FP2",
+  "FP3",
+  "Qualifying",
+  "Race 1",
+  "Race 2",
+  "Race 3",
+  "Test",
+  "Other",
+] as const;
+
+const CIRCUIT_OPTIONS = [
+  "Oulton Park",
+  "Silverstone",
+  "Spa-Francorchamps",
+  "Monza",
+  "Hungaroring",
+  "Zandvoort",
+  "Brands Hatch",
+  "Snetterton",
+  "Donington Park",
+  "Other",
+] as const;
 
 const CAR_ALLOCATIONS: CarDrainOutAllocation[] = [
   {
@@ -51,7 +80,11 @@ const CAR_ALLOCATIONS: CarDrainOutAllocation[] = [
   },
 ];
 
-function formatDate(value: string | null) {
+function getTodayIsoDate() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function formatDateTime(value: string | null) {
   if (!value) return "—";
 
   const date = new Date(value);
@@ -69,6 +102,22 @@ function formatDate(value: string | null) {
   });
 }
 
+function formatReportDate(value: string | null) {
+  if (!value) return "—";
+
+  const date = new Date(`${value}T00:00:00`);
+
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+
+  return date.toLocaleDateString("en-GB", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+  });
+}
+
 export default function DrainOutPage() {
   const [userRole, setUserRole] = useState<UserRole>("unknown");
 
@@ -76,11 +125,21 @@ export default function DrainOutPage() {
     CAR_ALLOCATIONS[0]?.id || "",
   );
 
+  const [reportDate, setReportDate] = useState(getTodayIsoDate());
+  const [session, setSession] =
+    useState<(typeof SESSION_OPTIONS)[number]>("FP1");
+  const [customSession, setCustomSession] = useState("");
+
+  const [circuit, setCircuit] =
+    useState<(typeof CIRCUIT_OPTIONS)[number]>("Oulton Park");
+  const [customCircuit, setCustomCircuit] = useState("");
+
   const [rig, setRig] = useState<(typeof RIG_OPTIONS)[number]>("Rig 1");
   const [drainOutFigure, setDrainOutFigure] = useState("");
-  const units = "kg";
   const [notes, setNotes] = useState("");
   const [createdBy, setCreatedBy] = useState<string | null>(null);
+
+  const units = "kg";
 
   const [records, setRecords] = useState<DrainOutRecord[]>([]);
   const [loading, setLoading] = useState(true);
@@ -112,15 +171,25 @@ export default function DrainOutPage() {
 
   const selectedCarHasEmail = activeEngineerEmail.trim().length > 0;
 
-  const showChiefDashboardButton =
-    userRole === "chief_mechanic" || userRole === "engineer";
+  const finalSession = useMemo(() => {
+    if (session === "Other") return customSession.trim();
+    return session;
+  }, [session, customSession]);
 
-  const canDeleteDrainOuts = userRole === "chief_mechanic";
+  const finalCircuit = useMemo(() => {
+    if (circuit === "Other") return customCircuit.trim();
+    return circuit;
+  }, [circuit, customCircuit]);
 
   const numericDrainOut = useMemo(() => {
     const value = Number(drainOutFigure);
     return Number.isFinite(value) ? value : null;
   }, [drainOutFigure]);
+
+  const showChiefDashboardButton =
+    userRole === "chief_mechanic" || userRole === "engineer";
+
+  const canDeleteDrainOuts = userRole === "chief_mechanic";
 
   async function loadRecordsForCar(carId: number) {
     if (!Number.isFinite(carId) || carId <= 0) {
@@ -128,18 +197,19 @@ export default function DrainOutPage() {
       return;
     }
 
-    const { data: recordData, error: recordError } = await supabase
+    const { data, error } = await supabase
       .from("drain_out_reports")
       .select("*")
       .eq("car_id", carId)
+      .order("report_date", { ascending: false })
       .order("created_at", { ascending: false });
 
-    if (recordError) {
-      setErrorMessage(recordError.message);
+    if (error) {
+      setErrorMessage(error.message);
       return;
     }
 
-    setRecords((recordData ?? []) as DrainOutRecord[]);
+    setRecords((data ?? []) as DrainOutRecord[]);
   }
 
   useEffect(() => {
@@ -165,12 +235,32 @@ export default function DrainOutPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedAllocation?.carId]);
 
+  function resetFormAfterSubmit() {
+    setDrainOutFigure("");
+    setNotes("");
+  }
+
   async function submitDrainOut() {
     setMessage("");
     setErrorMessage("");
 
     if (!selectedAllocation) {
       setErrorMessage("Select a car before submitting.");
+      return;
+    }
+
+    if (!reportDate) {
+      setErrorMessage("Select a report date.");
+      return;
+    }
+
+    if (!finalSession) {
+      setErrorMessage("Enter a session.");
+      return;
+    }
+
+    if (!finalCircuit) {
+      setErrorMessage("Enter a circuit.");
       return;
     }
 
@@ -190,11 +280,14 @@ export default function DrainOutPage() {
 
     try {
       const payload = {
+        report_date: reportDate,
+        session: finalSession,
+        circuit: finalCircuit,
         car_id: selectedAllocation.carId,
         car_name: carDisplayLabel,
         rig,
         drain_out_figure: numericDrainOut,
-        units: "kg",
+        units,
         notes: notes.trim() || null,
         created_by: createdBy,
       };
@@ -216,8 +309,6 @@ export default function DrainOutPage() {
         },
         body: JSON.stringify({
           ...inserted,
-          car_id: selectedAllocation.carId,
-          car_name: carDisplayLabel,
           engineer_name: selectedAllocation.engineerName,
           engineer_email: selectedAllocation.engineerEmail,
         }),
@@ -242,11 +333,10 @@ export default function DrainOutPage() {
       }
 
       setMessage(
-        `Drain out report submitted for ${carDisplayLabel} and sent to ${selectedAllocation.engineerEmail}.`,
+        `Drain out report submitted for ${carDisplayLabel} — ${finalCircuit}, ${finalSession}. Notification sent to ${selectedAllocation.engineerEmail}.`,
       );
 
-      setDrainOutFigure("");
-      setNotes("");
+      resetFormAfterSubmit();
       await loadRecordsForCar(selectedAllocation.carId);
     } catch (error) {
       setErrorMessage(
@@ -269,7 +359,7 @@ export default function DrainOutPage() {
     }
 
     const confirmed = window.confirm(
-      `Delete this drain out record?\n\n${record.car_name || `Car ${record.car_id}`} · ${record.rig} · ${record.drain_out_figure} ${record.units}`,
+      `Delete this drain out record?\n\n${record.car_name || `Car ${record.car_id}`}\n${record.circuit || "No circuit"} · ${record.session || "No session"} · ${record.rig} · ${record.drain_out_figure} ${record.units}`,
     );
 
     if (!confirmed) return;
@@ -318,9 +408,9 @@ export default function DrainOutPage() {
               </h1>
 
               <p className="mt-2 max-w-3xl text-sm text-zinc-400">
-                Select the car, enter the drain out figure and submit. The
-                correct driver and engineer email are filled automatically from
-                the car selection.
+                Enter the event details, select the car and rig, then submit the
+                drain out figure. The engineer notification is handled from the
+                selected car allocation.
               </p>
             </div>
 
@@ -356,27 +446,27 @@ export default function DrainOutPage() {
           </div>
         )}
 
-        <section className="rounded-3xl border border-red-900/50 bg-[#181315] p-6 shadow-xl">
+        <section className="rounded-3xl border border-zinc-800 bg-[#14181d] p-6 shadow-xl">
           <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
             <div>
               <p className="text-xs font-semibold uppercase tracking-[0.35em] text-red-400">
-                Submit Figure
+                New Report
               </p>
 
               <h2 className="mt-3 text-2xl font-semibold">
-                Drain Out Report
+                Submit Drain Out Figure
               </h2>
 
               <p className="mt-2 max-w-3xl text-sm text-zinc-400">
-                Choose the car, choose the rig, enter the drain out figure in
-                kg, then submit. The preview below shows exactly what will be
-                sent.
+                Complete the event details first, then add the car, rig and
+                drain out value. The preview at the bottom shows exactly what
+                will be submitted.
               </p>
             </div>
 
             <div className="rounded-2xl border border-zinc-800 bg-[#0d0f12] px-4 py-3">
               <p className="text-xs uppercase tracking-[0.25em] text-zinc-500">
-                Car / Driver
+                Selected Car
               </p>
 
               <p className="mt-1 text-lg font-semibold text-zinc-100">
@@ -385,107 +475,214 @@ export default function DrainOutPage() {
             </div>
           </div>
 
-          <div className="grid gap-4 lg:grid-cols-[1.3fr_220px_1fr_160px]">
-            <label>
-              <span className="mb-2 block text-xs font-semibold uppercase tracking-[0.2em] text-zinc-500">
-                Car
-              </span>
-
-              <select
-                value={selectedAllocationId}
-                onChange={(event) => {
-                  setSelectedAllocationId(event.target.value);
-                  setDrainOutFigure("");
-                  setNotes("");
-                  setMessage("");
-                  setErrorMessage("");
-                }}
-                className="w-full rounded-xl border border-zinc-700 bg-[#0d0f12] px-4 py-3 text-sm text-zinc-100 outline-none focus:border-red-500"
-              >
-                {CAR_ALLOCATIONS.map((allocation) => (
-                  <option key={allocation.id} value={allocation.id}>
-                    Car {allocation.carId} — {allocation.driverName}
-                  </option>
-                ))}
-              </select>
-            </label>
-
-            <label>
-              <span className="mb-2 block text-xs font-semibold uppercase tracking-[0.2em] text-zinc-500">
-                Rig
-              </span>
-
-              <select
-                value={rig}
-                onChange={(event) =>
-                  setRig(event.target.value as (typeof RIG_OPTIONS)[number])
-                }
-                className="w-full rounded-xl border border-zinc-700 bg-[#0d0f12] px-4 py-3 text-sm text-zinc-100 outline-none focus:border-red-500"
-              >
-                {RIG_OPTIONS.map((option) => (
-                  <option key={option} value={option}>
-                    {option}
-                  </option>
-                ))}
-              </select>
-            </label>
-
-            <label>
-              <span className="mb-2 block text-xs font-semibold uppercase tracking-[0.2em] text-zinc-500">
-                Drain Out Figure
-              </span>
-
-              <input
-                value={drainOutFigure}
-                onChange={(event) => setDrainOutFigure(event.target.value)}
-                inputMode="decimal"
-                placeholder="e.g. 2.35"
-                className="w-full rounded-xl border border-zinc-700 bg-[#0d0f12] px-4 py-3 text-sm text-zinc-100 outline-none focus:border-red-500"
-              />
-            </label>
-
-            <div>
-              <span className="mb-2 block text-xs font-semibold uppercase tracking-[0.2em] text-zinc-500">
-                Units
-              </span>
-
-              <div className="rounded-xl border border-zinc-700 bg-[#0d0f12] px-4 py-3 text-sm font-bold text-red-300">
-                kg
-              </div>
-            </div>
-          </div>
-
-          <div className="mt-4 rounded-2xl border border-zinc-800 bg-[#101317] p-4">
-            <p className="text-xs uppercase tracking-[0.25em] text-zinc-500">
-              Auto-Filled Engineer
+          <div className="rounded-2xl border border-zinc-800 bg-[#101317] p-5">
+            <p className="mb-4 text-xs font-semibold uppercase tracking-[0.3em] text-zinc-500">
+              Event Details
             </p>
 
-            <div className="mt-2 flex flex-wrap items-center justify-between gap-3">
-              <div>
-                <p className="font-semibold text-zinc-100">
-                  {activeEngineerName}
-                </p>
+            <div className="grid gap-4 md:grid-cols-3">
+              <label>
+                <span className="mb-2 block text-xs font-semibold uppercase tracking-[0.2em] text-zinc-500">
+                  Date
+                </span>
 
-                <p className="text-sm text-zinc-400">
-                  {selectedCarHasEmail
-                    ? activeEngineerEmail
-                    : `No email configured for Car ${activeCarId}`}
-                </p>
+                <input
+                  type="date"
+                  value={reportDate}
+                  onChange={(event) => setReportDate(event.target.value)}
+                  className="w-full rounded-xl border border-zinc-700 bg-[#0d0f12] px-4 py-3 text-sm text-zinc-100 outline-none focus:border-red-500"
+                />
+              </label>
+
+              <label>
+                <span className="mb-2 block text-xs font-semibold uppercase tracking-[0.2em] text-zinc-500">
+                  Session
+                </span>
+
+                <select
+                  value={session}
+                  onChange={(event) => {
+                    setSession(
+                      event.target.value as (typeof SESSION_OPTIONS)[number],
+                    );
+                    setCustomSession("");
+                  }}
+                  className="w-full rounded-xl border border-zinc-700 bg-[#0d0f12] px-4 py-3 text-sm text-zinc-100 outline-none focus:border-red-500"
+                >
+                  {SESSION_OPTIONS.map((option) => (
+                    <option key={option} value={option}>
+                      {option}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label>
+                <span className="mb-2 block text-xs font-semibold uppercase tracking-[0.2em] text-zinc-500">
+                  Circuit
+                </span>
+
+                <select
+                  value={circuit}
+                  onChange={(event) => {
+                    setCircuit(
+                      event.target.value as (typeof CIRCUIT_OPTIONS)[number],
+                    );
+                    setCustomCircuit("");
+                  }}
+                  className="w-full rounded-xl border border-zinc-700 bg-[#0d0f12] px-4 py-3 text-sm text-zinc-100 outline-none focus:border-red-500"
+                >
+                  {CIRCUIT_OPTIONS.map((option) => (
+                    <option key={option} value={option}>
+                      {option}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+
+            {(session === "Other" || circuit === "Other") && (
+              <div className="mt-4 grid gap-4 md:grid-cols-2">
+                {session === "Other" && (
+                  <label>
+                    <span className="mb-2 block text-xs font-semibold uppercase tracking-[0.2em] text-zinc-500">
+                      Custom Session
+                    </span>
+
+                    <input
+                      value={customSession}
+                      onChange={(event) => setCustomSession(event.target.value)}
+                      placeholder="e.g. Warm-up"
+                      className="w-full rounded-xl border border-zinc-700 bg-[#0d0f12] px-4 py-3 text-sm text-zinc-100 outline-none focus:border-red-500"
+                    />
+                  </label>
+                )}
+
+                {circuit === "Other" && (
+                  <label>
+                    <span className="mb-2 block text-xs font-semibold uppercase tracking-[0.2em] text-zinc-500">
+                      Custom Circuit
+                    </span>
+
+                    <input
+                      value={customCircuit}
+                      onChange={(event) => setCustomCircuit(event.target.value)}
+                      placeholder="e.g. Red Bull Ring"
+                      className="w-full rounded-xl border border-zinc-700 bg-[#0d0f12] px-4 py-3 text-sm text-zinc-100 outline-none focus:border-red-500"
+                    />
+                  </label>
+                )}
               </div>
+            )}
+          </div>
 
-              <div
-                className={`rounded-full border px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] ${
-                  selectedCarHasEmail
-                    ? "border-green-900/60 bg-green-950/20 text-green-300"
-                    : "border-red-900/60 bg-red-950/30 text-red-300"
-                }`}
-              >
-                {selectedCarHasEmail ? "Ready To Notify" : "Missing Email"}
+          <div className="mt-5 rounded-2xl border border-zinc-800 bg-[#101317] p-5">
+            <p className="mb-4 text-xs font-semibold uppercase tracking-[0.3em] text-zinc-500">
+              Car And Measurement
+            </p>
+
+            <div className="grid gap-4 lg:grid-cols-[1.3fr_180px_1fr_120px]">
+              <label>
+                <span className="mb-2 block text-xs font-semibold uppercase tracking-[0.2em] text-zinc-500">
+                  Car
+                </span>
+
+                <select
+                  value={selectedAllocationId}
+                  onChange={(event) => {
+                    setSelectedAllocationId(event.target.value);
+                    setDrainOutFigure("");
+                    setNotes("");
+                    setMessage("");
+                    setErrorMessage("");
+                  }}
+                  className="w-full rounded-xl border border-zinc-700 bg-[#0d0f12] px-4 py-3 text-sm text-zinc-100 outline-none focus:border-red-500"
+                >
+                  {CAR_ALLOCATIONS.map((allocation) => (
+                    <option key={allocation.id} value={allocation.id}>
+                      Car {allocation.carId} — {allocation.driverName}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label>
+                <span className="mb-2 block text-xs font-semibold uppercase tracking-[0.2em] text-zinc-500">
+                  Rig
+                </span>
+
+                <select
+                  value={rig}
+                  onChange={(event) =>
+                    setRig(event.target.value as (typeof RIG_OPTIONS)[number])
+                  }
+                  className="w-full rounded-xl border border-zinc-700 bg-[#0d0f12] px-4 py-3 text-sm text-zinc-100 outline-none focus:border-red-500"
+                >
+                  {RIG_OPTIONS.map((option) => (
+                    <option key={option} value={option}>
+                      {option}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label>
+                <span className="mb-2 block text-xs font-semibold uppercase tracking-[0.2em] text-zinc-500">
+                  Drain Out Figure
+                </span>
+
+                <input
+                  value={drainOutFigure}
+                  onChange={(event) => setDrainOutFigure(event.target.value)}
+                  inputMode="decimal"
+                  placeholder="e.g. 2.35"
+                  className="w-full rounded-xl border border-zinc-700 bg-[#0d0f12] px-4 py-3 text-sm text-zinc-100 outline-none focus:border-red-500"
+                />
+              </label>
+
+              <div>
+                <span className="mb-2 block text-xs font-semibold uppercase tracking-[0.2em] text-zinc-500">
+                  Units
+                </span>
+
+                <div className="rounded-xl border border-zinc-700 bg-[#0d0f12] px-4 py-3 text-sm font-bold text-red-300">
+                  {units}
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-4 rounded-2xl border border-zinc-800 bg-[#0d0f12] p-4">
+              <p className="text-xs uppercase tracking-[0.25em] text-zinc-500">
+                Auto-Filled Engineer
+              </p>
+
+              <div className="mt-2 flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <p className="font-semibold text-zinc-100">
+                    {activeEngineerName}
+                  </p>
+
+                  <p className="text-sm text-zinc-400">
+                    {selectedCarHasEmail
+                      ? activeEngineerEmail
+                      : `No email configured for Car ${activeCarId}`}
+                  </p>
+                </div>
+
+                <div
+                  className={`rounded-full border px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] ${
+                    selectedCarHasEmail
+                      ? "border-green-900/60 bg-green-950/20 text-green-300"
+                      : "border-red-900/60 bg-red-950/30 text-red-300"
+                  }`}
+                >
+                  {selectedCarHasEmail ? "Ready To Notify" : "Missing Email"}
+                </div>
               </div>
             </div>
           </div>
 
-          <label className="mt-4 block">
+          <label className="mt-5 block">
             <span className="mb-2 block text-xs font-semibold uppercase tracking-[0.2em] text-zinc-500">
               Notes
             </span>
@@ -498,23 +695,26 @@ export default function DrainOutPage() {
             />
           </label>
 
-          <div className="mt-6 flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-zinc-800 bg-[#0d0f12] p-4">
+          <div className="mt-6 flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-red-900/40 bg-[#181315] p-5">
             <div>
               <p className="text-xs uppercase tracking-[0.25em] text-zinc-500">
-                Notification Preview
+                Submission Preview
               </p>
 
               <p className="mt-2 text-sm text-zinc-300">
-                Car {activeCarId} · {activeDriverName} ·{" "}
-                {selectedCarHasEmail
-                  ? activeEngineerEmail
-                  : "No engineer email"}{" "}
-                · {rig} ·{" "}
+                {formatReportDate(reportDate)} · {finalCircuit || "No circuit"}{" "}
+                · {finalSession || "No session"} · Car {activeCarId} ·{" "}
+                {activeDriverName} · {rig} ·{" "}
                 <span className="font-bold text-red-300">
                   {numericDrainOut !== null
                     ? `${numericDrainOut} ${units}`
                     : `0 ${units}`}
                 </span>
+              </p>
+
+              <p className="mt-1 text-xs text-zinc-500">
+                Notification recipient:{" "}
+                {selectedCarHasEmail ? activeEngineerEmail : "No engineer email"}
               </p>
             </div>
 
@@ -530,26 +730,31 @@ export default function DrainOutPage() {
         </section>
 
         <section className="mt-8 rounded-3xl border border-zinc-800 bg-[#14181d] p-6">
-          <div>
-            <h2 className="text-2xl font-semibold">
-              Previous Drain Out Reports
-            </h2>
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div>
+              <h2 className="text-2xl font-semibold">
+                Previous Drain Out Reports
+              </h2>
 
-            <p className="mt-1 text-sm text-zinc-500">
-              Showing saved reports for {carDisplayLabel}.
-            </p>
+              <p className="mt-1 text-sm text-zinc-500">
+                Showing saved reports for {carDisplayLabel}.
+              </p>
+            </div>
           </div>
 
           <div className="mt-4 overflow-x-auto rounded-2xl border border-zinc-800">
-            <table className="w-full min-w-[900px] text-sm">
+            <table className="w-full min-w-[1100px] text-sm">
               <thead className="bg-[#0d0f12] text-zinc-300">
                 <tr>
-                  <th className="px-4 py-3 text-left">Date</th>
+                  <th className="px-4 py-3 text-left">Report Date</th>
+                  <th className="px-4 py-3 text-left">Session</th>
+                  <th className="px-4 py-3 text-left">Circuit</th>
                   <th className="px-4 py-3 text-left">Car / Driver</th>
                   <th className="px-4 py-3 text-left">Rig</th>
                   <th className="px-4 py-3 text-left">Figure</th>
                   <th className="px-4 py-3 text-left">Notes</th>
                   <th className="px-4 py-3 text-left">Submitted By</th>
+                  <th className="px-4 py-3 text-left">Submitted At</th>
                   {canDeleteDrainOuts && (
                     <th className="px-4 py-3 text-left">Actions</th>
                   )}
@@ -560,7 +765,7 @@ export default function DrainOutPage() {
                 {records.length === 0 ? (
                   <tr>
                     <td
-                      colSpan={canDeleteDrainOuts ? 7 : 6}
+                      colSpan={canDeleteDrainOuts ? 10 : 9}
                       className="px-4 py-6 text-center text-zinc-500"
                     >
                       No drain out reports saved yet for {carDisplayLabel}.
@@ -570,14 +775,24 @@ export default function DrainOutPage() {
                   records.map((record) => (
                     <tr key={record.id} className="border-t border-zinc-800">
                       <td className="px-4 py-3 text-zinc-300">
-                        {formatDate(record.created_at)}
+                        {formatReportDate(record.report_date)}
+                      </td>
+
+                      <td className="px-4 py-3 text-zinc-300">
+                        {record.session || "—"}
+                      </td>
+
+                      <td className="px-4 py-3 text-zinc-300">
+                        {record.circuit || "—"}
                       </td>
 
                       <td className="px-4 py-3 text-zinc-300">
                         {record.car_name || `Car ${record.car_id}`}
                       </td>
 
-                      <td className="px-4 py-3">{record.rig}</td>
+                      <td className="px-4 py-3 text-zinc-300">
+                        {record.rig}
+                      </td>
 
                       <td className="px-4 py-3 font-semibold text-red-300">
                         {record.drain_out_figure} {record.units}
@@ -589,6 +804,10 @@ export default function DrainOutPage() {
 
                       <td className="px-4 py-3 text-zinc-400">
                         {record.created_by || "—"}
+                      </td>
+
+                      <td className="px-4 py-3 text-zinc-400">
+                        {formatDateTime(record.created_at)}
                       </td>
 
                       {canDeleteDrainOuts && (
