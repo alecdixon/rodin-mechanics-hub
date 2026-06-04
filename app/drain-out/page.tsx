@@ -274,17 +274,17 @@ export default function DrainOutPage() {
 
             <div className="flex flex-wrap gap-3">
               <Link
-                href="/dashboard"
-                className="rounded-xl border border-zinc-700 bg-[#1b2026] px-5 py-3 text-sm font-semibold text-zinc-200 hover:border-red-500 hover:text-red-300"
+                href="/team-jobs"
+                className="rounded-xl border border-red-600 bg-red-700 px-5 py-3 text-sm font-semibold text-white shadow-lg shadow-red-950/30 transition hover:border-red-400 hover:bg-red-600"
               >
-                Chief Dashboard
+                Team Jobs
               </Link>
 
               <Link
-                href="/team-jobs"
-                className="rounded-xl border border-zinc-700 bg-[#1b2026] px-5 py-3 text-sm font-semibold text-zinc-200 hover:border-red-500 hover:text-red-300"
+                href="/dashboard"
+                className="rounded-xl border border-zinc-700 bg-[#1b2026] px-5 py-3 text-sm font-semibold text-zinc-200 transition hover:border-red-500 hover:text-red-300"
               >
-                Team Jobs
+                Chief Dashboard
               </Link>
             </div>
           </div>
