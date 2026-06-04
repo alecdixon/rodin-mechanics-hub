@@ -1345,13 +1345,10 @@ export default function DashboardPage() {
 
           <div className="flex flex-wrap gap-3">
             <Link
-              href="/car/1/drain-out"
+              href="/drain-out"
               className="rounded-xl border border-red-600 bg-red-700 px-5 py-3 text-sm font-semibold text-white shadow-lg shadow-red-950/30 transition hover:border-red-400 hover:bg-red-600"
             >
               Drain Out
-              <span className="ml-2 text-xs font-normal text-red-100">
-                Select engineer / car
-              </span>
             </Link>
 
             <Link
