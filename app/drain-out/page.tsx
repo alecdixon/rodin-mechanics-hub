@@ -85,6 +85,7 @@ export default function DrainOutPage() {
   const [records, setRecords] = useState<DrainOutRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   const [message, setMessage] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
@@ -113,6 +114,8 @@ export default function DrainOutPage() {
 
   const showChiefDashboardButton =
     userRole === "chief_mechanic" || userRole === "engineer";
+
+  const canDeleteDrainOuts = userRole === "chief_mechanic";
 
   const numericDrainOut = useMemo(() => {
     const value = Number(drainOutFigure);
@@ -253,6 +256,42 @@ export default function DrainOutPage() {
       );
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function deleteDrainOutRecord(record: DrainOutRecord) {
+    setMessage("");
+    setErrorMessage("");
+
+    if (!canDeleteDrainOuts) {
+      setErrorMessage("Only the chief mechanic can delete drain out records.");
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `Delete this drain out record?\n\n${record.car_name || `Car ${record.car_id}`} · ${record.rig} · ${record.drain_out_figure} ${record.units}`,
+    );
+
+    if (!confirmed) return;
+
+    setDeletingId(record.id);
+
+    const { error } = await supabase
+      .from("drain_out_reports")
+      .delete()
+      .eq("id", record.id);
+
+    if (error) {
+      setErrorMessage(error.message);
+      setDeletingId(null);
+      return;
+    }
+
+    setMessage("Drain out record deleted.");
+    setDeletingId(null);
+
+    if (selectedAllocation) {
+      await loadRecordsForCar(selectedAllocation.carId);
     }
   }
 
@@ -502,7 +541,7 @@ export default function DrainOutPage() {
           </div>
 
           <div className="mt-4 overflow-x-auto rounded-2xl border border-zinc-800">
-            <table className="w-full min-w-[820px] text-sm">
+            <table className="w-full min-w-[900px] text-sm">
               <thead className="bg-[#0d0f12] text-zinc-300">
                 <tr>
                   <th className="px-4 py-3 text-left">Date</th>
@@ -511,6 +550,9 @@ export default function DrainOutPage() {
                   <th className="px-4 py-3 text-left">Figure</th>
                   <th className="px-4 py-3 text-left">Notes</th>
                   <th className="px-4 py-3 text-left">Submitted By</th>
+                  {canDeleteDrainOuts && (
+                    <th className="px-4 py-3 text-left">Actions</th>
+                  )}
                 </tr>
               </thead>
 
@@ -518,7 +560,7 @@ export default function DrainOutPage() {
                 {records.length === 0 ? (
                   <tr>
                     <td
-                      colSpan={6}
+                      colSpan={canDeleteDrainOuts ? 7 : 6}
                       className="px-4 py-6 text-center text-zinc-500"
                     >
                       No drain out reports saved yet for {carDisplayLabel}.
@@ -548,6 +590,21 @@ export default function DrainOutPage() {
                       <td className="px-4 py-3 text-zinc-400">
                         {record.created_by || "—"}
                       </td>
+
+                      {canDeleteDrainOuts && (
+                        <td className="px-4 py-3">
+                          <button
+                            type="button"
+                            onClick={() => deleteDrainOutRecord(record)}
+                            disabled={deletingId === record.id}
+                            className="rounded-lg border border-red-900/70 px-3 py-2 text-xs font-semibold text-red-300 transition hover:bg-red-950/40 disabled:cursor-not-allowed disabled:opacity-50"
+                          >
+                            {deletingId === record.id
+                              ? "Deleting..."
+                              : "Delete"}
+                          </button>
+                        </td>
+                      )}
                     </tr>
                   ))
                 )}
