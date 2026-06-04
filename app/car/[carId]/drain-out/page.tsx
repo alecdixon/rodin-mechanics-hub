@@ -23,7 +23,36 @@ type DrainOutRecord = {
   created_at: string | null;
 };
 
+type EngineerOption = {
+  name: string;
+  email: string;
+  role?: string;
+};
+
 const RIG_OPTIONS = ["Rig 1", "Rig 2"] as const;
+
+const ENGINEER_OPTIONS: EngineerOption[] = [
+  {
+    name: "Engineer Car 1",
+    email: process.env.NEXT_PUBLIC_DRAIN_OUT_ENGINEER_EMAIL_CAR_1 || "",
+    role: "Car 1 Engineer",
+  },
+  {
+    name: "Engineer Car 2",
+    email: process.env.NEXT_PUBLIC_DRAIN_OUT_ENGINEER_EMAIL_CAR_2 || "",
+    role: "Car 2 Engineer",
+  },
+  {
+    name: "Engineer Car 3",
+    email: process.env.NEXT_PUBLIC_DRAIN_OUT_ENGINEER_EMAIL_CAR_3 || "",
+    role: "Car 3 Engineer",
+  },
+  {
+    name: "Default Engineer",
+    email: process.env.NEXT_PUBLIC_DRAIN_OUT_ENGINEER_EMAIL || "",
+    role: "General / Fallback",
+  },
+].filter((engineer) => engineer.email.trim().length > 0);
 
 function formatDate(value: string | null) {
   if (!value) return "—";
@@ -51,6 +80,7 @@ export default function DrainOutPage() {
   const [notes, setNotes] = useState("");
   const [createdBy, setCreatedBy] = useState<string | null>(null);
 
+  const [selectedEngineerEmail, setSelectedEngineerEmail] = useState("");
   const [records, setRecords] = useState<DrainOutRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -58,6 +88,14 @@ export default function DrainOutPage() {
   const [errorMessage, setErrorMessage] = useState("");
 
   const carName = car?.name || `Car ${carId}`;
+
+  const selectedEngineer = useMemo(() => {
+    return (
+      ENGINEER_OPTIONS.find(
+        (engineer) => engineer.email === selectedEngineerEmail
+      ) || null
+    );
+  }, [selectedEngineerEmail]);
 
   const numericDrainOut = useMemo(() => {
     const value = Number(drainOutFigure);
@@ -78,13 +116,6 @@ export default function DrainOutPage() {
     const { data: userData } = await supabase.auth.getUser();
     const email = userData.user?.email ?? null;
     setCreatedBy(email);
-
-    /*
-      Important:
-      This page should still work even if the car lookup is blocked by RLS
-      or if dashboard_cars does not return a matching row. The drain-out report
-      is still saved against the numeric carId from the URL.
-    */
 
     const { data: carData, error: carError } = await supabase
       .from("dashboard_cars")
@@ -111,6 +142,16 @@ export default function DrainOutPage() {
     }
 
     setRecords((recordData ?? []) as DrainOutRecord[]);
+
+    if (!selectedEngineerEmail && ENGINEER_OPTIONS.length > 0) {
+      const preferredCarEngineer =
+        ENGINEER_OPTIONS.find((engineer) =>
+          engineer.role?.toLowerCase().includes(`car ${carId}`)
+        ) || ENGINEER_OPTIONS[0];
+
+      setSelectedEngineerEmail(preferredCarEngineer.email);
+    }
+
     setLoading(false);
   }
 
@@ -130,6 +171,11 @@ export default function DrainOutPage() {
 
     if (numericDrainOut === null || numericDrainOut < 0) {
       setErrorMessage("Enter a valid drain out figure in kg.");
+      return;
+    }
+
+    if (!selectedEngineer) {
+      setErrorMessage("Select an engineer to notify.");
       return;
     }
 
@@ -161,7 +207,11 @@ export default function DrainOutPage() {
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify(inserted),
+        body: JSON.stringify({
+          ...inserted,
+          engineer_name: selectedEngineer.name,
+          engineer_email: selectedEngineer.email,
+        }),
       });
 
       if (!notifyResponse.ok) {
@@ -172,7 +222,9 @@ export default function DrainOutPage() {
         );
       }
 
-      setMessage("Drain out report submitted and engineer notified.");
+      setMessage(
+        `Drain out report submitted and sent to ${selectedEngineer.name}.`
+      );
       setDrainOutFigure("");
       setNotes("");
       await loadPageData();
@@ -197,7 +249,7 @@ export default function DrainOutPage() {
 
   return (
     <main className="min-h-screen bg-[#0d0f12] p-6 text-zinc-100">
-      <div className="mx-auto max-w-5xl">
+      <div className="mx-auto max-w-6xl">
         <header className="mb-8 rounded-3xl border border-zinc-800 bg-[#14181d] p-6 shadow-xl">
           <div className="flex flex-wrap items-start justify-between gap-5">
             <div>
@@ -210,8 +262,8 @@ export default function DrainOutPage() {
               </h1>
 
               <p className="mt-2 text-sm text-zinc-400">
-                {carName} · submit Rig 1 / Rig 2 drain out figures in kg directly to
-                the engineer.
+                {carName} · record Rig 1 / Rig 2 drain out figures and send the
+                result directly to the selected engineer.
               </p>
             </div>
 
@@ -237,20 +289,54 @@ export default function DrainOutPage() {
         )}
 
         <section className="rounded-3xl border border-red-900/50 bg-[#181315] p-6 shadow-xl">
-          <div className="mb-6">
-            <p className="text-xs font-semibold uppercase tracking-[0.35em] text-red-400">
-              Submit Figure
-            </p>
+          <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.35em] text-red-400">
+                Submit Figure
+              </p>
 
-            <h2 className="mt-3 text-2xl font-semibold">Drain Out Report</h2>
+              <h2 className="mt-3 text-2xl font-semibold">Drain Out Report</h2>
 
-            <p className="mt-2 max-w-3xl text-sm text-zinc-400">
-              Select the rig, enter the drain out figure in kg, then submit. This saves
-              the value and sends the engineer a notification.
-            </p>
+              <p className="mt-2 max-w-3xl text-sm text-zinc-400">
+                Select the engineer, choose the rig, enter the drain out figure
+                in kg, then submit. The value is saved and the selected engineer
+                receives the notification.
+              </p>
+            </div>
+
+            <div className="rounded-2xl border border-zinc-800 bg-[#0d0f12] px-4 py-3">
+              <p className="text-xs uppercase tracking-[0.25em] text-zinc-500">
+                Car
+              </p>
+              <p className="mt-1 text-lg font-semibold text-zinc-100">
+                {carName}
+              </p>
+            </div>
           </div>
 
-          <div className="grid gap-4 md:grid-cols-[220px_1fr_160px]">
+          <div className="grid gap-4 lg:grid-cols-[1.2fr_220px_1fr_160px]">
+            <label>
+              <span className="mb-2 block text-xs font-semibold uppercase tracking-[0.2em] text-zinc-500">
+                Engineer To Notify
+              </span>
+
+              <select
+                value={selectedEngineerEmail}
+                onChange={(event) => setSelectedEngineerEmail(event.target.value)}
+                className="w-full rounded-xl border border-zinc-700 bg-[#0d0f12] px-4 py-3 text-sm text-zinc-100 outline-none focus:border-red-500"
+              >
+                {ENGINEER_OPTIONS.length === 0 ? (
+                  <option value="">No engineers configured</option>
+                ) : (
+                  ENGINEER_OPTIONS.map((engineer) => (
+                    <option key={engineer.email} value={engineer.email}>
+                      {engineer.name} — {engineer.role}
+                    </option>
+                  ))
+                )}
+              </select>
+            </label>
+
             <label>
               <span className="mb-2 block text-xs font-semibold uppercase tracking-[0.2em] text-zinc-500">
                 Rig
@@ -296,6 +382,29 @@ export default function DrainOutPage() {
             </div>
           </div>
 
+          {selectedEngineer && (
+            <div className="mt-4 rounded-2xl border border-zinc-800 bg-[#101317] p-4">
+              <p className="text-xs uppercase tracking-[0.25em] text-zinc-500">
+                Selected Engineer
+              </p>
+
+              <div className="mt-2 flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <p className="font-semibold text-zinc-100">
+                    {selectedEngineer.name}
+                  </p>
+                  <p className="text-sm text-zinc-400">
+                    {selectedEngineer.role} · {selectedEngineer.email}
+                  </p>
+                </div>
+
+                <div className="rounded-full border border-red-900/60 bg-red-950/30 px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-red-300">
+                  Notification Target
+                </div>
+              </div>
+            </div>
+          )}
+
           <label className="mt-4 block">
             <span className="mb-2 block text-xs font-semibold uppercase tracking-[0.2em] text-zinc-500">
               Notes
@@ -316,6 +425,7 @@ export default function DrainOutPage() {
               </p>
 
               <p className="mt-2 text-sm text-zinc-300">
+                {selectedEngineer ? selectedEngineer.name : "No engineer"} ·{" "}
                 {carName} · {rig} ·{" "}
                 <span className="font-bold text-red-300">
                   {numericDrainOut !== null
@@ -328,7 +438,7 @@ export default function DrainOutPage() {
             <button
               type="button"
               onClick={submitDrainOut}
-              disabled={saving}
+              disabled={saving || ENGINEER_OPTIONS.length === 0}
               className="rounded-xl bg-red-700 px-6 py-3 text-sm font-semibold text-white hover:bg-red-600 disabled:cursor-not-allowed disabled:opacity-50"
             >
               {saving ? "Submitting..." : "Submit & Notify Engineer"}
@@ -354,7 +464,10 @@ export default function DrainOutPage() {
               <tbody>
                 {records.length === 0 ? (
                   <tr>
-                    <td colSpan={5} className="px-4 py-6 text-center text-zinc-500">
+                    <td
+                      colSpan={5}
+                      className="px-4 py-6 text-center text-zinc-500"
+                    >
                       No drain out reports saved yet.
                     </td>
                   </tr>
