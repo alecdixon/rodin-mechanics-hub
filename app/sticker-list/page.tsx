@@ -25,6 +25,7 @@ type StickerItem = {
   sticker_text: string;
   quantity: number;
   notes: string | null;
+  need_by: string | null;
   done: boolean;
   created_by: string | null;
   created_at: string | null;
@@ -56,6 +57,19 @@ function niceDateTime(value: string | null | undefined) {
     year: "2-digit",
     hour: "2-digit",
     minute: "2-digit",
+  });
+}
+
+function niceDate(value: string | null | undefined) {
+  if (!value) return "—";
+
+  const date = new Date(`${value}T00:00:00`);
+  if (Number.isNaN(date.getTime())) return value;
+
+  return date.toLocaleDateString("en-GB", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "2-digit",
   });
 }
 
@@ -117,6 +131,7 @@ export default function StickerListPage() {
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [savingNeedById, setSavingNeedById] = useState<string | null>(null);
   const [removingId, setRemovingId] = useState<string | null>(null);
 
   const [cars, setCars] = useState<DashboardCar[]>([]);
@@ -134,6 +149,12 @@ export default function StickerListPage() {
 
   const [message, setMessage] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
+
+  const userRole = useMemo(() => {
+    return getUserRole(currentUserEmail);
+  }, [currentUserEmail]);
+
+  const canSetNeedBy = userRole === "chief_mechanic";
 
   const loadCars = useCallback(async () => {
     const { data, error } = await supabase
@@ -237,13 +258,23 @@ export default function StickerListPage() {
         ...group,
         items: [...group.items].sort((a, b) => {
           if (a.done !== b.done) return a.done ? 1 : -1;
+
+          const aNeedBy = a.need_by ?? "9999-12-31";
+          const bNeedBy = b.need_by ?? "9999-12-31";
+
+          if (aNeedBy !== bNeedBy) {
+            return aNeedBy.localeCompare(bNeedBy);
+          }
+
           return (
             new Date(a.created_at ?? "").getTime() -
             new Date(b.created_at ?? "").getTime()
           );
         }),
       }))
-      .sort((a, b) => a.sortOrder - b.sortOrder || a.title.localeCompare(b.title));
+      .sort(
+        (a, b) => a.sortOrder - b.sortOrder || a.title.localeCompare(b.title),
+      );
   }, [items, sortedCars]);
 
   const outstandingCount = useMemo(() => {
@@ -254,9 +285,9 @@ export default function StickerListPage() {
     return items.filter((item) => item.done).length;
   }, [items]);
 
-  const userRole = useMemo(() => {
-    return getUserRole(currentUserEmail);
-  }, [currentUserEmail]);
+  const needByCount = useMemo(() => {
+    return items.filter((item) => Boolean(item.need_by)).length;
+  }, [items]);
 
   const backHref = useMemo(() => {
     if (userRole === "chief_mechanic" || userRole === "engineer") {
@@ -297,11 +328,11 @@ export default function StickerListPage() {
     const payload = {
       category_type: categoryType,
       car_id: categoryType === "car" ? Number(selectedCarId) : null,
-      custom_category:
-        categoryType === "custom" ? cleanCustomCategory : null,
+      custom_category: categoryType === "custom" ? cleanCustomCategory : null,
       sticker_text: cleanText,
       quantity: safeQuantity(quantity),
       notes: cleanNotes || null,
+      need_by: null,
       done: false,
       created_by: currentUserEmail || null,
       updated_at: new Date().toISOString(),
@@ -320,7 +351,11 @@ export default function StickerListPage() {
     setStickerText("");
     setQuantity("1");
     setNotes("");
-    setMessage("Sticker added to the list.");
+    setMessage(
+      canSetNeedBy
+        ? "Sticker added. Chief mechanic can now set a Need by date on the item."
+        : "Sticker added to the list.",
+    );
 
     await loadStickerItems();
     setSaving(false);
@@ -356,7 +391,7 @@ export default function StickerListPage() {
     );
   }
 
-  async function updateStickerText(item: StickerItem, value: string) {
+  function updateStickerText(item: StickerItem, value: string) {
     setItems((current) =>
       current.map((currentItem) =>
         currentItem.id === item.id
@@ -366,7 +401,7 @@ export default function StickerListPage() {
     );
   }
 
-  async function updateStickerQuantity(item: StickerItem, value: string) {
+  function updateStickerQuantity(item: StickerItem, value: string) {
     const cleanQuantity = safeQuantity(value);
 
     setItems((current) =>
@@ -378,11 +413,23 @@ export default function StickerListPage() {
     );
   }
 
-  async function updateStickerNotes(item: StickerItem, value: string) {
+  function updateStickerNotes(item: StickerItem, value: string) {
     setItems((current) =>
       current.map((currentItem) =>
         currentItem.id === item.id
           ? { ...currentItem, notes: value }
+          : currentItem,
+      ),
+    );
+  }
+
+  function updateStickerNeedBy(item: StickerItem, value: string) {
+    if (!canSetNeedBy) return;
+
+    setItems((current) =>
+      current.map((currentItem) =>
+        currentItem.id === item.id
+          ? { ...currentItem, need_by: value || null }
           : currentItem,
       ),
     );
@@ -399,14 +446,20 @@ export default function StickerListPage() {
       return;
     }
 
+    const updatePayload: Record<string, unknown> = {
+      sticker_text: cleanText,
+      quantity: Math.max(1, Math.round(Number(item.quantity) || 1)),
+      notes: item.notes?.trim() || null,
+      updated_at: new Date().toISOString(),
+    };
+
+    if (canSetNeedBy) {
+      updatePayload.need_by = item.need_by || null;
+    }
+
     const { error } = await supabase
       .from("sticker_list_items")
-      .update({
-        sticker_text: cleanText,
-        quantity: Math.max(1, Math.round(Number(item.quantity) || 1)),
-        notes: item.notes?.trim() || null,
-        updated_at: new Date().toISOString(),
-      })
+      .update(updatePayload)
       .eq("id", item.id);
 
     if (error) {
@@ -416,6 +469,35 @@ export default function StickerListPage() {
 
     setMessage("Sticker item saved.");
     await loadStickerItems();
+  }
+
+  async function saveNeedByDate(item: StickerItem) {
+    if (!canSetNeedBy) {
+      setErrorMessage("Only the chief mechanic can set Need by dates.");
+      return;
+    }
+
+    setMessage("");
+    setErrorMessage("");
+    setSavingNeedById(item.id);
+
+    const { error } = await supabase
+      .from("sticker_list_items")
+      .update({
+        need_by: item.need_by || null,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", item.id);
+
+    if (error) {
+      setErrorMessage(error.message);
+      setSavingNeedById(null);
+      return;
+    }
+
+    setMessage("Need by date saved.");
+    await loadStickerItems();
+    setSavingNeedById(null);
   }
 
   async function removeStickerItem(item: StickerItem) {
@@ -463,6 +545,8 @@ export default function StickerListPage() {
         @media print {
           body {
             background: white !important;
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
           }
 
           .no-print {
@@ -472,13 +556,33 @@ export default function StickerListPage() {
           .print-area {
             background: white !important;
             color: black !important;
+            border: none !important;
+            box-shadow: none !important;
           }
 
           .print-card {
             break-inside: avoid;
-            border-color: #d4d4d8 !important;
+            page-break-inside: avoid;
             background: white !important;
             color: black !important;
+            box-shadow: none !important;
+          }
+
+          .print-car-card {
+            background: white !important;
+            color: black !important;
+            border-width: 3px !important;
+          }
+
+          .print-colour-strip {
+            display: inline-block !important;
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
+          }
+
+          .print-table-head {
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
           }
 
           .print-text {
@@ -526,7 +630,7 @@ export default function StickerListPage() {
             <p className="mt-2 max-w-2xl text-sm text-zinc-400">
               Add sticker requirements by car, general jobs or custom category.
               Car categories use the same colour settings as the chief mechanic
-              dashboard.
+              dashboard. Only the chief mechanic can set Need by dates.
             </p>
           </div>
 
@@ -560,6 +664,13 @@ export default function StickerListPage() {
       {errorMessage && (
         <div className="no-print mb-6 rounded-2xl border border-red-900 bg-red-950/40 p-4 text-sm text-red-200">
           {errorMessage}
+        </div>
+      )}
+
+      {!canSetNeedBy && (
+        <div className="no-print mb-6 rounded-2xl border border-yellow-800 bg-yellow-950/20 p-4 text-sm text-yellow-200">
+          You can add, edit and complete sticker items. Need by dates are
+          controlled by the chief mechanic.
         </div>
       )}
 
@@ -726,6 +837,11 @@ export default function StickerListPage() {
                 {completedCount}
               </span>{" "}
               <span className="text-zinc-500 print-muted">complete</span>
+              {" · "}
+              <span className="font-semibold text-zinc-100 print-text">
+                {needByCount}
+              </span>{" "}
+              <span className="text-zinc-500 print-muted">dated</span>
             </div>
           </div>
         </div>
@@ -739,21 +855,24 @@ export default function StickerListPage() {
             {groupedItems.map((group) => (
               <div
                 key={group.key}
-                className="print-card rounded-2xl border bg-[#0d0f12] p-5"
+                className="print-card print-car-card rounded-2xl border bg-[#0d0f12] p-5"
                 style={{
                   borderColor: group.colour,
-                  boxShadow: `0 0 0 1px ${group.colour}33`,
+                  boxShadow: `0 0 0 1px ${group.colour}55`,
                 }}
               >
                 <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
                   <div className="flex items-center gap-3">
                     <span
-                      className="h-12 w-2 rounded-full"
+                      className="print-colour-strip h-12 w-2 rounded-full"
                       style={{ backgroundColor: group.colour }}
                     />
 
                     <div>
-                      <h3 className="text-2xl font-semibold text-zinc-100 print-text">
+                      <h3
+                        className="text-2xl font-semibold text-zinc-100 print-text"
+                        style={{ color: group.colour }}
+                      >
                         {group.title}
                       </h3>
 
@@ -763,29 +882,37 @@ export default function StickerListPage() {
                     </div>
                   </div>
 
-                  <div className="rounded-full border border-zinc-700 bg-[#111418] px-3 py-1 text-xs font-semibold text-zinc-300 print-card print-text">
+                  <div
+                    className="rounded-full border px-3 py-1 text-xs font-semibold text-zinc-300 print-card print-text"
+                    style={{
+                      borderColor: group.colour,
+                      backgroundColor: `${group.colour}22`,
+                    }}
+                  >
                     {group.items.length} item
                     {group.items.length === 1 ? "" : "s"}
                   </div>
                 </div>
 
                 <div className="overflow-x-auto rounded-xl border border-zinc-800">
-                  <table className="w-full min-w-[850px] text-sm">
-                    <thead className="bg-zinc-900 text-zinc-300">
+                  <table className="w-full min-w-[980px] text-sm">
+                    <thead
+                      className="print-table-head text-zinc-100"
+                      style={{ backgroundColor: group.colour }}
+                    >
                       <tr>
-                        <th className="w-[90px] px-4 py-3 text-left print-text">
+                        <th className="w-[90px] px-4 py-3 text-left">
                           Qty
                         </th>
-                        <th className="px-4 py-3 text-left print-text">
-                          Sticker
+                        <th className="px-4 py-3 text-left">Sticker</th>
+                        <th className="w-[150px] px-4 py-3 text-left">
+                          Need by
                         </th>
-                        <th className="px-4 py-3 text-left print-text">
-                          Notes
-                        </th>
-                        <th className="w-[150px] px-4 py-3 text-left print-text">
+                        <th className="px-4 py-3 text-left">Notes</th>
+                        <th className="w-[150px] px-4 py-3 text-left">
                           Status
                         </th>
-                        <th className="screen-only w-[240px] px-4 py-3 text-left">
+                        <th className="screen-only w-[300px] px-4 py-3 text-left">
                           Actions
                         </th>
                       </tr>
@@ -832,6 +959,40 @@ export default function StickerListPage() {
                               Added {niceDateTime(item.created_at)}
                               {item.created_by ? ` by ${item.created_by}` : ""}
                             </p>
+                          </td>
+
+                          <td className="px-4 py-3">
+                            <span className="print-only font-semibold print-text">
+                              {niceDate(item.need_by)}
+                            </span>
+
+                            {canSetNeedBy ? (
+                              <div className="screen-only flex flex-wrap gap-2">
+                                <input
+                                  type="date"
+                                  value={item.need_by ?? ""}
+                                  onChange={(event) =>
+                                    updateStickerNeedBy(item, event.target.value)
+                                  }
+                                  className="rounded-lg border border-zinc-700 bg-[#111418] px-3 py-2 text-sm text-zinc-100 outline-none focus:border-red-500"
+                                />
+
+                                <button
+                                  type="button"
+                                  onClick={() => saveNeedByDate(item)}
+                                  disabled={savingNeedById === item.id}
+                                  className="rounded-lg border border-zinc-700 px-3 py-2 text-xs font-semibold text-zinc-300 hover:border-red-500 hover:text-red-300 disabled:cursor-not-allowed disabled:opacity-50"
+                                >
+                                  {savingNeedById === item.id
+                                    ? "Saving..."
+                                    : "Save date"}
+                                </button>
+                              </div>
+                            ) : (
+                              <span className="screen-only text-sm text-zinc-400">
+                                {niceDate(item.need_by)}
+                              </span>
+                            )}
                           </td>
 
                           <td className="px-4 py-3">
