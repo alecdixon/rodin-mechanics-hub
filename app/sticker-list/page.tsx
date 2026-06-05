@@ -762,6 +762,30 @@ export default function StickerListPage() {
           display: none !important;
         }
 
+        .sticker-table {
+          border-collapse: separate;
+          border-spacing: 0;
+        }
+
+        .sticker-table input {
+          font-size: 0.95rem;
+        }
+
+        .sticker-row-open {
+          font-size: 1rem;
+        }
+
+        .sticker-row-open .sticker-main-text {
+          font-size: 1.05rem;
+          font-weight: 800;
+          letter-spacing: -0.01em;
+        }
+
+        .sticker-row-complete {
+          opacity: 0.72;
+        }
+
+
         @media print {
           body {
             background: white !important;
@@ -773,11 +797,17 @@ export default function StickerListPage() {
             display: none !important;
           }
 
+          @page {
+            size: A4 portrait;
+            margin: 8mm;
+          }
+
           .print-area {
             background: white !important;
             color: black !important;
             border: none !important;
             box-shadow: none !important;
+            padding: 0 !important;
           }
 
           .print-card {
@@ -791,15 +821,19 @@ export default function StickerListPage() {
           .print-car-card {
             background: white !important;
             color: black !important;
-            border-width: 3px !important;
+            border-width: 2px !important;
+            padding: 12px !important;
+            margin-bottom: 10px !important;
           }
 
           .print-header {
             display: grid !important;
-            grid-template-columns: 1fr auto 1fr !important;
+            grid-template-columns: 1.05fr auto 1.05fr !important;
             align-items: center !important;
-            gap: 22px !important;
-            margin-bottom: 22px !important;
+            gap: 18px !important;
+            margin-bottom: 16px !important;
+            padding-bottom: 10px !important;
+            border-bottom: 2px solid #111827 !important;
           }
 
           .print-title-block {
@@ -821,8 +855,8 @@ export default function StickerListPage() {
 
           .print-logo {
             display: block !important;
-            width: 230px !important;
-            max-width: 230px !important;
+            width: 150px !important;
+            max-width: 150px !important;
             height: auto !important;
             object-fit: contain !important;
             -webkit-print-color-adjust: exact !important;
@@ -843,9 +877,9 @@ export default function StickerListPage() {
           .print-need-by {
             display: inline-flex !important;
             flex-direction: column !important;
-            gap: 8px !important;
-            border-width: 4px !important;
-            padding: 18px 28px !important;
+            gap: 4px !important;
+            border-width: 3px !important;
+            padding: 10px 16px !important;
             -webkit-print-color-adjust: exact !important;
             print-color-adjust: exact !important;
           }
@@ -859,15 +893,15 @@ export default function StickerListPage() {
           }
 
           .print-need-by-date {
-            font-size: 54px !important;
-            line-height: 58px !important;
+            font-size: 36px !important;
+            line-height: 38px !important;
             font-weight: 900 !important;
             letter-spacing: -0.04em !important;
           }
 
           .print-item-text {
-            font-size: 15px !important;
-            line-height: 20px !important;
+            font-size: 13px !important;
+            line-height: 17px !important;
             font-weight: 800 !important;
           }
 
@@ -881,6 +915,73 @@ export default function StickerListPage() {
             color: #111827 !important;
             font-size: 13px !important;
             font-weight: 900 !important;
+          }
+
+          .print-summary-grid {
+            display: grid !important;
+            grid-template-columns: 1fr 1fr !important;
+            gap: 6px !important;
+          }
+
+          .print-stat-box {
+            padding: 7px 10px !important;
+            min-width: 92px !important;
+            text-align: center !important;
+          }
+
+          .print-group-header {
+            margin-bottom: 8px !important;
+          }
+
+          .print-group-title {
+            font-size: 18px !important;
+            line-height: 22px !important;
+          }
+
+          .print-table {
+            width: 100% !important;
+            min-width: 0 !important;
+            table-layout: fixed !important;
+            font-size: 11px !important;
+          }
+
+          .print-table th {
+            padding: 7px 8px !important;
+            font-size: 10px !important;
+            text-transform: uppercase !important;
+            letter-spacing: 0.04em !important;
+          }
+
+          .print-table td {
+            padding: 7px 8px !important;
+            vertical-align: middle !important;
+          }
+
+          .print-qty-col {
+            width: 44px !important;
+          }
+
+          .print-sticker-col {
+            width: 34% !important;
+          }
+
+          .print-notes-col {
+            width: 34% !important;
+          }
+
+          .print-image-col {
+            width: 104px !important;
+          }
+
+          .print-done-col {
+            width: 58px !important;
+            text-align: center !important;
+          }
+
+          .print-image-thumb {
+            height: 42px !important;
+            width: 64px !important;
+            object-fit: cover !important;
           }
 
           .print-text {
@@ -1204,11 +1305,11 @@ export default function StickerListPage() {
               Rodin Motorsport
             </p>
 
-            <h2 className="mt-3 text-4xl font-semibold text-zinc-100 print-text">
+            <h2 className="mt-2 text-4xl font-semibold text-zinc-100 print-text">
               Sticker List
             </h2>
 
-            <p className="mt-2 text-sm text-zinc-400 print-muted">
+            <p className="mt-1 text-sm text-zinc-400 print-muted">
               Generated {niceDateTime(new Date().toISOString())}
             </p>
           </div>
@@ -1221,37 +1322,39 @@ export default function StickerListPage() {
             />
           </div>
 
-          <div className="print-stats-block grid gap-2 text-sm">
-            <div className="rounded-xl border border-zinc-700 bg-[#0d0f12] px-4 py-3 print-card">
-              <span className="font-semibold text-zinc-100 print-text">
-                {items.length}
-              </span>{" "}
-              <span className="text-zinc-500 print-muted">total items</span>
+          <div className="print-stats-block">
+            <div className="mb-2 flex justify-end">
+              <div className="print-need-by rounded-2xl border border-red-700 bg-red-950/20 text-red-200 shadow-lg shadow-red-950/20 print-card print-text">
+                <span className="print-need-by-label text-red-300">
+                  Need by
+                </span>
+
+                <span className="print-need-by-date">
+                  {niceDate(settings.need_by)}
+                </span>
+              </div>
             </div>
 
-            <div className="rounded-xl border border-zinc-700 bg-[#0d0f12] px-4 py-3 print-card">
-              <span className="font-semibold text-zinc-100 print-text">
-                {outstandingCount}
-              </span>{" "}
-              <span className="text-zinc-500 print-muted">outstanding</span>
-              {" · "}
-              <span className="font-semibold text-zinc-100 print-text">
-                {completedCount}
-              </span>{" "}
-              <span className="text-zinc-500 print-muted">complete</span>
+            <div className="print-summary-grid text-sm">
+              <div className="print-stat-box rounded-xl border border-zinc-700 bg-[#0d0f12] print-card">
+                <span className="font-semibold text-zinc-100 print-text">
+                  {items.length}
+                </span>{" "}
+                <span className="text-zinc-500 print-muted">items</span>
+              </div>
+
+              <div className="print-stat-box rounded-xl border border-zinc-700 bg-[#0d0f12] print-card">
+                <span className="font-semibold text-zinc-100 print-text">
+                  {outstandingCount}
+                </span>{" "}
+                <span className="text-zinc-500 print-muted">open</span>
+                {" · "}
+                <span className="font-semibold text-zinc-100 print-text">
+                  {completedCount}
+                </span>{" "}
+                <span className="text-zinc-500 print-muted">done</span>
+              </div>
             </div>
-          </div>
-        </div>
-
-        <div className="mb-8 flex justify-center">
-          <div className="print-need-by rounded-2xl border border-red-700 bg-red-950/20 text-red-200 shadow-lg shadow-red-950/20 print-card print-text">
-            <span className="print-need-by-label text-red-300">
-              Need by
-            </span>
-
-            <span className="print-need-by-date">
-              {niceDate(settings.need_by)}
-            </span>
           </div>
         </div>
 
@@ -1270,7 +1373,7 @@ export default function StickerListPage() {
                   boxShadow: `0 0 0 2px ${safeAccentColour(group.colour)}55`,
                 }}
               >
-                <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+                <div className="print-group-header mb-4 flex flex-wrap items-center justify-between gap-3">
                   <div className="flex items-center gap-3">
                     <span
                       className="print-colour-strip h-12 w-2 rounded-full"
@@ -1284,7 +1387,7 @@ export default function StickerListPage() {
 
                     <div>
                       <h3
-                        className="text-2xl font-semibold text-zinc-100 print-text"
+                        className="print-group-title text-2xl font-semibold text-zinc-100 print-text"
                         style={{ color: safeAccentColour(group.colour) }}
                       >
                         {group.title}
@@ -1309,7 +1412,7 @@ export default function StickerListPage() {
                 </div>
 
                 <div className="overflow-x-auto rounded-xl border border-zinc-800">
-                  <table className="w-full min-w-[980px] text-sm">
+                  <table className="sticker-table print-table w-full min-w-[980px] text-sm">
                     <thead
                       className="print-table-head text-zinc-100"
                       style={{
@@ -1322,13 +1425,13 @@ export default function StickerListPage() {
                       }}
                     >
                       <tr>
-                        <th className="w-[80px] px-4 py-3 text-left">Qty</th>
-                        <th className="px-4 py-3 text-left">Sticker</th>
-                        <th className="px-4 py-3 text-left">Notes</th>
-                        <th className="w-[180px] px-4 py-3 text-left">
-                          Attachment
+                        <th className="print-qty-col w-[80px] px-4 py-3 text-left">Qty</th>
+                        <th className="print-sticker-col px-4 py-3 text-left">Sticker</th>
+                        <th className="print-notes-col px-4 py-3 text-left">Notes</th>
+                        <th className="print-image-col w-[150px] px-4 py-3 text-left">
+                          Image
                         </th>
-                        <th className="w-[110px] px-4 py-3 text-left">
+                        <th className="print-done-col w-[90px] px-4 py-3 text-left">
                           Done
                         </th>
                         <th className="screen-only w-[260px] px-4 py-3 text-left">
@@ -1341,7 +1444,9 @@ export default function StickerListPage() {
                       {group.items.map((item) => (
                         <tr
                           key={item.id}
-                          className="border-t border-zinc-800 align-top"
+                          className={`border-t border-zinc-800 align-top ${
+                            item.done ? "sticker-row-complete" : "sticker-row-open"
+                          }`}
                         >
                           <td className="px-4 py-3">
                             <span className="print-only font-semibold print-text">
@@ -1369,7 +1474,7 @@ export default function StickerListPage() {
                               onChange={(event) =>
                                 updateStickerText(item, event.target.value)
                               }
-                              className={`screen-only w-full rounded-lg border border-zinc-700 bg-[#111418] px-3 py-2 text-base font-semibold outline-none focus:border-red-500 ${
+                              className={`screen-only sticker-main-text w-full rounded-lg border border-zinc-700 bg-[#111418] px-3 py-2 text-base font-semibold outline-none focus:border-red-500 ${
                                 item.done ? "text-zinc-500" : "text-zinc-100"
                               }`}
                             />
@@ -1391,7 +1496,7 @@ export default function StickerListPage() {
                                 updateStickerNotes(item, event.target.value)
                               }
                               placeholder="Optional notes"
-                              className="screen-only w-full rounded-lg border border-zinc-700 bg-[#111418] px-3 py-2 text-sm text-zinc-100 outline-none focus:border-red-500"
+                              className="screen-only w-full rounded-lg border border-zinc-700 bg-[#111418] px-3 py-2 text-base text-zinc-100 outline-none focus:border-red-500"
                             />
                           </td>
 
@@ -1406,7 +1511,7 @@ export default function StickerListPage() {
                                 <img
                                   src={cleanUrl(item.attachment_url)}
                                   alt={getAttachmentLabel(item)}
-                                  className="h-16 w-24 rounded-lg border border-zinc-700 object-cover print:h-14 print:w-20"
+                                  className="print-image-thumb h-16 w-24 rounded-lg border border-zinc-700 object-cover print:h-14 print:w-20"
                                 />
 
                                 <span>{getAttachmentLabel(item)}</span>
