@@ -727,16 +727,18 @@ export default function StickerListPage() {
             print-color-adjust: exact !important;
           }
 
-          .print-logo-wrap {
+          .print-logo-centre {
             display: flex !important;
-            align-items: flex-start !important;
-            gap: 24px !important;
+            justify-content: center !important;
+            align-items: center !important;
+            width: 100% !important;
+            margin-bottom: 20px !important;
           }
 
           .print-logo {
             display: block !important;
-            width: 230px !important;
-            max-width: 230px !important;
+            width: 240px !important;
+            max-width: 240px !important;
             height: auto !important;
             object-fit: contain !important;
             -webkit-print-color-adjust: exact !important;
@@ -768,6 +770,7 @@ export default function StickerListPage() {
             font-weight: 900 !important;
             letter-spacing: -0.04em !important;
           }
+
 
           .print-text {
             color: black !important;
@@ -1096,6 +1099,9 @@ export default function StickerListPage() {
               <span className="print-need-by-date">
                 {niceDate(settings.need_by)}
               </span>
+            </div>
+          </div>
+
           <div className="grid gap-2 text-sm">
             <div className="rounded-xl border border-zinc-700 bg-[#0d0f12] px-4 py-3 print-card">
               <span className="font-semibold text-zinc-100 print-text">
