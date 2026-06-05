@@ -735,8 +735,8 @@ export default function StickerListPage() {
 
           .print-logo {
             display: block !important;
-            width: 210px !important;
-            max-width: 210px !important;
+            width: 230px !important;
+            max-width: 230px !important;
             height: auto !important;
             object-fit: contain !important;
             -webkit-print-color-adjust: exact !important;
@@ -790,6 +790,10 @@ export default function StickerListPage() {
 
           .print-only {
             display: block !important;
+          }
+
+          .print-logo-centre.print-only {
+            display: flex !important;
           }
         }
 
@@ -1062,39 +1066,36 @@ export default function StickerListPage() {
       </section>
 
       <section className="print-area rounded-3xl border border-zinc-800 bg-[#14181d] p-6 shadow-xl">
+        <div className="print-logo-centre print-only">
+          <img
+            src="/gb3-logo.png"
+            alt="GB3 Championship logo"
+            className="print-logo object-contain"
+          />
+        </div>
+
         <div className="mb-8 flex flex-wrap items-start justify-between gap-5">
-          <div className="print-logo-wrap">
-            <img
-              src="/gb3-logo.png"
-              alt="GB3 Championship logo"
-              className="print-logo rounded-xl object-contain"
-            />
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.35em] text-red-400 print-muted">
+              Rodin Motorsport
+            </p>
 
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.35em] text-red-400 print-muted">
-                Rodin Motorsport
-              </p>
+            <h2 className="mt-3 text-4xl font-semibold text-zinc-100 print-text">
+              Sticker List
+            </h2>
 
-              <h2 className="mt-3 text-4xl font-semibold text-zinc-100 print-text">
-                Sticker List
-              </h2>
+            <p className="mt-2 text-sm text-zinc-400 print-muted">
+              Generated {niceDateTime(new Date().toISOString())}
+            </p>
 
-              <p className="mt-2 text-sm text-zinc-400 print-muted">
-                Generated {niceDateTime(new Date().toISOString())}
-              </p>
+            <div className="print-need-by rounded-2xl border border-red-700 bg-red-950/20 text-red-200 shadow-lg shadow-red-950/20 print-card print-text">
+              <span className="print-need-by-label text-red-300">
+                Need by
+              </span>
 
-              <div className="print-need-by rounded-2xl border border-red-700 bg-red-950/20 text-red-200 shadow-lg shadow-red-950/20 print-card print-text">
-                <span className="print-need-by-label text-red-300">
-                  Need by
-                </span>
-
-                <span className="print-need-by-date">
-                  {niceDate(settings.need_by)}
-                </span>
-              </div>
-            </div>
-          </div>
-
+              <span className="print-need-by-date">
+                {niceDate(settings.need_by)}
+              </span>
           <div className="grid gap-2 text-sm">
             <div className="rounded-xl border border-zinc-700 bg-[#0d0f12] px-4 py-3 print-card">
               <span className="font-semibold text-zinc-100 print-text">
