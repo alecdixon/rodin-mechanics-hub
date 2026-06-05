@@ -58,7 +58,7 @@ const STANDARD_JOBS = [
   "Check toes and setup",
 ];
 
-type JobSection = "standard" | "special";
+type JobSection = "standard" | "special" | "personal";
 
 type JobRow = {
   id?: string;
@@ -184,7 +184,12 @@ export default function MechanicJobListPage() {
   const [userEmail, setUserEmail] = useState("");
   const [loading, setLoading] = useState(true);
 
+  const [newPersonalJob, setNewPersonalJob] = useState("");
+
   const [savingKey, setSavingKey] = useState<string | null>(null);
+  const [deletingKey, setDeletingKey] = useState<string | null>(null);
+  const [addingPersonalJob, setAddingPersonalJob] = useState(false);
+
   const [openNoteKey, setOpenNoteKey] = useState<string | null>(null);
   const [draftNotes, setDraftNotes] = useState<Record<string, string>>({});
   const [savingNoteKey, setSavingNoteKey] = useState<string | null>(null);
@@ -192,87 +197,96 @@ export default function MechanicJobListPage() {
   const [message, setMessage] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
 
-  useEffect(() => {
-    async function loadPage() {
-      if (!carId) return;
+  function getJobKey(job: JobRow) {
+    return job.id || `${job.car_id}-${job.section}-${job.job_id}`;
+  }
 
-      setLoading(true);
-      setMessage("");
-      setErrorMessage("");
+  async function loadPage() {
+    if (!carId) return;
 
-      const { data: userData } = await supabase.auth.getUser();
-      const email = userData.user?.email?.trim().toLowerCase() ?? "";
-      setUserEmail(email);
+    setLoading(true);
+    setMessage("");
+    setErrorMessage("");
 
-      const { error: upsertError } = await supabase.from("job_progress").upsert(
-        makeTemplateRows(carId),
-        {
-          onConflict: "car_id,job_id,section",
-          ignoreDuplicates: true,
-        },
-      );
+    const { data: userData } = await supabase.auth.getUser();
+    const email = userData.user?.email?.trim().toLowerCase() ?? "";
+    setUserEmail(email);
 
-      if (upsertError) {
-        setErrorMessage(`Failed to create job rows: ${upsertError.message}`);
-        setLoading(false);
-        return;
-      }
+    const { error: upsertError } = await supabase.from("job_progress").upsert(
+      makeTemplateRows(carId),
+      {
+        onConflict: "car_id,job_id,section",
+        ignoreDuplicates: true,
+      },
+    );
 
-      const { data: releaseData, error: releaseError } = await supabase
-        .from("job_list_releases")
-        .select("*")
-        .eq("car_id", carId)
-        .maybeSingle();
-
-      if (releaseError) {
-        setErrorMessage(
-          `Failed to load release details: ${releaseError.message}`,
-        );
-      } else {
-        setReleaseInfo((releaseData as JobRelease) ?? null);
-      }
-
-      const { data, error } = await supabase
-        .from("job_progress")
-        .select("*")
-        .eq("car_id", carId)
-        .order("done", { ascending: true })
-        .order("section", { ascending: false })
-        .order("job_id", { ascending: true });
-
-      if (error) {
-        setErrorMessage(`Failed to load job list: ${error.message}`);
-        setLoading(false);
-        return;
-      }
-
-      const cleanJobs = sortJobsOpenFirst((data ?? []) as JobRow[]);
-      setJobs(cleanJobs);
-
-      const initialNotes: Record<string, string> = {};
-      cleanJobs.forEach((job) => {
-        const key = `${job.section}-${job.job_id}`;
-        initialNotes[key] = job.notes ?? "";
-      });
-
-      setDraftNotes(initialNotes);
+    if (upsertError) {
+      setErrorMessage(`Failed to create job rows: ${upsertError.message}`);
       setLoading(false);
+      return;
     }
 
+    const { data: releaseData, error: releaseError } = await supabase
+      .from("job_list_releases")
+      .select("*")
+      .eq("car_id", carId)
+      .maybeSingle();
+
+    if (releaseError) {
+      setErrorMessage(`Failed to load release details: ${releaseError.message}`);
+    } else {
+      setReleaseInfo((releaseData as JobRelease) ?? null);
+    }
+
+    const { data, error } = await supabase
+      .from("job_progress")
+      .select("*")
+      .eq("car_id", carId)
+      .order("done", { ascending: true })
+      .order("section", { ascending: false })
+      .order("job_id", { ascending: true });
+
+    if (error) {
+      setErrorMessage(`Failed to load job list: ${error.message}`);
+      setLoading(false);
+      return;
+    }
+
+    const cleanJobs = sortJobsOpenFirst((data ?? []) as JobRow[]);
+    setJobs(cleanJobs);
+
+    const initialNotes: Record<string, string> = {};
+    cleanJobs.forEach((job) => {
+      initialNotes[getJobKey(job)] = job.notes ?? "";
+    });
+
+    setDraftNotes(initialNotes);
+    setLoading(false);
+  }
+
+  useEffect(() => {
     loadPage();
+
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [carId]);
 
   const standardJobs = useMemo(() => {
-    return sortJobsOpenFirst(
-      jobs.filter((job) => job.section === "standard"),
-    );
+    return sortJobsOpenFirst(jobs.filter((job) => job.section === "standard"));
   }, [jobs]);
 
   const specialJobs = useMemo(() => {
-    return sortJobsOpenFirst(
-      jobs.filter((job) => job.section === "special"),
-    );
+    return sortJobsOpenFirst(jobs.filter((job) => job.section === "special"));
   }, [jobs]);
+
+  const personalJobs = useMemo(() => {
+    return sortJobsOpenFirst(
+      jobs.filter(
+        (job) =>
+          job.section === "personal" &&
+          job.updated_by?.trim().toLowerCase() === userEmail,
+      ),
+    );
+  }, [jobs, userEmail]);
 
   const totalJobs = jobs.length;
   const completedJobs = jobs.filter((job) => Boolean(job.done)).length;
@@ -282,7 +296,7 @@ export default function MechanicJobListPage() {
 
   async function toggleJob(job: JobRow) {
     const newDone = !job.done;
-    const saveKey = `${job.section}-${job.job_id}`;
+    const saveKey = getJobKey(job);
     const now = new Date().toISOString();
 
     setSavingKey(saveKey);
@@ -291,9 +305,7 @@ export default function MechanicJobListPage() {
 
     setJobs((current) => {
       const updated = current.map((item) =>
-        item.car_id === job.car_id &&
-        item.job_id === job.job_id &&
-        item.section === job.section
+        getJobKey(item) === saveKey
           ? {
               ...item,
               done: newDone,
@@ -306,43 +318,155 @@ export default function MechanicJobListPage() {
       return sortJobsOpenFirst(updated);
     });
 
-    const { error } = await supabase
-      .from("job_progress")
-      .update({
-        done: newDone,
-        updated_by: userEmail,
-        updated_at: now,
-      })
-      .eq("car_id", job.car_id)
-      .eq("job_id", job.job_id)
-      .eq("section", job.section);
+    let query = supabase.from("job_progress").update({
+      done: newDone,
+      updated_by: userEmail,
+      updated_at: now,
+    });
+
+    if (job.id) {
+      query = query.eq("id", job.id);
+    } else {
+      query = query
+        .eq("car_id", job.car_id)
+        .eq("job_id", job.job_id)
+        .eq("section", job.section);
+    }
+
+    const { error } = await query;
 
     if (error) {
       setErrorMessage(`Autosave failed: ${error.message}`);
-
-      setJobs((current) => {
-        const reverted = current.map((item) =>
-          item.car_id === job.car_id &&
-          item.job_id === job.job_id &&
-          item.section === job.section
-            ? {
-                ...item,
-                done: job.done,
-                updated_by: job.updated_by,
-                updated_at: job.updated_at,
-              }
-            : item,
-        );
-
-        return sortJobsOpenFirst(reverted);
-      });
+      await loadPage();
     }
 
     setSavingKey(null);
   }
 
+  async function addPersonalJob() {
+    const text = newPersonalJob.trim();
+
+    setMessage("");
+    setErrorMessage("");
+
+    if (!text) {
+      setErrorMessage("Enter a personal job before adding it.");
+      return;
+    }
+
+    if (!userEmail) {
+      setErrorMessage("You must be logged in before adding a personal job.");
+      return;
+    }
+
+    setAddingPersonalJob(true);
+
+    const existingPersonalIds = jobs
+      .filter(
+        (job) =>
+          job.section === "personal" &&
+          job.updated_by?.trim().toLowerCase() === userEmail,
+      )
+      .map((job) => job.job_id);
+
+    const nextId = existingPersonalIds.length
+      ? Math.max(...existingPersonalIds) + 1
+      : 1;
+
+    const now = new Date().toISOString();
+
+    const newRow = {
+      car_id: carId,
+      job_id: nextId,
+      job_text: text,
+      section: "personal" as const,
+      done: false,
+      notes: null,
+      updated_by: userEmail,
+      updated_at: now,
+    };
+
+    const { data, error } = await supabase
+      .from("job_progress")
+      .insert(newRow)
+      .select("*")
+      .single();
+
+    if (error) {
+      setErrorMessage(`Personal job failed to add: ${error.message}`);
+      setAddingPersonalJob(false);
+      return;
+    }
+
+    const insertedJob = data as JobRow;
+
+    setJobs((current) => sortJobsOpenFirst([...current, insertedJob]));
+    setDraftNotes((current) => ({
+      ...current,
+      [getJobKey(insertedJob)]: "",
+    }));
+
+    setNewPersonalJob("");
+    setMessage("Personal job added.");
+    setAddingPersonalJob(false);
+  }
+
+  async function removePersonalJob(job: JobRow) {
+    const key = getJobKey(job);
+    const owner = job.updated_by?.trim().toLowerCase();
+
+    if (job.section !== "personal" || owner !== userEmail) {
+      setErrorMessage("You can only remove personal jobs that you created.");
+      return;
+    }
+
+    const confirmed = window.confirm(`Remove this personal job?\n\n${job.job_text}`);
+    if (!confirmed) return;
+
+    setDeletingKey(key);
+    setMessage("");
+    setErrorMessage("");
+
+    let query = supabase.from("job_progress").delete();
+
+    if (job.id) {
+      query = query.eq("id", job.id);
+    } else {
+      query = query
+        .eq("car_id", job.car_id)
+        .eq("job_id", job.job_id)
+        .eq("section", "personal")
+        .eq("updated_by", userEmail);
+    }
+
+    const { error } = await query;
+
+    if (error) {
+      setErrorMessage(`Personal job failed to remove: ${error.message}`);
+      setDeletingKey(null);
+      return;
+    }
+
+    setJobs((current) =>
+      sortJobsOpenFirst(current.filter((item) => getJobKey(item) !== key)),
+    );
+
+    setDraftNotes((current) => {
+      const next = { ...current };
+      delete next[key];
+      return next;
+    });
+
+    if (openNoteKey === key) {
+      setOpenNoteKey(null);
+    }
+
+    setMessage("Personal job removed.");
+    setDeletingKey(null);
+  }
+
   function openNote(job: JobRow) {
-    const key = `${job.section}-${job.job_id}`;
+    const key = getJobKey(job);
 
     setDraftNotes((current) => ({
       ...current,
@@ -355,7 +479,7 @@ export default function MechanicJobListPage() {
   }
 
   async function saveNote(job: JobRow) {
-    const key = `${job.section}-${job.job_id}`;
+    const key = getJobKey(job);
     const note = (draftNotes[key] ?? "").trim();
     const now = new Date().toISOString();
 
@@ -363,16 +487,22 @@ export default function MechanicJobListPage() {
     setMessage("");
     setErrorMessage("");
 
-    const { error } = await supabase
-      .from("job_progress")
-      .update({
-        notes: note || null,
-        updated_by: userEmail,
-        updated_at: now,
-      })
-      .eq("car_id", job.car_id)
-      .eq("job_id", job.job_id)
-      .eq("section", job.section);
+    let query = supabase.from("job_progress").update({
+      notes: note || null,
+      updated_by: userEmail,
+      updated_at: now,
+    });
+
+    if (job.id) {
+      query = query.eq("id", job.id);
+    } else {
+      query = query
+        .eq("car_id", job.car_id)
+        .eq("job_id", job.job_id)
+        .eq("section", job.section);
+    }
+
+    const { error } = await query;
 
     if (error) {
       setErrorMessage(`Note save failed: ${error.message}`);
@@ -382,9 +512,7 @@ export default function MechanicJobListPage() {
 
     setJobs((current) => {
       const updated = current.map((item) =>
-        item.car_id === job.car_id &&
-        item.job_id === job.job_id &&
-        item.section === job.section
+        getJobKey(item) === key
           ? {
               ...item,
               notes: note || null,
@@ -403,7 +531,7 @@ export default function MechanicJobListPage() {
   }
 
   async function clearNote(job: JobRow) {
-    const key = `${job.section}-${job.job_id}`;
+    const key = getJobKey(job);
     const confirmed = window.confirm("Clear this note?");
     if (!confirmed) return;
 
@@ -413,16 +541,22 @@ export default function MechanicJobListPage() {
 
     const now = new Date().toISOString();
 
-    const { error } = await supabase
-      .from("job_progress")
-      .update({
-        notes: null,
-        updated_by: userEmail,
-        updated_at: now,
-      })
-      .eq("car_id", job.car_id)
-      .eq("job_id", job.job_id)
-      .eq("section", job.section);
+    let query = supabase.from("job_progress").update({
+      notes: null,
+      updated_by: userEmail,
+      updated_at: now,
+    });
+
+    if (job.id) {
+      query = query.eq("id", job.id);
+    } else {
+      query = query
+        .eq("car_id", job.car_id)
+        .eq("job_id", job.job_id)
+        .eq("section", job.section);
+    }
+
+    const { error } = await query;
 
     if (error) {
       setErrorMessage(`Note clear failed: ${error.message}`);
@@ -437,9 +571,7 @@ export default function MechanicJobListPage() {
 
     setJobs((current) => {
       const updated = current.map((item) =>
-        item.car_id === job.car_id &&
-        item.job_id === job.job_id &&
-        item.section === job.section
+        getJobKey(item) === key
           ? {
               ...item,
               notes: null,
@@ -460,41 +592,57 @@ export default function MechanicJobListPage() {
   function renderJobCard(
     job: JobRow,
     index: number,
-    variant: "standard" | "special",
+    variant: "standard" | "special" | "personal",
   ) {
-    const key = `${job.section}-${job.job_id}`;
+    const key = getJobKey(job);
     const isSaving = savingKey === key;
+    const isDeleting = deletingKey === key;
     const isNoteOpen = openNoteKey === key;
     const isSavingNote = savingNoteKey === key;
     const hasNote = Boolean(job.notes?.trim());
+
+    const canRemovePersonal =
+      variant === "personal" &&
+      job.updated_by?.trim().toLowerCase() === userEmail;
 
     const cardClass =
       variant === "special"
         ? job.done
           ? "border-green-800/60 bg-green-950/20 opacity-75"
           : "border-red-900/40 bg-[#0d0f12] hover:border-red-500/70"
-        : job.done
-          ? "border-green-800/60 bg-green-950/20 opacity-75"
-          : "border-zinc-800 bg-[#0d0f12] hover:border-red-500/70";
+        : variant === "personal"
+          ? job.done
+            ? "border-green-800/60 bg-green-950/20 opacity-75"
+            : "border-blue-900/50 bg-[#0d0f12] hover:border-blue-500/70"
+          : job.done
+            ? "border-green-800/60 bg-green-950/20 opacity-75"
+            : "border-zinc-800 bg-[#0d0f12] hover:border-red-500/70";
 
     const checkBorder =
-      variant === "special" ? "border-red-900/60" : "border-zinc-600";
+      variant === "special"
+        ? "border-red-900/60"
+        : variant === "personal"
+          ? "border-blue-800/70"
+          : "border-zinc-600";
 
     const numberClass =
-      variant === "special" ? "text-red-300" : "text-zinc-500";
+      variant === "special"
+        ? "text-red-300"
+        : variant === "personal"
+          ? "text-blue-300"
+          : "text-zinc-500";
 
     const textClass = job.done
       ? "text-zinc-400"
       : variant === "special"
         ? "text-red-100"
-        : "text-zinc-100";
+        : variant === "personal"
+          ? "text-blue-100"
+          : "text-zinc-100";
 
     return (
-      <div
-        key={key}
-        className={`rounded-xl border p-4 transition ${cardClass}`}
-      >
-        <div className="grid grid-cols-[42px_44px_1fr_auto_auto] items-center gap-3">
+      <div key={key} className={`rounded-xl border p-4 transition ${cardClass}`}>
+        <div className="grid grid-cols-[42px_44px_1fr_auto_auto_auto] items-center gap-3">
           <span className={`text-sm ${numberClass}`}>{index + 1}</span>
 
           <button
@@ -510,9 +658,7 @@ export default function MechanicJobListPage() {
             ✓
           </button>
 
-          <span className={`text-sm leading-6 ${textClass}`}>
-            {job.job_text}
-          </span>
+          <span className={`text-sm leading-6 ${textClass}`}>{job.job_text}</span>
 
           <button
             type="button"
@@ -525,6 +671,19 @@ export default function MechanicJobListPage() {
           >
             {hasNote ? "Edit Note" : "Add Note"}
           </button>
+
+          {canRemovePersonal ? (
+            <button
+              type="button"
+              onClick={() => removePersonalJob(job)}
+              disabled={isDeleting}
+              className="rounded-lg border border-blue-800/70 px-3 py-2 text-xs font-semibold text-blue-200 hover:border-red-500 hover:text-red-300 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {isDeleting ? "Removing..." : "Remove"}
+            </button>
+          ) : (
+            <span className="hidden w-[82px] md:block" />
+          )}
 
           {job.done ? (
             <span className="whitespace-nowrap rounded-full border border-green-700 bg-green-950/40 px-3 py-1 text-xs font-semibold text-green-300">
@@ -563,8 +722,7 @@ export default function MechanicJobListPage() {
 
             <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
               <p className="text-xs text-zinc-500">
-                This note will appear on the chief mechanic viewer against this
-                exact task.
+                This note will appear against this exact task.
               </p>
 
               <div className="flex flex-wrap gap-2">
@@ -622,13 +780,12 @@ export default function MechanicJobListPage() {
             Mechanic Job List
           </p>
 
-          <h1 className="mt-3 text-4xl font-semibold">
-            Car {carId} Job List
-          </h1>
+          <h1 className="mt-3 text-4xl font-semibold">Car {carId} Job List</h1>
 
           <p className="mt-3 max-w-2xl text-sm text-zinc-400">
             Tick jobs off as they are completed. Completed jobs automatically
-            move to the bottom of their section.
+            move to the bottom of their section. You can also add your own
+            personal jobs for extra work you want to track.
           </p>
         </div>
 
@@ -748,11 +905,57 @@ export default function MechanicJobListPage() {
         </div>
       </section>
 
+      <section className="mb-6 rounded-3xl border border-blue-900/50 bg-blue-950/10 p-6 shadow-xl">
+        <div className="mb-5">
+          <h2 className="text-2xl font-semibold text-blue-200">
+            My Personal Jobs
+          </h2>
+
+          <p className="mt-1 text-sm text-zinc-400">
+            Add your own jobs for extra work you want to track. Only you can
+            remove the personal jobs you created.
+          </p>
+        </div>
+
+        <div className="mb-5 flex flex-wrap gap-3">
+          <input
+            value={newPersonalJob}
+            onChange={(event) => setNewPersonalJob(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" && !addingPersonalJob) {
+                addPersonalJob();
+              }
+            }}
+            placeholder="Add a personal job..."
+            className="min-w-[260px] flex-1 rounded-xl border border-blue-900/60 bg-[#0d0f12] px-4 py-3 text-sm text-zinc-100 outline-none focus:border-blue-500"
+          />
+
+          <button
+            type="button"
+            onClick={addPersonalJob}
+            disabled={addingPersonalJob}
+            className="rounded-xl bg-blue-700 px-5 py-3 text-sm font-semibold text-white hover:bg-blue-600 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {addingPersonalJob ? "Adding..." : "Add Personal Job"}
+          </button>
+        </div>
+
+        {personalJobs.length === 0 ? (
+          <div className="rounded-2xl border border-dashed border-blue-900/50 bg-[#0d0f12] p-6 text-sm text-zinc-500">
+            You have no personal jobs for this car.
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {personalJobs.map((job, index) =>
+              renderJobCard(job, index, "personal"),
+            )}
+          </div>
+        )}
+      </section>
+
       <section className="mb-6 rounded-3xl border border-red-900/50 bg-[#181315] p-6 shadow-xl">
         <div className="mb-5">
-          <h2 className="text-2xl font-semibold text-red-200">
-            Special Jobs
-          </h2>
+          <h2 className="text-2xl font-semibold text-red-200">Special Jobs</h2>
 
           <p className="mt-1 text-sm text-zinc-400">
             Urgent or car-specific jobs released by the chief mechanic. Open
