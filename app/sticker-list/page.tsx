@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import { getAssignedCar, getUserRole } from "@/lib/userAccess";
@@ -89,6 +88,37 @@ function safeQuantity(value: string) {
 
 function carDisplayName(car: DashboardCar) {
   return `${car.name} / Car ${car.id}`;
+}
+
+function hexToRgb(hex: string) {
+  const clean = hex.replace("#", "").trim();
+
+  if (!/^[0-9a-fA-F]{6}$/.test(clean)) {
+    return null;
+  }
+
+  return {
+    r: parseInt(clean.slice(0, 2), 16),
+    g: parseInt(clean.slice(2, 4), 16),
+    b: parseInt(clean.slice(4, 6), 16),
+  };
+}
+
+function isLightColour(colour: string) {
+  const rgb = hexToRgb(colour);
+
+  if (!rgb) return false;
+
+  const luminance = (0.2126 * rgb.r + 0.7152 * rgb.g + 0.0722 * rgb.b) / 255;
+  return luminance > 0.78;
+}
+
+function safeAccentColour(colour: string) {
+  return isLightColour(colour) ? "#111827" : colour;
+}
+
+function lightTint(colour: string) {
+  return isLightColour(colour) ? "#f3f4f6" : `${colour}22`;
 }
 
 function getGroupMeta(
@@ -697,46 +727,6 @@ export default function StickerListPage() {
             print-color-adjust: exact !important;
           }
 
-          .print-logo-wrap {
-            display: flex !important;
-            align-items: flex-start !important;
-            gap: 22px !important;
-          }
-
-          .print-logo {
-            width: 170px !important;
-            height: auto !important;
-            object-fit: contain !important;
-            -webkit-print-color-adjust: exact !important;
-            print-color-adjust: exact !important;
-          }
-
-          .print-need-by {
-            display: inline-flex !important;
-            flex-direction: column !important;
-            gap: 6px !important;
-            border-width: 3px !important;
-            padding: 16px 22px !important;
-            margin-top: 18px !important;
-            -webkit-print-color-adjust: exact !important;
-            print-color-adjust: exact !important;
-          }
-
-          .print-need-by-label {
-            font-size: 13px !important;
-            line-height: 16px !important;
-            font-weight: 800 !important;
-            letter-spacing: 0.28em !important;
-            text-transform: uppercase !important;
-          }
-
-          .print-need-by-date {
-            font-size: 42px !important;
-            line-height: 46px !important;
-            font-weight: 900 !important;
-            letter-spacing: -0.03em !important;
-          }
-
           .print-text {
             color: black !important;
           }
@@ -1030,40 +1020,30 @@ export default function StickerListPage() {
       </section>
 
       <section className="print-area rounded-3xl border border-zinc-800 bg-[#14181d] p-6 shadow-xl">
-        <div className="mb-8 flex flex-wrap items-start justify-between gap-5">
+        <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
           <div className="print-logo-wrap">
-            <Image
+            <img
               src="/gb3-logo.png"
               alt="GB3 Championship logo"
-              width={170}
-              height={170}
-              priority
               className="print-logo rounded-xl object-contain"
             />
 
             <div>
               <p className="text-xs font-semibold uppercase tracking-[0.35em] text-red-400 print-muted">
-                Rodin Motorsport
-              </p>
+              Rodin Motorsport
+            </p>
 
-              <h2 className="mt-3 text-4xl font-semibold text-zinc-100 print-text">
-                Sticker List
-              </h2>
+            <h2 className="mt-3 text-3xl font-semibold text-zinc-100 print-text">
+              Sticker List
+            </h2>
 
-              <p className="mt-2 text-sm text-zinc-400 print-muted">
-                Generated {niceDateTime(new Date().toISOString())}
-              </p>
+            <p className="mt-2 text-sm text-zinc-400 print-muted">
+              Generated {niceDateTime(new Date().toISOString())}
+            </p>
 
-              <div className="print-need-by rounded-2xl border border-red-700 bg-red-950/20 text-red-200 print-card print-text">
-                <span className="print-need-by-label text-red-300">
-                  Need by
-                </span>
-
-                <span className="print-need-by-date">
-                  {niceDate(settings.need_by)}
-                </span>
-              </div>
-            </div>
+            <p className="mt-3 inline-flex rounded-xl border border-red-700 bg-red-950/20 px-4 py-2 text-sm font-semibold text-red-200 print-card print-text">
+              Need by: {niceDate(settings.need_by)}
+            </p>
           </div>
 
           <div className="grid gap-2 text-sm">
@@ -1099,21 +1079,26 @@ export default function StickerListPage() {
                 key={group.key}
                 className="print-card print-car-card rounded-2xl border bg-[#0d0f12] p-5"
                 style={{
-                  borderColor: group.colour,
-                  boxShadow: `0 0 0 1px ${group.colour}55`,
+                  borderColor: safeAccentColour(group.colour),
+                  boxShadow: `0 0 0 2px ${safeAccentColour(group.colour)}55`,
                 }}
               >
                 <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
                   <div className="flex items-center gap-3">
                     <span
                       className="print-colour-strip h-12 w-2 rounded-full"
-                      style={{ backgroundColor: group.colour }}
+                      style={{
+                        backgroundColor: group.colour,
+                        border: isLightColour(group.colour)
+                          ? "1px solid #111827"
+                          : "none",
+                      }}
                     />
 
                     <div>
                       <h3
                         className="text-2xl font-semibold text-zinc-100 print-text"
-                        style={{ color: group.colour }}
+                        style={{ color: safeAccentColour(group.colour) }}
                       >
                         {group.title}
                       </h3>
@@ -1127,8 +1112,8 @@ export default function StickerListPage() {
                   <div
                     className="rounded-full border px-3 py-1 text-xs font-semibold text-zinc-300 print-card print-text"
                     style={{
-                      borderColor: group.colour,
-                      backgroundColor: `${group.colour}22`,
+                      borderColor: safeAccentColour(group.colour),
+                      backgroundColor: lightTint(group.colour),
                     }}
                   >
                     {group.items.length} item
@@ -1140,7 +1125,14 @@ export default function StickerListPage() {
                   <table className="w-full min-w-[860px] text-sm">
                     <thead
                       className="print-table-head text-zinc-100"
-                      style={{ backgroundColor: group.colour }}
+                      style={{
+                        backgroundColor: isLightColour(group.colour)
+                          ? "#e5e7eb"
+                          : group.colour,
+                        color: isLightColour(group.colour) ? "#111827" : "#ffffff",
+                        borderTop: `2px solid ${safeAccentColour(group.colour)}`,
+                        borderBottom: `2px solid ${safeAccentColour(group.colour)}`,
+                      }}
                     >
                       <tr>
                         <th className="w-[90px] px-4 py-3 text-left">
