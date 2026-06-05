@@ -138,12 +138,14 @@ export default function ChiefJobListEditorPage() {
   const [completionDate, setCompletionDate] = useState("");
   const [releaseInfo, setReleaseInfo] = useState<JobRelease | null>(null);
 
+  const [newStandardJob, setNewStandardJob] = useState("");
   const [newSpecialJob, setNewSpecialJob] = useState("");
 
   const [loading, setLoading] = useState(true);
   const [updatingTemplate, setUpdatingTemplate] = useState(false);
   const [savingReleaseInfo, setSavingReleaseInfo] = useState(false);
   const [publishingJobList, setPublishingJobList] = useState(false);
+  const [addingStandardJob, setAddingStandardJob] = useState(false);
   const [addingSpecialJob, setAddingSpecialJob] = useState(false);
   const [clearingStandardJobs, setClearingStandardJobs] = useState(false);
   const [clearingAllJobs, setClearingAllJobs] = useState(false);
@@ -525,7 +527,7 @@ export default function ChiefJobListEditorPage() {
     }
 
     const confirmed = window.confirm(
-      `Update Car ${carId} from "${selectedTemplate.name}"?\n\nThis will create or update the STANDARD workshop jobs for this car. Special jobs will be kept.\n\nAfter checking it, click Publish Job List so mechanics know they are on the official version.`,
+      `Update Car ${carId} from "${selectedTemplate.name}"?\n\nThis will create or update the STANDARD workshop jobs for this car. Special jobs will be kept.\n\nAny manually added standard jobs above the template range may be overwritten if they use the same job number. Publish the list after checking it.`,
     );
 
     if (!confirmed) return;
@@ -612,7 +614,7 @@ export default function ChiefJobListEditorPage() {
 
   async function clearStandardJobs() {
     const confirmed = window.confirm(
-      `Clear STANDARD workshop jobs for Car ${carId}?\n\nThis removes only the template workshop jobs. Special jobs and release details will be kept.\n\nThe list will be marked as draft until published again.`,
+      `Clear STANDARD workshop jobs for Car ${carId}?\n\nThis removes only the standard workshop jobs. Special jobs and release details will be kept.\n\nThe list will be marked as draft until published again.`,
     );
 
     if (!confirmed) return;
@@ -698,6 +700,65 @@ export default function ChiefJobListEditorPage() {
     }
 
     await markDraft();
+  }
+
+  async function addStandardJob() {
+    const text = newStandardJob.trim();
+
+    setMessage("");
+    setErrorMessage("");
+
+    if (!text) {
+      setErrorMessage("Enter a standard job before adding it.");
+      return;
+    }
+
+    setAddingStandardJob(true);
+
+    const { data: userData, error: userError } = await supabase.auth.getUser();
+
+    if (userError) {
+      setErrorMessage(`User check failed: ${userError.message}`);
+      setAddingStandardJob(false);
+      return;
+    }
+
+    const existingStandardIds = jobs
+      .filter((job) => job.section === "standard")
+      .map((job) => job.job_id);
+
+    const nextId = existingStandardIds.length
+      ? Math.max(...existingStandardIds) + 1
+      : 1;
+
+    const now = new Date().toISOString();
+
+    const newRow = {
+      car_id: carId,
+      job_id: nextId,
+      job_text: text,
+      section: "standard" as const,
+      done: false,
+      notes: null,
+      updated_by: userData.user?.email ?? null,
+      updated_at: now,
+    };
+
+    const { error } = await supabase.from("job_progress").insert(newRow);
+
+    if (error) {
+      setErrorMessage(`Standard job failed to add: ${error.message}`);
+      setAddingStandardJob(false);
+      return;
+    }
+
+    addPendingChange(`Added to standard job list: ${text}`);
+
+    await markDraft("Standard job added. Publish the job list when ready.");
+    setNewStandardJob("");
+    await loadJobs();
+
+    setAddingStandardJob(false);
   }
 
   async function addSpecialJob() {
@@ -1213,9 +1274,9 @@ export default function ChiefJobListEditorPage() {
           </h2>
 
           <p className="mt-2 text-sm leading-6 text-zinc-500">
-            Choose a template, then update the standard workshop jobs for this
-            car. Special jobs are kept separate. Publishing is a separate final
-            step, and that is when mechanics are notified.
+            Choose a template to build the main workshop list, or add one
+            standard job manually. Publishing is a separate final step, and that
+            is when mechanics are notified.
           </p>
 
           <div className="mt-5 flex flex-wrap gap-3">
@@ -1267,6 +1328,40 @@ export default function ChiefJobListEditorPage() {
               standard jobs
             </div>
           )}
+
+          <div className="mt-6 rounded-2xl border border-zinc-800 bg-[#0d0f12] p-4">
+            <h3 className="text-sm font-semibold text-zinc-100">
+              Add Single Standard Job
+            </h3>
+
+            <p className="mt-1 text-xs leading-5 text-zinc-500">
+              Adds one normal workshop job to the standard job list. It will
+              appear in the mechanic job list like the template jobs.
+            </p>
+
+            <div className="mt-4 flex flex-wrap gap-3">
+              <input
+                value={newStandardJob}
+                onChange={(event) => setNewStandardJob(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" && !addingStandardJob) {
+                    addStandardJob();
+                  }
+                }}
+                placeholder="Add one standard job..."
+                className="min-w-[260px] flex-1 rounded-xl border border-zinc-700 bg-[#14181d] px-4 py-3 text-sm text-zinc-100 outline-none focus:border-red-500"
+              />
+
+              <button
+                type="button"
+                onClick={addStandardJob}
+                disabled={addingStandardJob}
+                className="rounded-xl bg-zinc-100 px-5 py-3 text-sm font-semibold text-zinc-950 hover:bg-white disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {addingStandardJob ? "Adding..." : "Add Standard Job"}
+              </button>
+            </div>
+          </div>
         </div>
 
         <div className="rounded-3xl border border-red-900/50 bg-[#181315] p-6 shadow-xl">
@@ -1334,7 +1429,8 @@ export default function ChiefJobListEditorPage() {
           <div className="max-h-[680px] space-y-2 overflow-y-auto pr-2">
             {standardJobs.length === 0 ? (
               <div className="rounded-2xl border border-dashed border-zinc-700 bg-[#0d0f12] p-6 text-sm text-zinc-500">
-                No standard jobs released yet. Update from a template above.
+                No standard jobs released yet. Update from a template above or
+                add a single standard job manually.
               </div>
             ) : (
               standardJobs.map((job, index) => {
@@ -1359,7 +1455,7 @@ export default function ChiefJobListEditorPage() {
                           updateJobText(job, event.target.value)
                         }
                         className={`w-full rounded-lg border border-transparent bg-transparent px-2 py-2 text-sm outline-none focus:border-zinc-700 focus:bg-[#14181d] ${
-                          job.done ? "text-zinc-500 line-through" : ""
+                          job.done ? "text-zinc-500" : "text-zinc-100"
                         }`}
                       />
 
@@ -1436,9 +1532,7 @@ export default function ChiefJobListEditorPage() {
                           updateJobText(job, event.target.value)
                         }
                         className={`w-full rounded-lg border border-transparent bg-transparent px-2 py-2 text-sm outline-none focus:border-red-900/70 focus:bg-[#14181d] ${
-                          job.done
-                            ? "text-zinc-500 line-through"
-                            : "text-red-100"
+                          job.done ? "text-zinc-500" : "text-red-100"
                         }`}
                       />
 
