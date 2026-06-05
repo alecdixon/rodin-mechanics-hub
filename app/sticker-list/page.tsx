@@ -684,6 +684,10 @@ export default function StickerListPage() {
   return (
     <main className="min-h-screen bg-[#0d0f12] p-6 text-zinc-100">
       <style>{`
+        .pdf-only-logo {
+          display: none !important;
+        }
+
         @media print {
           body {
             background: white !important;
@@ -736,9 +740,12 @@ export default function StickerListPage() {
           }
 
           .print-logo-centre {
-            display: flex !important;
             justify-content: center !important;
             align-items: center !important;
+          }
+
+          .pdf-only-logo {
+            display: flex !important;
           }
 
           .print-logo {
@@ -1093,7 +1100,7 @@ export default function StickerListPage() {
             </p>
           </div>
 
-          <div className="print-logo-centre">
+          <div className="pdf-only-logo print-logo-centre">
             <img
               src="/gb3-logo.png"
               alt="GB3 Championship logo"
