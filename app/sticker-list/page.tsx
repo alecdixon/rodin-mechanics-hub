@@ -727,6 +727,48 @@ export default function StickerListPage() {
             print-color-adjust: exact !important;
           }
 
+          .print-logo-wrap {
+            display: flex !important;
+            align-items: flex-start !important;
+            gap: 24px !important;
+          }
+
+          .print-logo {
+            display: block !important;
+            width: 210px !important;
+            max-width: 210px !important;
+            height: auto !important;
+            object-fit: contain !important;
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
+          }
+
+          .print-need-by {
+            display: inline-flex !important;
+            flex-direction: column !important;
+            gap: 8px !important;
+            border-width: 4px !important;
+            padding: 18px 26px !important;
+            margin-top: 18px !important;
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
+          }
+
+          .print-need-by-label {
+            font-size: 13px !important;
+            line-height: 16px !important;
+            font-weight: 800 !important;
+            letter-spacing: 0.28em !important;
+            text-transform: uppercase !important;
+          }
+
+          .print-need-by-date {
+            font-size: 54px !important;
+            line-height: 58px !important;
+            font-weight: 900 !important;
+            letter-spacing: -0.04em !important;
+          }
+
           .print-text {
             color: black !important;
           }
@@ -1020,7 +1062,7 @@ export default function StickerListPage() {
       </section>
 
       <section className="print-area rounded-3xl border border-zinc-800 bg-[#14181d] p-6 shadow-xl">
-        <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
+        <div className="mb-8 flex flex-wrap items-start justify-between gap-5">
           <div className="print-logo-wrap">
             <img
               src="/gb3-logo.png"
@@ -1030,20 +1072,27 @@ export default function StickerListPage() {
 
             <div>
               <p className="text-xs font-semibold uppercase tracking-[0.35em] text-red-400 print-muted">
-              Rodin Motorsport
-            </p>
+                Rodin Motorsport
+              </p>
 
-            <h2 className="mt-3 text-3xl font-semibold text-zinc-100 print-text">
-              Sticker List
-            </h2>
+              <h2 className="mt-3 text-4xl font-semibold text-zinc-100 print-text">
+                Sticker List
+              </h2>
 
-            <p className="mt-2 text-sm text-zinc-400 print-muted">
-              Generated {niceDateTime(new Date().toISOString())}
-            </p>
+              <p className="mt-2 text-sm text-zinc-400 print-muted">
+                Generated {niceDateTime(new Date().toISOString())}
+              </p>
 
-            <p className="mt-3 inline-flex rounded-xl border border-red-700 bg-red-950/20 px-4 py-2 text-sm font-semibold text-red-200 print-card print-text">
-              Need by: {niceDate(settings.need_by)}
-            </p>
+              <div className="print-need-by rounded-2xl border border-red-700 bg-red-950/20 text-red-200 shadow-lg shadow-red-950/20 print-card print-text">
+                <span className="print-need-by-label text-red-300">
+                  Need by
+                </span>
+
+                <span className="print-need-by-date">
+                  {niceDate(settings.need_by)}
+                </span>
+              </div>
+            </div>
           </div>
 
           <div className="grid gap-2 text-sm">
