@@ -53,6 +53,8 @@ const DEFAULT_CAR_COLOUR = "#b91c1c";
 const GENERAL_COLOUR = "#71717a";
 const CUSTOM_COLOUR = "#dc2626";
 const SETTINGS_ID = "main";
+const STICKER_IMAGE_BUCKET = "sticker-images";
+const MAX_IMAGE_SIZE_BYTES = 10 * 1024 * 1024;
 
 function niceDateTime(value: string | null | undefined) {
   if (!value) return "—";
@@ -135,7 +137,7 @@ function cleanUrl(value: string) {
 }
 
 function getAttachmentLabel(item: StickerItem) {
-  return item.attachment_name?.trim() || "Attachment";
+  return item.attachment_name?.trim() || "Image";
 }
 
 function getGroupMeta(
@@ -208,8 +210,7 @@ export default function StickerListPage() {
   const [stickerText, setStickerText] = useState("");
   const [quantity, setQuantity] = useState("1");
   const [notes, setNotes] = useState("");
-  const [attachmentName, setAttachmentName] = useState("");
-  const [attachmentUrl, setAttachmentUrl] = useState("");
+  const [attachmentFile, setAttachmentFile] = useState<File | null>(null);
 
   const [message, setMessage] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
@@ -396,6 +397,48 @@ export default function StickerListPage() {
     return "/team-jobs";
   }, [currentUserEmail, userRole]);
 
+  async function uploadStickerImage(file: File) {
+    if (!file.type.startsWith("image/")) {
+      throw new Error("Attachment must be an image file.");
+    }
+
+    if (file.size > MAX_IMAGE_SIZE_BYTES) {
+      throw new Error("Image is too large. Please use an image under 10MB.");
+    }
+
+    const safeName = file.name
+      .trim()
+      .replace(/[^a-zA-Z0-9._-]/g, "_")
+      .replace(/_+/g, "_");
+
+    const uniqueName =
+      typeof crypto !== "undefined" && "randomUUID" in crypto
+        ? `${Date.now()}-${crypto.randomUUID()}-${safeName}`
+        : `${Date.now()}-${safeName}`;
+
+    const storagePath = `sticker-list/${uniqueName}`;
+
+    const { error: uploadError } = await supabase.storage
+      .from(STICKER_IMAGE_BUCKET)
+      .upload(storagePath, file, {
+        cacheControl: "3600",
+        upsert: false,
+      });
+
+    if (uploadError) {
+      throw new Error(uploadError.message);
+    }
+
+    const { data } = supabase.storage
+      .from(STICKER_IMAGE_BUCKET)
+      .getPublicUrl(storagePath);
+
+    return {
+      url: data.publicUrl,
+      name: file.name,
+    };
+  }
+
   async function addStickerItem() {
     setMessage("");
     setErrorMessage("");
@@ -403,8 +446,7 @@ export default function StickerListPage() {
     const cleanText = stickerText.trim();
     const cleanNotes = notes.trim();
     const cleanCustomCategory = customCategory.trim();
-    const cleanAttachmentUrl = cleanUrl(attachmentUrl);
-    const cleanAttachmentName = attachmentName.trim();
+    const selectedImage = attachmentFile;
 
     if (!cleanText) {
       setErrorMessage("Enter the sticker text first.");
@@ -421,26 +463,36 @@ export default function StickerListPage() {
       return;
     }
 
-    const payload = {
-      category_type: categoryType,
-      car_id: categoryType === "car" ? Number(selectedCarId) : null,
-      custom_category: categoryType === "custom" ? cleanCustomCategory : null,
-      sticker_text: cleanText,
-      quantity: safeQuantity(quantity),
-      notes: cleanNotes || null,
-      attachment_url: cleanAttachmentUrl || null,
-      attachment_name: cleanAttachmentUrl ? cleanAttachmentName || "Attachment" : null,
-      done: false,
-      created_by: currentUserEmail || null,
-      updated_at: new Date().toISOString(),
-    };
-
     setSaving(true);
 
-    const { error } = await supabase.from("sticker_list_items").insert(payload);
+    try {
+      const uploadedImage = selectedImage
+        ? await uploadStickerImage(selectedImage)
+        : null;
 
-    if (error) {
-      setErrorMessage(error.message);
+      const payload = {
+        category_type: categoryType,
+        car_id: categoryType === "car" ? Number(selectedCarId) : null,
+        custom_category: categoryType === "custom" ? cleanCustomCategory : null,
+        sticker_text: cleanText,
+        quantity: safeQuantity(quantity),
+        notes: cleanNotes || null,
+        attachment_url: uploadedImage?.url ?? null,
+        attachment_name: uploadedImage?.name ?? null,
+        done: false,
+        created_by: currentUserEmail || null,
+        updated_at: new Date().toISOString(),
+      };
+
+      const { error } = await supabase.from("sticker_list_items").insert(payload);
+
+      if (error) {
+        throw new Error(error.message);
+      }
+    } catch (error) {
+      setErrorMessage(
+        error instanceof Error ? error.message : "Failed to add sticker item.",
+      );
       setSaving(false);
       return;
     }
@@ -448,8 +500,7 @@ export default function StickerListPage() {
     setStickerText("");
     setQuantity("1");
     setNotes("");
-    setAttachmentName("");
-    setAttachmentUrl("");
+    setAttachmentFile(null);
     setMessage("Sticker added to the list.");
 
     await loadStickerItems();
@@ -593,34 +644,11 @@ export default function StickerListPage() {
     );
   }
 
-  function updateAttachmentName(item: StickerItem, value: string) {
-    setItems((current) =>
-      current.map((currentItem) =>
-        currentItem.id === item.id
-          ? { ...currentItem, attachment_name: value }
-          : currentItem,
-      ),
-    );
-  }
-
-  function updateAttachmentUrl(item: StickerItem, value: string) {
-    setItems((current) =>
-      current.map((currentItem) =>
-        currentItem.id === item.id
-          ? { ...currentItem, attachment_url: value }
-          : currentItem,
-      ),
-    );
-  }
-
   async function saveStickerItem(item: StickerItem) {
     setMessage("");
     setErrorMessage("");
 
     const cleanText = item.sticker_text.trim();
-    const cleanAttachmentUrl = cleanUrl(item.attachment_url ?? "");
-    const cleanAttachmentName = item.attachment_name?.trim() || "";
-
     if (!cleanText) {
       setErrorMessage("Sticker text cannot be empty.");
       return;
@@ -632,8 +660,6 @@ export default function StickerListPage() {
         sticker_text: cleanText,
         quantity: Math.max(1, Math.round(Number(item.quantity) || 1)),
         notes: item.notes?.trim() || null,
-        attachment_url: cleanAttachmentUrl || null,
-        attachment_name: cleanAttachmentUrl ? cleanAttachmentName || "Attachment" : null,
         updated_at: new Date().toISOString(),
       })
       .eq("id", item.id);
@@ -1136,31 +1162,26 @@ export default function StickerListPage() {
           </label>
         </div>
 
-        <div className="mt-4 grid gap-4 xl:grid-cols-[240px_1fr_auto]">
+        <div className="mt-4 grid gap-4 xl:grid-cols-[1fr_auto]">
           <label>
             <span className="text-xs uppercase tracking-[0.22em] text-zinc-500">
-              Attachment name
+              Add image
             </span>
 
             <input
-              value={attachmentName}
-              onChange={(event) => setAttachmentName(event.target.value)}
-              placeholder="e.g. Artwork PDF"
-              className="mt-2 w-full rounded-xl border border-zinc-700 bg-[#111418] px-4 py-3 text-sm text-zinc-100 outline-none focus:border-red-500"
+              type="file"
+              accept="image/*"
+              onChange={(event) =>
+                setAttachmentFile(event.target.files?.[0] ?? null)
+              }
+              className="mt-2 w-full rounded-xl border border-zinc-700 bg-[#111418] px-4 py-3 text-sm text-zinc-100 outline-none file:mr-4 file:rounded-lg file:border-0 file:bg-red-700 file:px-4 file:py-2 file:text-sm file:font-semibold file:text-white hover:file:bg-red-600 focus:border-red-500"
             />
-          </label>
 
-          <label>
-            <span className="text-xs uppercase tracking-[0.22em] text-zinc-500">
-              Attachment link
-            </span>
-
-            <input
-              value={attachmentUrl}
-              onChange={(event) => setAttachmentUrl(event.target.value)}
-              placeholder="Optional link to artwork, drawing, image or PDF"
-              className="mt-2 w-full rounded-xl border border-zinc-700 bg-[#111418] px-4 py-3 text-sm text-zinc-100 outline-none focus:border-red-500"
-            />
+            <p className="mt-2 text-xs text-zinc-500">
+              Optional. Upload a JPEG, PNG or WebP image. This will appear as an
+              openable image link in the PDF.
+              {attachmentFile ? ` Selected: ${attachmentFile.name}` : ""}
+            </p>
           </label>
 
           <div className="flex items-end">
@@ -1380,33 +1401,19 @@ export default function StickerListPage() {
                                 href={cleanUrl(item.attachment_url)}
                                 target="_blank"
                                 rel="noreferrer"
-                                className="font-semibold text-red-300 underline underline-offset-4 print-text"
+                                className="inline-flex flex-col gap-2 font-semibold text-red-300 underline underline-offset-4 print-text"
                               >
-                                {getAttachmentLabel(item)}
+                                <img
+                                  src={cleanUrl(item.attachment_url)}
+                                  alt={getAttachmentLabel(item)}
+                                  className="h-16 w-24 rounded-lg border border-zinc-700 object-cover print:h-14 print:w-20"
+                                />
+
+                                <span>{getAttachmentLabel(item)}</span>
                               </a>
                             ) : (
                               <span className="print-text">—</span>
                             )}
-
-                            <div className="screen-only mt-2 grid gap-2">
-                              <input
-                                value={item.attachment_name ?? ""}
-                                onChange={(event) =>
-                                  updateAttachmentName(item, event.target.value)
-                                }
-                                placeholder="Attachment name"
-                                className="w-full rounded-lg border border-zinc-700 bg-[#111418] px-3 py-2 text-xs text-zinc-100 outline-none focus:border-red-500"
-                              />
-
-                              <input
-                                value={item.attachment_url ?? ""}
-                                onChange={(event) =>
-                                  updateAttachmentUrl(item, event.target.value)
-                                }
-                                placeholder="Attachment link"
-                                className="w-full rounded-lg border border-zinc-700 bg-[#111418] px-3 py-2 text-xs text-zinc-100 outline-none focus:border-red-500"
-                              />
-                            </div>
                           </td>
 
                           <td className="px-4 py-3">
