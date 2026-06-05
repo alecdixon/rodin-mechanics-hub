@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import { getAssignedCar, getUserRole } from "@/lib/userAccess";
@@ -696,6 +697,46 @@ export default function StickerListPage() {
             print-color-adjust: exact !important;
           }
 
+          .print-logo-wrap {
+            display: flex !important;
+            align-items: flex-start !important;
+            gap: 22px !important;
+          }
+
+          .print-logo {
+            width: 170px !important;
+            height: auto !important;
+            object-fit: contain !important;
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
+          }
+
+          .print-need-by {
+            display: inline-flex !important;
+            flex-direction: column !important;
+            gap: 6px !important;
+            border-width: 3px !important;
+            padding: 16px 22px !important;
+            margin-top: 18px !important;
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
+          }
+
+          .print-need-by-label {
+            font-size: 13px !important;
+            line-height: 16px !important;
+            font-weight: 800 !important;
+            letter-spacing: 0.28em !important;
+            text-transform: uppercase !important;
+          }
+
+          .print-need-by-date {
+            font-size: 42px !important;
+            line-height: 46px !important;
+            font-weight: 900 !important;
+            letter-spacing: -0.03em !important;
+          }
+
           .print-text {
             color: black !important;
           }
@@ -989,23 +1030,40 @@ export default function StickerListPage() {
       </section>
 
       <section className="print-area rounded-3xl border border-zinc-800 bg-[#14181d] p-6 shadow-xl">
-        <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.35em] text-red-400 print-muted">
-              Rodin Motorsport
-            </p>
+        <div className="mb-8 flex flex-wrap items-start justify-between gap-5">
+          <div className="print-logo-wrap">
+            <Image
+              src="/gb3-logo.png"
+              alt="GB3 Championship logo"
+              width={170}
+              height={170}
+              priority
+              className="print-logo rounded-xl object-contain"
+            />
 
-            <h2 className="mt-3 text-3xl font-semibold text-zinc-100 print-text">
-              Sticker List
-            </h2>
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.35em] text-red-400 print-muted">
+                Rodin Motorsport
+              </p>
 
-            <p className="mt-2 text-sm text-zinc-400 print-muted">
-              Generated {niceDateTime(new Date().toISOString())}
-            </p>
+              <h2 className="mt-3 text-4xl font-semibold text-zinc-100 print-text">
+                Sticker List
+              </h2>
 
-            <p className="mt-3 inline-flex rounded-xl border border-red-700 bg-red-950/20 px-4 py-2 text-sm font-semibold text-red-200 print-card print-text">
-              Need by: {niceDate(settings.need_by)}
-            </p>
+              <p className="mt-2 text-sm text-zinc-400 print-muted">
+                Generated {niceDateTime(new Date().toISOString())}
+              </p>
+
+              <div className="print-need-by rounded-2xl border border-red-700 bg-red-950/20 text-red-200 print-card print-text">
+                <span className="print-need-by-label text-red-300">
+                  Need by
+                </span>
+
+                <span className="print-need-by-date">
+                  {niceDate(settings.need_by)}
+                </span>
+              </div>
+            </div>
           </div>
 
           <div className="grid gap-2 text-sm">
