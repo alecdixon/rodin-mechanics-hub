@@ -25,6 +25,8 @@ type StickerItem = {
   sticker_text: string;
   quantity: number;
   notes: string | null;
+  attachment_url: string | null;
+  attachment_name: string | null;
   done: boolean;
   created_by: string | null;
   created_at: string | null;
@@ -80,7 +82,7 @@ function niceDate(value: string | null | undefined) {
   });
 }
 
-function safeQuantity(value: string) {
+function safeQuantity(value: string | number) {
   const number = Number(value);
   if (!Number.isFinite(number)) return 1;
   return Math.max(1, Math.round(number));
@@ -119,6 +121,21 @@ function safeAccentColour(colour: string) {
 
 function lightTint(colour: string) {
   return isLightColour(colour) ? "#f3f4f6" : `${colour}22`;
+}
+
+function cleanUrl(value: string) {
+  const clean = value.trim();
+  if (!clean) return "";
+
+  if (/^https?:\/\//i.test(clean)) {
+    return clean;
+  }
+
+  return `https://${clean}`;
+}
+
+function getAttachmentLabel(item: StickerItem) {
+  return item.attachment_name?.trim() || "Attachment";
 }
 
 function getGroupMeta(
@@ -191,6 +208,8 @@ export default function StickerListPage() {
   const [stickerText, setStickerText] = useState("");
   const [quantity, setQuantity] = useState("1");
   const [notes, setNotes] = useState("");
+  const [attachmentName, setAttachmentName] = useState("");
+  const [attachmentUrl, setAttachmentUrl] = useState("");
 
   const [message, setMessage] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
@@ -384,6 +403,8 @@ export default function StickerListPage() {
     const cleanText = stickerText.trim();
     const cleanNotes = notes.trim();
     const cleanCustomCategory = customCategory.trim();
+    const cleanAttachmentUrl = cleanUrl(attachmentUrl);
+    const cleanAttachmentName = attachmentName.trim();
 
     if (!cleanText) {
       setErrorMessage("Enter the sticker text first.");
@@ -407,6 +428,8 @@ export default function StickerListPage() {
       sticker_text: cleanText,
       quantity: safeQuantity(quantity),
       notes: cleanNotes || null,
+      attachment_url: cleanAttachmentUrl || null,
+      attachment_name: cleanAttachmentUrl ? cleanAttachmentName || "Attachment" : null,
       done: false,
       created_by: currentUserEmail || null,
       updated_at: new Date().toISOString(),
@@ -425,6 +448,8 @@ export default function StickerListPage() {
     setStickerText("");
     setQuantity("1");
     setNotes("");
+    setAttachmentName("");
+    setAttachmentUrl("");
     setMessage("Sticker added to the list.");
 
     await loadStickerItems();
@@ -511,30 +536,29 @@ export default function StickerListPage() {
     setMessage("");
     setErrorMessage("");
 
+    const nextDone = !item.done;
+    const now = new Date().toISOString();
+
+    setItems((current) =>
+      current.map((currentItem) =>
+        currentItem.id === item.id
+          ? { ...currentItem, done: nextDone, updated_at: now }
+          : currentItem,
+      ),
+    );
+
     const { error } = await supabase
       .from("sticker_list_items")
       .update({
-        done: !item.done,
-        updated_at: new Date().toISOString(),
+        done: nextDone,
+        updated_at: now,
       })
       .eq("id", item.id);
 
     if (error) {
       setErrorMessage(error.message);
-      return;
+      await loadStickerItems();
     }
-
-    setItems((current) =>
-      current.map((currentItem) =>
-        currentItem.id === item.id
-          ? {
-              ...currentItem,
-              done: !currentItem.done,
-              updated_at: new Date().toISOString(),
-            }
-          : currentItem,
-      ),
-    );
   }
 
   function updateStickerText(item: StickerItem, value: string) {
@@ -569,11 +593,33 @@ export default function StickerListPage() {
     );
   }
 
+  function updateAttachmentName(item: StickerItem, value: string) {
+    setItems((current) =>
+      current.map((currentItem) =>
+        currentItem.id === item.id
+          ? { ...currentItem, attachment_name: value }
+          : currentItem,
+      ),
+    );
+  }
+
+  function updateAttachmentUrl(item: StickerItem, value: string) {
+    setItems((current) =>
+      current.map((currentItem) =>
+        currentItem.id === item.id
+          ? { ...currentItem, attachment_url: value }
+          : currentItem,
+      ),
+    );
+  }
+
   async function saveStickerItem(item: StickerItem) {
     setMessage("");
     setErrorMessage("");
 
     const cleanText = item.sticker_text.trim();
+    const cleanAttachmentUrl = cleanUrl(item.attachment_url ?? "");
+    const cleanAttachmentName = item.attachment_name?.trim() || "";
 
     if (!cleanText) {
       setErrorMessage("Sticker text cannot be empty.");
@@ -586,6 +632,8 @@ export default function StickerListPage() {
         sticker_text: cleanText,
         quantity: Math.max(1, Math.round(Number(item.quantity) || 1)),
         notes: item.notes?.trim() || null,
+        attachment_url: cleanAttachmentUrl || null,
+        attachment_name: cleanAttachmentUrl ? cleanAttachmentName || "Attachment" : null,
         updated_at: new Date().toISOString(),
       })
       .eq("id", item.id);
@@ -720,17 +768,6 @@ export default function StickerListPage() {
             border-width: 3px !important;
           }
 
-          .print-colour-strip {
-            display: inline-block !important;
-            -webkit-print-color-adjust: exact !important;
-            print-color-adjust: exact !important;
-          }
-
-          .print-table-head {
-            -webkit-print-color-adjust: exact !important;
-            print-color-adjust: exact !important;
-          }
-
           .print-header {
             display: grid !important;
             grid-template-columns: 1fr auto 1fr !important;
@@ -739,13 +776,21 @@ export default function StickerListPage() {
             margin-bottom: 22px !important;
           }
 
-          .print-logo-centre {
-            justify-content: center !important;
-            align-items: center !important;
+          .print-title-block {
+            justify-self: start !important;
+          }
+
+          .print-stats-block {
+            justify-self: end !important;
           }
 
           .pdf-only-logo {
             display: flex !important;
+          }
+
+          .print-logo-centre {
+            justify-content: center !important;
+            align-items: center !important;
           }
 
           .print-logo {
@@ -758,12 +803,15 @@ export default function StickerListPage() {
             print-color-adjust: exact !important;
           }
 
-          .print-title-block {
-            justify-self: start !important;
+          .print-colour-strip {
+            display: inline-block !important;
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
           }
 
-          .print-stats-block {
-            justify-self: end !important;
+          .print-table-head {
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
           }
 
           .print-need-by {
@@ -791,6 +839,23 @@ export default function StickerListPage() {
             letter-spacing: -0.04em !important;
           }
 
+          .print-item-text {
+            font-size: 15px !important;
+            line-height: 20px !important;
+            font-weight: 800 !important;
+          }
+
+          .print-checkbox {
+            display: inline-grid !important;
+            height: 18px !important;
+            width: 18px !important;
+            place-items: center !important;
+            border: 2px solid #111827 !important;
+            border-radius: 3px !important;
+            color: #111827 !important;
+            font-size: 13px !important;
+            font-weight: 900 !important;
+          }
 
           .print-text {
             color: black !important;
@@ -836,9 +901,8 @@ export default function StickerListPage() {
 
             <p className="mt-2 max-w-2xl text-sm text-zinc-400">
               Add sticker requirements by car, general jobs or custom category.
-              Car categories use the same colour settings as the chief mechanic
-              dashboard. The chief mechanic controls the one overall Need by
-              date for the whole sticker list.
+              Save the page as a PDF to send the list with clickable attachment
+              links, or print the sheet for manual checkbox completion.
             </p>
           </div>
 
@@ -855,7 +919,7 @@ export default function StickerListPage() {
               onClick={printStickerList}
               className="rounded-xl border border-red-600 bg-red-700 px-5 py-3 text-sm font-semibold text-white shadow-lg shadow-red-950/30 transition hover:border-red-400 hover:bg-red-600"
             >
-              Save as PDF
+              Save / Send PDF
             </button>
 
             {isChiefMechanic && (
@@ -966,7 +1030,7 @@ export default function StickerListPage() {
           </h2>
         </div>
 
-        <div className="grid gap-4 xl:grid-cols-[220px_240px_1fr_120px_1fr_auto]">
+        <div className="grid gap-4 xl:grid-cols-[180px_220px_1fr_100px_1fr]">
           <label>
             <span className="text-xs uppercase tracking-[0.22em] text-zinc-500">
               Category
@@ -1040,7 +1104,7 @@ export default function StickerListPage() {
               value={stickerText}
               onChange={(event) => setStickerText(event.target.value)}
               placeholder="e.g. Driver name decal"
-              className="mt-2 w-full rounded-xl border border-zinc-700 bg-[#111418] px-4 py-3 text-sm text-zinc-100 outline-none focus:border-red-500"
+              className="mt-2 w-full rounded-xl border border-zinc-700 bg-[#111418] px-4 py-3 text-base font-semibold text-zinc-100 outline-none focus:border-red-500"
             />
           </label>
 
@@ -1067,6 +1131,34 @@ export default function StickerListPage() {
               value={notes}
               onChange={(event) => setNotes(event.target.value)}
               placeholder="Optional"
+              className="mt-2 w-full rounded-xl border border-zinc-700 bg-[#111418] px-4 py-3 text-sm text-zinc-100 outline-none focus:border-red-500"
+            />
+          </label>
+        </div>
+
+        <div className="mt-4 grid gap-4 xl:grid-cols-[240px_1fr_auto]">
+          <label>
+            <span className="text-xs uppercase tracking-[0.22em] text-zinc-500">
+              Attachment name
+            </span>
+
+            <input
+              value={attachmentName}
+              onChange={(event) => setAttachmentName(event.target.value)}
+              placeholder="e.g. Artwork PDF"
+              className="mt-2 w-full rounded-xl border border-zinc-700 bg-[#111418] px-4 py-3 text-sm text-zinc-100 outline-none focus:border-red-500"
+            />
+          </label>
+
+          <label>
+            <span className="text-xs uppercase tracking-[0.22em] text-zinc-500">
+              Attachment link
+            </span>
+
+            <input
+              value={attachmentUrl}
+              onChange={(event) => setAttachmentUrl(event.target.value)}
+              placeholder="Optional link to artwork, drawing, image or PDF"
               className="mt-2 w-full rounded-xl border border-zinc-700 bg-[#111418] px-4 py-3 text-sm text-zinc-100 outline-none focus:border-red-500"
             />
           </label>
@@ -1196,7 +1288,7 @@ export default function StickerListPage() {
                 </div>
 
                 <div className="overflow-x-auto rounded-xl border border-zinc-800">
-                  <table className="w-full min-w-[860px] text-sm">
+                  <table className="w-full min-w-[980px] text-sm">
                     <thead
                       className="print-table-head text-zinc-100"
                       style={{
@@ -1209,15 +1301,16 @@ export default function StickerListPage() {
                       }}
                     >
                       <tr>
-                        <th className="w-[90px] px-4 py-3 text-left">
-                          Qty
-                        </th>
+                        <th className="w-[80px] px-4 py-3 text-left">Qty</th>
                         <th className="px-4 py-3 text-left">Sticker</th>
                         <th className="px-4 py-3 text-left">Notes</th>
-                        <th className="w-[150px] px-4 py-3 text-left">
-                          Status
+                        <th className="w-[180px] px-4 py-3 text-left">
+                          Attachment
                         </th>
-                        <th className="screen-only w-[240px] px-4 py-3 text-left">
+                        <th className="w-[110px] px-4 py-3 text-left">
+                          Done
+                        </th>
+                        <th className="screen-only w-[260px] px-4 py-3 text-left">
                           Actions
                         </th>
                       </tr>
@@ -1241,12 +1334,12 @@ export default function StickerListPage() {
                               onChange={(event) =>
                                 updateStickerQuantity(item, event.target.value)
                               }
-                              className="screen-only w-20 rounded-lg border border-zinc-700 bg-[#111418] px-3 py-2 text-sm text-zinc-100 outline-none focus:border-red-500"
+                              className="screen-only w-20 rounded-lg border border-zinc-700 bg-[#111418] px-3 py-2 text-base font-semibold text-zinc-100 outline-none focus:border-red-500"
                             />
                           </td>
 
                           <td className="px-4 py-3">
-                            <span className="print-only font-semibold print-text">
+                            <span className="print-only print-item-text print-text">
                               {item.sticker_text}
                             </span>
 
@@ -1255,7 +1348,7 @@ export default function StickerListPage() {
                               onChange={(event) =>
                                 updateStickerText(item, event.target.value)
                               }
-                              className={`screen-only w-full rounded-lg border border-zinc-700 bg-[#111418] px-3 py-2 text-sm outline-none focus:border-red-500 ${
+                              className={`screen-only w-full rounded-lg border border-zinc-700 bg-[#111418] px-3 py-2 text-base font-semibold outline-none focus:border-red-500 ${
                                 item.done ? "text-zinc-500" : "text-zinc-100"
                               }`}
                             />
@@ -1282,27 +1375,65 @@ export default function StickerListPage() {
                           </td>
 
                           <td className="px-4 py-3">
-                            <span
-                              className={`inline-flex rounded-full border px-3 py-1 text-xs font-semibold ${
-                                item.done
-                                  ? "border-green-800 bg-green-950/30 text-green-300"
-                                  : "border-zinc-700 bg-[#111418] text-zinc-300"
-                              }`}
+                            {item.attachment_url ? (
+                              <a
+                                href={cleanUrl(item.attachment_url)}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="font-semibold text-red-300 underline underline-offset-4 print-text"
+                              >
+                                {getAttachmentLabel(item)}
+                              </a>
+                            ) : (
+                              <span className="print-text">—</span>
+                            )}
+
+                            <div className="screen-only mt-2 grid gap-2">
+                              <input
+                                value={item.attachment_name ?? ""}
+                                onChange={(event) =>
+                                  updateAttachmentName(item, event.target.value)
+                                }
+                                placeholder="Attachment name"
+                                className="w-full rounded-lg border border-zinc-700 bg-[#111418] px-3 py-2 text-xs text-zinc-100 outline-none focus:border-red-500"
+                              />
+
+                              <input
+                                value={item.attachment_url ?? ""}
+                                onChange={(event) =>
+                                  updateAttachmentUrl(item, event.target.value)
+                                }
+                                placeholder="Attachment link"
+                                className="w-full rounded-lg border border-zinc-700 bg-[#111418] px-3 py-2 text-xs text-zinc-100 outline-none focus:border-red-500"
+                              />
+                            </div>
+                          </td>
+
+                          <td className="px-4 py-3">
+                            <button
+                              type="button"
+                              onClick={() => toggleDone(item)}
+                              className="screen-only inline-flex items-center gap-2 rounded-lg border border-zinc-700 bg-[#111418] px-3 py-2 text-xs font-semibold text-zinc-300 hover:border-green-600 hover:text-green-300"
                             >
-                              {item.done ? "Completed" : "Open"}
+                              <span
+                                className={`grid h-4 w-4 place-items-center rounded border ${
+                                  item.done
+                                    ? "border-green-500 bg-green-600 text-white"
+                                    : "border-zinc-500 bg-transparent text-transparent"
+                                }`}
+                              >
+                                ✓
+                              </span>
+                              Done
+                            </button>
+
+                            <span className="print-checkbox print-only">
+                              {item.done ? "✓" : ""}
                             </span>
                           </td>
 
                           <td className="screen-only px-4 py-3">
                             <div className="flex flex-wrap gap-2">
-                              <button
-                                type="button"
-                                onClick={() => toggleDone(item)}
-                                className="rounded-lg border border-zinc-700 px-3 py-2 text-xs font-semibold text-zinc-300 hover:border-green-600 hover:text-green-300"
-                              >
-                                {item.done ? "Mark Open" : "Complete"}
-                              </button>
-
                               <button
                                 type="button"
                                 onClick={() => saveStickerItem(item)}
