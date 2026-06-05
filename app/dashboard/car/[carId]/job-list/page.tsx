@@ -7,7 +7,7 @@ import { supabase } from "@/lib/supabase";
 import { getUserRole } from "@/lib/userAccess";
 import LogoutButton from "@/app/components/LogoutButton";
 
-type JobSection = "standard" | "special";
+type JobSection = "standard" | "special" | "personal";
 
 type JobRow = {
   id?: string;
@@ -59,6 +59,12 @@ function niceDateTime(value: string | null | undefined) {
 }
 
 function sortJobsOpenFirst(jobs: JobRow[]) {
+  const sectionPriority: Record<JobSection, number> = {
+    personal: 0,
+    special: 1,
+    standard: 2,
+  };
+
   return [...jobs].sort((a, b) => {
     const aDone = Boolean(a.done);
     const bDone = Boolean(b.done);
@@ -68,8 +74,7 @@ function sortJobsOpenFirst(jobs: JobRow[]) {
     }
 
     if (a.section !== b.section) {
-      if (a.section === "special") return -1;
-      if (b.section === "special") return 1;
+      return sectionPriority[a.section] - sectionPriority[b.section];
     }
 
     return a.job_id - b.job_id;
@@ -232,7 +237,7 @@ export default function ChiefJobListEditorPage() {
       .select("*")
       .eq("car_id", carId)
       .order("done", { ascending: true })
-      .order("section", { ascending: false })
+      .order("section", { ascending: true })
       .order("job_id", { ascending: true });
 
     if (error) {
@@ -241,7 +246,6 @@ export default function ChiefJobListEditorPage() {
     }
 
     const loadedJobs = (data ?? []) as JobRow[];
-
     setJobs(sortJobsOpenFirst(loadedJobs));
   }
 
@@ -527,7 +531,7 @@ export default function ChiefJobListEditorPage() {
     }
 
     const confirmed = window.confirm(
-      `Update Car ${carId} from "${selectedTemplate.name}"?\n\nThis will create or update the STANDARD workshop jobs for this car. Special jobs will be kept.\n\nAny manually added standard jobs above the template range may be overwritten if they use the same job number. Publish the list after checking it.`,
+      `Update Car ${carId} from "${selectedTemplate.name}"?\n\nThis will create or update the STANDARD workshop jobs for this car. Special and personal jobs will be kept.\n\nAny manually added standard jobs above the template range may be overwritten if they use the same job number. Publish the list after checking it.`,
     );
 
     if (!confirmed) return;
@@ -614,7 +618,7 @@ export default function ChiefJobListEditorPage() {
 
   async function clearStandardJobs() {
     const confirmed = window.confirm(
-      `Clear STANDARD workshop jobs for Car ${carId}?\n\nThis removes only the standard workshop jobs. Special jobs and release details will be kept.\n\nThe list will be marked as draft until published again.`,
+      `Clear STANDARD workshop jobs for Car ${carId}?\n\nThis removes only the standard workshop jobs. Special jobs, personal jobs and release details will be kept.\n\nThe list will be marked as draft until published again.`,
     );
 
     if (!confirmed) return;
@@ -648,6 +652,11 @@ export default function ChiefJobListEditorPage() {
   }
 
   async function updateJobText(job: JobRow, text: string) {
+    if (job.section === "personal") {
+      setErrorMessage("Personal jobs are mechanic-controlled and cannot be edited here.");
+      return;
+    }
+
     const previousText = job.job_text;
     const cleanNewText = text.trim();
     const cleanPreviousText = previousText.trim();
@@ -664,12 +673,10 @@ export default function ChiefJobListEditorPage() {
       return sortJobsOpenFirst(updated);
     });
 
-    let updateQuery = supabase
-      .from("job_progress")
-      .update({
-        job_text: text,
-        updated_at: new Date().toISOString(),
-      });
+    let updateQuery = supabase.from("job_progress").update({
+      job_text: text,
+      updated_at: new Date().toISOString(),
+    });
 
     if (job.id) {
       updateQuery = updateQuery.eq("id", job.id);
@@ -821,6 +828,11 @@ export default function ChiefJobListEditorPage() {
   }
 
   async function removeJob(job: JobRow) {
+    if (job.section === "personal") {
+      setErrorMessage("Personal jobs are mechanic-controlled and cannot be removed from the chief page.");
+      return;
+    }
+
     const confirmed = window.confirm(`Remove this job?\n\n${job.job_text}`);
     if (!confirmed) return;
 
@@ -878,7 +890,7 @@ export default function ChiefJobListEditorPage() {
 
   async function clearAllJobs() {
     const confirmed = window.confirm(
-      `Clear ALL workshop jobs for Car ${carId}?\n\nThis will remove standard jobs, special jobs, notes and the released event/date from the mechanic page.\n\nMechanics will receive a popup notification that the job list has been cleared.`,
+      `Clear ALL workshop jobs for Car ${carId}?\n\nThis will remove standard jobs, special jobs, mechanic personal jobs, notes and the released event/date from the mechanic page.\n\nMechanics will receive a popup notification that the job list has been cleared.`,
     );
 
     if (!confirmed) return;
@@ -921,6 +933,10 @@ export default function ChiefJobListEditorPage() {
       (job) => job.section === "special",
     );
 
+    const removedPersonalJobs = jobsBeingRemoved.filter(
+      (job) => job.section === "personal",
+    );
+
     const clearSummary = [
       `Car: ${carId}`,
       "",
@@ -930,6 +946,12 @@ export default function ChiefJobListEditorPage() {
       ),
       ...removedSpecialJobs.map(
         (job) => `• Removed from special jobs: ${job.job_text}`,
+      ),
+      ...removedPersonalJobs.map(
+        (job) =>
+          `• Removed mechanic personal job: ${job.job_text}${
+            job.updated_by ? ` — added by ${job.updated_by}` : ""
+          }`,
       ),
       "",
       "Release details were cleared.",
@@ -975,6 +997,10 @@ export default function ChiefJobListEditorPage() {
 
   const specialJobs = useMemo(() => {
     return sortJobsOpenFirst(jobs.filter((job) => job.section === "special"));
+  }, [jobs]);
+
+  const personalJobs = useMemo(() => {
+    return sortJobsOpenFirst(jobs.filter((job) => job.section === "personal"));
   }, [jobs]);
 
   const totalJobs = jobs.length;
@@ -1098,14 +1124,16 @@ export default function ChiefJobListEditorPage() {
 
         <div className="rounded-3xl border border-zinc-800 bg-[#14181d] p-6 shadow-xl">
           <p className="text-xs font-semibold uppercase tracking-[0.3em] text-red-400">
-            Special
+            Extra Jobs
           </p>
 
           <h2 className="mt-4 text-6xl font-bold text-zinc-100">
-            {specialJobs.length}
+            {specialJobs.length + personalJobs.length}
           </h2>
 
-          <p className="mt-3 text-sm text-zinc-500">car-specific jobs</p>
+          <p className="mt-3 text-sm text-zinc-500">
+            {specialJobs.length} special · {personalJobs.length} personal
+          </p>
         </div>
 
         <div className="rounded-3xl border border-zinc-800 bg-[#14181d] p-6 shadow-xl">
@@ -1401,6 +1429,98 @@ export default function ChiefJobListEditorPage() {
               {addingSpecialJob ? "Adding..." : "Add Special Job"}
             </button>
           </div>
+        </div>
+      </section>
+
+      <section className="mb-6 rounded-3xl border border-blue-900/50 bg-blue-950/10 p-6 shadow-xl">
+        <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.3em] text-blue-300">
+              Personal Jobs
+            </p>
+
+            <h2 className="mt-2 text-2xl font-semibold text-blue-100">
+              Mechanic Personal Jobs
+            </h2>
+
+            <p className="mt-1 text-xs text-zinc-500">
+              Jobs added by mechanics from their own job-list page. These are
+              visible here for oversight but are controlled by the mechanic who
+              created them.
+            </p>
+          </div>
+
+          <div className="rounded-2xl border border-blue-900/50 bg-[#0d0f12] px-4 py-3 text-sm font-semibold text-blue-300">
+            {personalJobs.length}
+          </div>
+        </div>
+
+        <div className="max-h-[520px] space-y-2 overflow-y-auto pr-2">
+          {personalJobs.length === 0 ? (
+            <div className="rounded-2xl border border-dashed border-blue-900/50 bg-[#0d0f12] p-6 text-sm text-zinc-500">
+              No mechanic personal jobs have been added for this car.
+            </div>
+          ) : (
+            personalJobs.map((job, index) => {
+              const key = jobKey(job);
+
+              return (
+                <div
+                  key={key}
+                  className={`rounded-xl border p-3 ${
+                    job.done
+                      ? "border-green-900/40 bg-green-950/10 opacity-70"
+                      : "border-blue-900/40 bg-[#0d0f12]"
+                  }`}
+                >
+                  <div className="grid grid-cols-[42px_1fr_auto] items-center gap-3">
+                    <span className="text-sm text-blue-300">{index + 1}</span>
+
+                    <div>
+                      <p
+                        className={`text-sm leading-6 ${
+                          job.done ? "text-zinc-500" : "text-blue-100"
+                        }`}
+                      >
+                        {job.job_text}
+                      </p>
+
+                      <div className="mt-2 flex flex-wrap items-center gap-3 text-xs text-zinc-500">
+                        <StatusPill done={job.done} notes={job.notes} />
+
+                        <span>{niceDateTime(job.updated_at)}</span>
+
+                        {job.updated_by && (
+                          <span className="text-blue-300">
+                            Added by {job.updated_by}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    {job.done ? (
+                      <span className="whitespace-nowrap rounded-full border border-green-700 bg-green-950/40 px-3 py-1 text-xs font-semibold text-green-300">
+                        ✓ Completed
+                      </span>
+                    ) : (
+                      <span className="whitespace-nowrap rounded-full border border-blue-800 bg-blue-950/30 px-3 py-1 text-xs font-semibold text-blue-300">
+                        Open
+                      </span>
+                    )}
+                  </div>
+
+                  {job.notes?.trim() && (
+                    <div className="mt-3 rounded-xl border border-zinc-800 bg-[#111418] p-4 text-sm leading-6 text-zinc-300">
+                      <span className="font-semibold text-blue-300">
+                        Note:{" "}
+                      </span>
+                      {job.notes}
+                    </div>
+                  )}
+                </div>
+              );
+            })
+          )}
         </div>
       </section>
 
