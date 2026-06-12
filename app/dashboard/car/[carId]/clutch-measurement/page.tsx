@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
-import { hasPermission } from "@/lib/userAccess";
+import { hasPermission, isReadOnlyUser } from "@/lib/userAccess";
 import LogoutButton from "@/app/components/LogoutButton";
 
 type ClutchRecord = Record<string, unknown> & {
@@ -280,6 +280,7 @@ export default function ChiefClutchMeasurementPage() {
 
   const [message, setMessage] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
+  const [readOnly, setReadOnly] = useState(false);
 
   async function loadClutchMeasurements() {
     setLoading(true);
@@ -294,6 +295,8 @@ export default function ChiefClutchMeasurementPage() {
     }
 
     const email = userData.user.email.trim().toLowerCase();
+
+    setReadOnly(isReadOnlyUser(email));
 
     if (!hasPermission(email, "clutch:view")) {
       router.replace("/dashboard");
@@ -437,6 +440,12 @@ export default function ChiefClutchMeasurementPage() {
       {errorMessage && (
         <div className="mb-6 rounded-2xl border border-red-900 bg-red-950/40 p-4 text-sm text-red-200">
           {errorMessage}
+        </div>
+      )}
+
+      {readOnly && (
+        <div className="mb-6 rounded-2xl border border-amber-800 bg-amber-950/25 p-4 text-sm text-amber-200">
+          Guest mode is view-only. Clutch records and PDFs can be reviewed, but no clutch data can be changed.
         </div>
       )}
 

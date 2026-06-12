@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
-import { getUserRole } from "@/lib/userAccess";
+import { hasPermission, isReadOnlyUser } from "@/lib/userAccess";
 import LogoutButton from "@/app/components/LogoutButton";
 
 type JobSection = "standard" | "special" | "personal";
@@ -160,6 +160,7 @@ export default function ChiefJobListEditorPage() {
   const [errorMessage, setErrorMessage] = useState("");
 
   const [pendingChanges, setPendingChanges] = useState<string[]>([]);
+  const [readOnly, setReadOnly] = useState(true);
 
   function jobKey(job: JobRow) {
     return job.id || `${job.car_id}-${job.section}-${job.job_id}`;
@@ -198,6 +199,16 @@ export default function ChiefJobListEditorPage() {
       "",
       "Please review the latest job list before continuing work.",
     ].join("\n");
+  }
+
+  function blockReadOnlyAction() {
+    if (!readOnly) {
+      return false;
+    }
+
+    setMessage("");
+    setErrorMessage("Guest mode is view-only. Workshop job lists cannot be edited, published, cleared or changed.");
+    return true;
   }
 
   async function createJobListNotification({
@@ -301,18 +312,19 @@ export default function ChiefJobListEditorPage() {
 
     const { data, error } = await supabase.auth.getUser();
 
-    if (error) {
-      setErrorMessage(`User check failed: ${error.message}`);
-      setLoading(false);
+    if (error || !data.user?.email) {
+      router.replace("/login");
       return;
     }
 
-    const role = getUserRole(data.user?.email ?? "");
+    const email = data.user.email.trim().toLowerCase();
 
-    if (role !== "chief_mechanic") {
+    if (!hasPermission(email, "dashboard:view") || !hasPermission(email, "job_lists:view")) {
       router.replace("/dashboard");
       return;
     }
+
+    setReadOnly(isReadOnlyUser(email));
 
     await loadTemplates();
     await loadJobs();
@@ -330,6 +342,8 @@ export default function ChiefJobListEditorPage() {
   }, [carId]);
 
   async function saveReleaseInfo(customMessage?: string) {
+    if (blockReadOnlyAction()) return false;
+
     setMessage("");
     setErrorMessage("");
     setSavingReleaseInfo(true);
@@ -374,6 +388,8 @@ export default function ChiefJobListEditorPage() {
   }
 
   async function markDraft(customMessage?: string) {
+    if (blockReadOnlyAction()) return false;
+
     const { data: userData, error: userError } = await supabase.auth.getUser();
 
     if (userError) {
@@ -414,6 +430,8 @@ export default function ChiefJobListEditorPage() {
   }
 
   async function publishJobList() {
+    if (blockReadOnlyAction()) return false;
+
     setMessage("");
     setErrorMessage("");
 
@@ -518,6 +536,8 @@ export default function ChiefJobListEditorPage() {
   }
 
   async function updateFromTemplate() {
+    if (blockReadOnlyAction()) return false;
+
     setMessage("");
     setErrorMessage("");
 
@@ -617,6 +637,8 @@ export default function ChiefJobListEditorPage() {
   }
 
   async function clearStandardJobs() {
+    if (blockReadOnlyAction()) return false;
+
     const confirmed = window.confirm(
       `Clear STANDARD workshop jobs for Car ${carId}?\n\nThis removes only the standard workshop jobs. Special jobs, personal jobs and release details will be kept.\n\nThe list will be marked as draft until published again.`,
     );
@@ -710,6 +732,8 @@ export default function ChiefJobListEditorPage() {
   }
 
   async function addStandardJob() {
+    if (blockReadOnlyAction()) return false;
+
     const text = newStandardJob.trim();
 
     setMessage("");
@@ -769,6 +793,8 @@ export default function ChiefJobListEditorPage() {
   }
 
   async function addSpecialJob() {
+    if (blockReadOnlyAction()) return false;
+
     const text = newSpecialJob.trim();
 
     setMessage("");
@@ -828,6 +854,8 @@ export default function ChiefJobListEditorPage() {
   }
 
   async function removeJob(job: JobRow) {
+    if (blockReadOnlyAction()) return false;
+
     if (job.section === "personal") {
       setErrorMessage("Personal jobs are mechanic-controlled and cannot be removed from the chief page.");
       return;
@@ -889,6 +917,8 @@ export default function ChiefJobListEditorPage() {
   }
 
   async function clearAllJobs() {
+    if (blockReadOnlyAction()) return false;
+
     const confirmed = window.confirm(
       `Clear ALL workshop jobs for Car ${carId}?\n\nThis will remove standard jobs, special jobs, mechanic personal jobs, notes and the released event/date from the mechanic page.\n\nMechanics will receive a popup notification that the job list has been cleared.`,
     );
@@ -1263,7 +1293,7 @@ export default function ChiefJobListEditorPage() {
           <button
             type="button"
             onClick={() => saveReleaseInfo()}
-            disabled={savingReleaseInfo}
+            disabled={readOnly || savingReleaseInfo}
             className="rounded-xl border border-zinc-700 bg-[#0d0f12] px-5 py-3 text-sm font-semibold text-zinc-200 hover:border-red-500 hover:text-red-300 disabled:cursor-not-allowed disabled:opacity-50"
           >
             {savingReleaseInfo ? "Saving..." : "Save Draft Details"}
@@ -1283,7 +1313,7 @@ export default function ChiefJobListEditorPage() {
           <button
             type="button"
             onClick={clearAllJobs}
-            disabled={clearingAllJobs}
+            disabled={readOnly || clearingAllJobs}
             className="rounded-xl border border-red-900/70 px-5 py-3 text-sm font-semibold text-red-300 hover:bg-red-950/40 disabled:cursor-not-allowed disabled:opacity-50"
           >
             {clearingAllJobs ? "Clearing..." : "Clear All Jobs + Notify"}
@@ -1383,7 +1413,7 @@ export default function ChiefJobListEditorPage() {
               <button
                 type="button"
                 onClick={addStandardJob}
-                disabled={addingStandardJob}
+                disabled={readOnly || addingStandardJob}
                 className="rounded-xl bg-zinc-100 px-5 py-3 text-sm font-semibold text-zinc-950 hover:bg-white disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {addingStandardJob ? "Adding..." : "Add Standard Job"}
@@ -1423,7 +1453,7 @@ export default function ChiefJobListEditorPage() {
             <button
               type="button"
               onClick={addSpecialJob}
-              disabled={addingSpecialJob}
+              disabled={readOnly || addingSpecialJob}
               className="w-full rounded-xl bg-red-700 px-5 py-3 text-sm font-semibold hover:bg-red-600 disabled:cursor-not-allowed disabled:opacity-50"
             >
               {addingSpecialJob ? "Adding..." : "Add Special Job"}

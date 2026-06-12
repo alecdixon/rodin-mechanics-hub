@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
-import { hasPermission } from "@/lib/userAccess";
+import { hasPermission, isReadOnlyUser } from "@/lib/userAccess";
 import LogoutButton from "@/app/components/LogoutButton";
 
 type JobSection = "standard" | "special";
@@ -136,6 +136,7 @@ export default function ChiefEveningJobListPage() {
   const [errorMessage, setErrorMessage] = useState("");
 
   const [pendingChanges, setPendingChanges] = useState<string[]>([]);
+  const [readOnly, setReadOnly] = useState(true);
 
   function jobKey(job: EveningJobRow) {
     return job.id || `${job.car_id}-${job.section}-${job.job_id}`;
@@ -175,6 +176,40 @@ export default function ChiefEveningJobListPage() {
     ].join("\n");
   }
 
+  async function checkPageAccess() {
+    const { data, error } = await supabase.auth.getUser();
+
+    if (error || !data.user?.email) {
+      router.replace("/login");
+      return null;
+    }
+
+    const email = data.user.email.trim().toLowerCase();
+
+    const allowed =
+      hasPermission(email, "dashboard:view") &&
+      hasPermission(email, "evening_jobs:view");
+
+    if (!allowed) {
+      router.replace("/dashboard");
+      return null;
+    }
+
+    setReadOnly(isReadOnlyUser(email));
+
+    return email;
+  }
+
+  function blockReadOnlyAction() {
+    if (!readOnly) {
+      return false;
+    }
+
+    setMessage("");
+    setErrorMessage("Guest mode is view-only. Evening prep lists cannot be edited, published, cleared or changed.");
+    return true;
+  }
+
   async function checkManageAccess() {
     const { data, error } = await supabase.auth.getUser();
 
@@ -187,10 +222,11 @@ export default function ChiefEveningJobListPage() {
 
     const allowed =
       hasPermission(email, "dashboard:view") &&
-      hasPermission(email, "evening_jobs:edit");
+      hasPermission(email, "evening_jobs:edit") &&
+      !isReadOnlyUser(email);
 
     if (!allowed) {
-      router.replace("/dashboard");
+      setErrorMessage("Guest mode is view-only. Evening prep lists cannot be edited.");
       return null;
     }
 
@@ -299,7 +335,7 @@ export default function ChiefEveningJobListPage() {
       return;
     }
 
-    const email = await checkManageAccess();
+    const email = await checkPageAccess();
 
     if (!email) {
       return;
@@ -321,6 +357,8 @@ export default function ChiefEveningJobListPage() {
   }, [carId]);
 
   async function saveReleaseInfo(customMessage?: string) {
+    if (blockReadOnlyAction()) return false;
+
     setMessage("");
     setErrorMessage("");
     setSavingReleaseInfo(true);
@@ -365,6 +403,8 @@ export default function ChiefEveningJobListPage() {
   }
 
   async function markDraft(customMessage?: string) {
+    if (blockReadOnlyAction()) return false;
+
     const email = await checkManageAccess();
 
     if (!email) {
@@ -405,6 +445,8 @@ export default function ChiefEveningJobListPage() {
   }
 
   async function publishJobList() {
+    if (blockReadOnlyAction()) return false;
+
     setMessage("");
     setErrorMessage("");
 
@@ -501,6 +543,8 @@ export default function ChiefEveningJobListPage() {
   }
 
   async function updateFromTemplate() {
+    if (blockReadOnlyAction()) return false;
+
     setMessage("");
     setErrorMessage("");
 
@@ -605,6 +649,8 @@ export default function ChiefEveningJobListPage() {
   }
 
   async function clearStandardJobs() {
+    if (blockReadOnlyAction()) return false;
+
     const email = await checkManageAccess();
 
     if (!email) {
@@ -706,6 +752,8 @@ export default function ChiefEveningJobListPage() {
   }
 
   async function addSpecialJob() {
+    if (blockReadOnlyAction()) return false;
+
     const email = await checkManageAccess();
 
     if (!email) {
@@ -767,6 +815,8 @@ export default function ChiefEveningJobListPage() {
   }
 
   async function removeJob(job: EveningJobRow) {
+    if (blockReadOnlyAction()) return false;
+
     const email = await checkManageAccess();
 
     if (!email) {
@@ -830,6 +880,8 @@ export default function ChiefEveningJobListPage() {
   }
 
   async function clearJobNote(job: EveningJobRow) {
+    if (blockReadOnlyAction()) return false;
+
     const email = await checkManageAccess();
 
     if (!email) {
@@ -886,6 +938,8 @@ export default function ChiefEveningJobListPage() {
   }
 
   async function clearAllJobs() {
+    if (blockReadOnlyAction()) return false;
+
     const email = await checkManageAccess();
 
     if (!email) {
@@ -1219,7 +1273,7 @@ export default function ChiefEveningJobListPage() {
           <button
             type="button"
             onClick={() => saveReleaseInfo()}
-            disabled={savingReleaseInfo}
+            disabled={readOnly || savingReleaseInfo}
             className="rounded-xl border border-zinc-700 bg-[#0d0f12] px-5 py-3 text-sm font-semibold text-zinc-200 hover:border-red-500 hover:text-red-300 disabled:cursor-not-allowed disabled:opacity-50"
           >
             {savingReleaseInfo ? "Saving..." : "Save Draft Details"}
@@ -1239,7 +1293,7 @@ export default function ChiefEveningJobListPage() {
           <button
             type="button"
             onClick={clearAllJobs}
-            disabled={clearingAllJobs}
+            disabled={readOnly || clearingAllJobs}
             className="rounded-xl border border-red-900/70 px-5 py-3 text-sm font-semibold text-red-300 hover:bg-red-950/40 disabled:cursor-not-allowed disabled:opacity-50"
           >
             {clearingAllJobs ? "Clearing..." : "Clear All Evening Jobs + Notify"}
@@ -1347,7 +1401,7 @@ export default function ChiefEveningJobListPage() {
             <button
               type="button"
               onClick={addSpecialJob}
-              disabled={addingSpecialJob}
+              disabled={readOnly || addingSpecialJob}
               className="w-full rounded-xl bg-red-700 px-5 py-3 text-sm font-semibold hover:bg-red-600 disabled:cursor-not-allowed disabled:opacity-50"
             >
               {addingSpecialJob ? "Adding..." : "Add Special Evening Job"}

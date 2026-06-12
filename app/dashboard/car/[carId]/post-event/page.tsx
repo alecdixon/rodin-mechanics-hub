@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
-import { hasPermission } from "@/lib/userAccess";
+import { hasPermission, isReadOnlyUser } from "@/lib/userAccess";
 import LogoutButton from "@/app/components/LogoutButton";
 
 type PostEventSheet = {
@@ -95,6 +95,7 @@ export default function ChiefPostEventPage() {
   const [driverFilter, setDriverFilter] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
   const [openingPdf, setOpeningPdf] = useState(false);
+  const [readOnly, setReadOnly] = useState(false);
 
   async function checkAccess() {
     if (!Number.isFinite(carId)) {
@@ -110,6 +111,8 @@ export default function ChiefPostEventPage() {
     }
 
     const email = userData.user.email.trim().toLowerCase();
+
+    setReadOnly(isReadOnlyUser(email));
 
     if (!hasPermission(email, "post_event:view")) {
       router.replace("/dashboard");
@@ -253,12 +256,18 @@ export default function ChiefPostEventPage() {
         </div>
 
         <div className="flex flex-wrap gap-3">
-          <Link
-            href={`/car/${carId}/post-event`}
-            className="rounded-xl border border-zinc-700 bg-[#14181d] px-5 py-3 text-sm font-semibold text-zinc-200 hover:border-red-500 hover:text-red-300"
-          >
-            Open Mechanic Sheet
-          </Link>
+          {readOnly ? (
+            <span className="rounded-xl border border-zinc-800 bg-[#14181d] px-5 py-3 text-sm font-semibold text-zinc-500">
+              Mechanic Sheet View Only
+            </span>
+          ) : (
+            <Link
+              href={`/car/${carId}/post-event`}
+              className="rounded-xl border border-zinc-700 bg-[#14181d] px-5 py-3 text-sm font-semibold text-zinc-200 hover:border-red-500 hover:text-red-300"
+            >
+              Open Mechanic Sheet
+            </Link>
+          )}
 
           <LogoutButton />
         </div>
@@ -267,6 +276,12 @@ export default function ChiefPostEventPage() {
       {errorMessage && (
         <div className="mb-6 rounded-2xl border border-red-900 bg-red-950/40 p-4 text-sm text-red-200">
           {errorMessage}
+        </div>
+      )}
+
+      {readOnly && (
+        <div className="mb-6 rounded-2xl border border-amber-800 bg-amber-950/25 p-4 text-sm text-amber-200">
+          Guest mode is view-only. Post-event records and PDFs can be reviewed, but new sheets cannot be submitted from this profile.
         </div>
       )}
 
