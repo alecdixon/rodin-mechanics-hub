@@ -22,18 +22,38 @@ export type Permission =
   | "post_event:edit"
   | "clutch:view"
   | "clutch:edit"
+  | "calendar:view"
   | "calendar:manage"
   | "drain_out:view"
   | "drain_out:manage"
   | "recorded_issues:view"
   | "recorded_issues:edit"
-  | "recorded_issues:delete";
+  | "recorded_issues:delete"
+  | "sticker_list:view"
+  | "sticker_list:edit"
+  | "sticker_list:delete"
+  | "sticker_list:send";
 
-type UserAccess = {
+export type UserAccess = {
   role: UserRole;
   assignedCar: number | null;
   permissions: Permission[];
+  readOnly: boolean;
 };
+
+const VIEW_PERMISSIONS: Permission[] = [
+  "dashboard:view",
+  "cars:view",
+  "job_lists:view",
+  "evening_jobs:view",
+  "team_jobs:view",
+  "post_event:view",
+  "clutch:view",
+  "calendar:view",
+  "drain_out:view",
+  "recorded_issues:view",
+  "sticker_list:view",
+];
 
 const ALL_PERMISSIONS: Permission[] = [
   "dashboard:view",
@@ -51,12 +71,17 @@ const ALL_PERMISSIONS: Permission[] = [
   "post_event:edit",
   "clutch:view",
   "clutch:edit",
+  "calendar:view",
   "calendar:manage",
   "drain_out:view",
   "drain_out:manage",
   "recorded_issues:view",
   "recorded_issues:edit",
   "recorded_issues:delete",
+  "sticker_list:view",
+  "sticker_list:edit",
+  "sticker_list:delete",
+  "sticker_list:send",
 ];
 
 const NUMBER1_MECHANIC_PERMISSIONS: Permission[] = [
@@ -73,6 +98,8 @@ const NUMBER1_MECHANIC_PERMISSIONS: Permission[] = [
   "drain_out:view",
   "recorded_issues:view",
   "recorded_issues:edit",
+  "sticker_list:view",
+  "sticker_list:edit",
 ];
 
 const NUMBER2_MECHANIC_PERMISSIONS: Permission[] = [
@@ -81,6 +108,7 @@ const NUMBER2_MECHANIC_PERMISSIONS: Permission[] = [
   "drain_out:view",
   "recorded_issues:view",
   "recorded_issues:edit",
+  "sticker_list:view",
 ];
 
 const ENGINEER_PERMISSIONS: Permission[] = [
@@ -89,25 +117,21 @@ const ENGINEER_PERMISSIONS: Permission[] = [
   "team_jobs:view",
   "post_event:view",
   "clutch:view",
+  "calendar:view",
   "drain_out:view",
   "recorded_issues:view",
   "recorded_issues:edit",
+  "sticker_list:view",
 ];
 
-const GUEST_PERMISSIONS: Permission[] = [
-  "dashboard:view",
-  "cars:view",
-  "job_lists:view",
-  "evening_jobs:view",
-  "team_jobs:view",
-  "post_event:view",
-  "clutch:view",
-  "drain_out:view",
-  "recorded_issues:view",
-];
+/*
+ * Showcase guest profile.
+ * Guest can view the whole app, but cannot write/edit/delete/send/clear/submit.
+ */
+const GUEST_PERMISSIONS: Permission[] = VIEW_PERMISSIONS;
 
 const LOGIN_ALIASES: Record<string, string> = {
-  iamaguest: "guest@rodin.local",
+  iamaguest: "guest@rodinmotorsport.com",
 };
 
 const USER_ACCESS: Record<string, UserAccess> = {
@@ -115,63 +139,56 @@ const USER_ACCESS: Record<string, UserAccess> = {
     role: "chief_mechanic",
     assignedCar: null,
     permissions: ALL_PERMISSIONS,
+    readOnly: false,
   },
 
   "simon.crain@rodinmotorsport.com": {
     role: "number1_mechanic",
     assignedCar: 1,
     permissions: NUMBER1_MECHANIC_PERMISSIONS,
+    readOnly: false,
   },
 
   "olli.moss@rodinmotorsport.com": {
     role: "number1_mechanic",
     assignedCar: 2,
     permissions: NUMBER1_MECHANIC_PERMISSIONS,
+    readOnly: false,
   },
 
   "jack.carter@rodinmotorsport.com": {
     role: "number1_mechanic",
     assignedCar: 3,
     permissions: NUMBER1_MECHANIC_PERMISSIONS,
+    readOnly: false,
   },
 
-  /*
-   * Number 2 mechanics.
-   * These users now land on /drain-out first after login.
-   * They can then use the Team Jobs button on the drain-out page.
-   */
   "ben.southern@rodinmotorsport.com": {
     role: "number2_mechanic",
     assignedCar: null,
     permissions: NUMBER2_MECHANIC_PERMISSIONS,
+    readOnly: false,
   },
 
   "charlie.lawman@rodinmotorsport.com": {
     role: "number2_mechanic",
     assignedCar: null,
     permissions: NUMBER2_MECHANIC_PERMISSIONS,
+    readOnly: false,
   },
 
-  /*
-   * Engineers.
-   * Add real engineer Supabase Auth email addresses here.
-   * Example:
-   * "first.last@rodinmotorsport.com": {
-   *   role: "engineer",
-   *   assignedCar: null,
-   *   permissions: ENGINEER_PERMISSIONS,
-   * },
-   */
   "alec.dixon@rodinmotorsport.com": {
     role: "engineer",
     assignedCar: null,
     permissions: ENGINEER_PERMISSIONS,
+    readOnly: false,
   },
 
   "guest@rodinmotorsport.com": {
     role: "guest",
     assignedCar: null,
     permissions: GUEST_PERMISSIONS,
+    readOnly: true,
   },
 };
 
@@ -179,7 +196,9 @@ export function normaliseEmail(email: string | null | undefined): string {
   return email?.trim().toLowerCase() ?? "";
 }
 
-export function resolveLoginIdentifier(identifier: string | null | undefined): string {
+export function resolveLoginIdentifier(
+  identifier: string | null | undefined,
+): string {
   const cleanIdentifier = normaliseEmail(identifier);
 
   return LOGIN_ALIASES[cleanIdentifier] ?? cleanIdentifier;
@@ -193,6 +212,7 @@ export function getUserAccess(email: string | null | undefined): UserAccess {
       role: "unknown",
       assignedCar: null,
       permissions: [],
+      readOnly: true,
     }
   );
 }
@@ -227,26 +247,52 @@ export function hasAnyPermission(
   return permissions.some((permission) => userPermissions.includes(permission));
 }
 
+/*
+ * This is the key guest lockout.
+ * Anything that writes, edits, deletes, sends, clears, allocates, uploads,
+ * completes, publishes, or submits must use canWrite() or isReadOnlyUser().
+ */
+export function isReadOnlyUser(email: string | null | undefined): boolean {
+  const access = getUserAccess(email);
+
+  return access.readOnly === true || access.role === "guest";
+}
+
+export function canWrite(
+  email: string | null | undefined,
+  permission: Permission,
+): boolean {
+  return !isReadOnlyUser(email) && hasPermission(email, permission);
+}
+
 export function canAccessDashboard(email: string | null | undefined): boolean {
   return hasPermission(email, "dashboard:view");
 }
 
 export function canManageCars(email: string | null | undefined): boolean {
-  return hasPermission(email, "cars:manage");
+  return canWrite(email, "cars:manage");
 }
 
 export function canAccessTeamJobs(email: string | null | undefined): boolean {
   return hasPermission(email, "team_jobs:view");
 }
 
+export function canCreateTeamJobs(email: string | null | undefined): boolean {
+  return canWrite(email, "team_jobs:create");
+}
+
+export function canPublishTeamJobs(email: string | null | undefined): boolean {
+  return canWrite(email, "team_jobs:publish");
+}
+
 export function canCompleteTeamJobs(email: string | null | undefined): boolean {
-  return hasPermission(email, "team_jobs:complete");
+  return canWrite(email, "team_jobs:complete");
 }
 
 export function canManageTeamJobs(email: string | null | undefined): boolean {
   return (
-    hasPermission(email, "team_jobs:create") &&
-    hasPermission(email, "team_jobs:publish")
+    canCreateTeamJobs(email) &&
+    canPublishTeamJobs(email)
   );
 }
 
@@ -255,7 +301,7 @@ export function canAccessDrainOut(email: string | null | undefined): boolean {
 }
 
 export function canManageDrainOut(email: string | null | undefined): boolean {
-  return hasPermission(email, "drain_out:manage");
+  return canWrite(email, "drain_out:manage");
 }
 
 export function canAccessRecordedIssues(
@@ -267,13 +313,53 @@ export function canAccessRecordedIssues(
 export function canEditRecordedIssues(
   email: string | null | undefined,
 ): boolean {
-  return hasPermission(email, "recorded_issues:edit");
+  return canWrite(email, "recorded_issues:edit");
 }
 
 export function canDeleteRecordedIssues(
   email: string | null | undefined,
 ): boolean {
-  return hasPermission(email, "recorded_issues:delete");
+  return canWrite(email, "recorded_issues:delete");
+}
+
+export function canAccessStickerList(email: string | null | undefined): boolean {
+  return hasPermission(email, "sticker_list:view");
+}
+
+export function canEditStickerList(email: string | null | undefined): boolean {
+  return canWrite(email, "sticker_list:edit");
+}
+
+export function canDeleteStickerList(email: string | null | undefined): boolean {
+  return canWrite(email, "sticker_list:delete");
+}
+
+export function canSendStickerList(email: string | null | undefined): boolean {
+  return canWrite(email, "sticker_list:send");
+}
+
+export function canAccessClutch(email: string | null | undefined): boolean {
+  return hasPermission(email, "clutch:view");
+}
+
+export function canEditClutch(email: string | null | undefined): boolean {
+  return canWrite(email, "clutch:edit");
+}
+
+export function canAccessPostEvent(email: string | null | undefined): boolean {
+  return hasPermission(email, "post_event:view");
+}
+
+export function canEditPostEvent(email: string | null | undefined): boolean {
+  return canWrite(email, "post_event:edit");
+}
+
+export function canAccessCalendar(email: string | null | undefined): boolean {
+  return hasPermission(email, "calendar:view");
+}
+
+export function canManageCalendar(email: string | null | undefined): boolean {
+  return canWrite(email, "calendar:manage");
 }
 
 export function canAccessCarPages(
@@ -324,8 +410,7 @@ export function getLoginRedirect(email: string | null | undefined): string {
 }
 
 /*
- * Backwards compatibility helpers.
- * These let old pages that still check "chief" or "mechanic" be updated gradually.
+ * Convenience helpers.
  */
 export function isChiefMechanic(email: string | null | undefined): boolean {
   return getUserRole(email) === "chief_mechanic";
@@ -345,4 +430,15 @@ export function isEngineer(email: string | null | undefined): boolean {
 
 export function isGuest(email: string | null | undefined): boolean {
   return getUserRole(email) === "guest";
+}
+
+/*
+ * Use this in pages to show a small banner or disable forms.
+ */
+export function getReadOnlyMessage(email: string | null | undefined): string {
+  if (isGuest(email)) {
+    return "Guest mode is view-only. Editing, deleting, submitting, sending, uploading and clearing actions are disabled.";
+  }
+
+  return "";
 }
