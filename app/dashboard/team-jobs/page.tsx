@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { supabase } from "@/lib/supabase";
-import { hasPermission } from "@/lib/userAccess";
+import { hasPermission, isReadOnlyUser } from "@/lib/userAccess";
 import LogoutButton from "@/app/components/LogoutButton";
 
 type Priority = "low" | "normal" | "high" | "urgent";
@@ -45,6 +45,7 @@ export default function ChiefTeamJobsPage() {
 
   const [canCreateJobs, setCanCreateJobs] = useState(false);
   const [canPublishJobs, setCanPublishJobs] = useState(false);
+  const [readOnly, setReadOnly] = useState(true);
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -69,15 +70,20 @@ export default function ChiefTeamJobsPage() {
 
     const email = userData.user.email.trim().toLowerCase();
 
-    const userCanCreateJobs = hasPermission(email, "team_jobs:create");
-    const userCanPublishJobs = hasPermission(email, "team_jobs:publish");
+    const userIsReadOnly = isReadOnlyUser(email);
+    const userCanViewJobs = hasPermission(email, "team_jobs:view");
+    const userCanCreateJobs =
+      !userIsReadOnly && hasPermission(email, "team_jobs:create");
+    const userCanPublishJobs =
+      !userIsReadOnly && hasPermission(email, "team_jobs:publish");
 
     setUserEmail(email);
+    setReadOnly(userIsReadOnly);
     setCanCreateJobs(userCanCreateJobs);
     setCanPublishJobs(userCanPublishJobs);
 
-    if (!userCanCreateJobs && !userCanPublishJobs) {
-      setErrorMessage("You do not have permission to manage team jobs.");
+    if (!userCanViewJobs) {
+      setErrorMessage("You do not have permission to view team jobs.");
       setLoading(false);
       return;
     }
@@ -135,7 +141,17 @@ export default function ChiefTeamJobsPage() {
 
   const completedJobs = publishedJobs.filter((job) => job.completed).length;
 
+  function blockReadOnlyAction() {
+    if (!readOnly) return false;
+
+    setMessage("");
+    setErrorMessage("Guest mode is view-only. Team jobs cannot be added, published, reset or deleted.");
+    return true;
+  }
+
   async function addJob() {
+    if (blockReadOnlyAction()) return;
+
     if (!canCreateJobs) {
       setErrorMessage("You do not have permission to create team jobs.");
       return;
@@ -182,6 +198,8 @@ export default function ChiefTeamJobsPage() {
   }
 
   async function publishDraftJobs() {
+    if (blockReadOnlyAction()) return;
+
     if (!canPublishJobs) {
       setErrorMessage("You do not have permission to publish team jobs.");
       return;
@@ -249,6 +267,8 @@ export default function ChiefTeamJobsPage() {
   }
 
   async function deleteJob(job: TeamJob) {
+    if (blockReadOnlyAction()) return;
+
     if (!canCreateJobs) {
       setErrorMessage("You do not have permission to delete team jobs.");
       return;
@@ -281,6 +301,8 @@ export default function ChiefTeamJobsPage() {
   }
 
   async function resetCompleted(job: TeamJob) {
+    if (blockReadOnlyAction()) return;
+
     if (!canCreateJobs) {
       setErrorMessage("You do not have permission to reset team jobs.");
       return;
@@ -355,6 +377,12 @@ export default function ChiefTeamJobsPage() {
           <LogoutButton />
         </div>
 
+        {readOnly && (
+          <div className="mt-6 rounded-xl border border-amber-800 bg-amber-950/25 p-4 text-sm text-amber-200">
+            Guest mode is view-only. You can inspect draft, published and completed team jobs, but cannot add, publish, reset or delete anything.
+          </div>
+        )}
+
         {message && (
           <div className="mt-6 rounded-xl border border-green-800 bg-green-950/30 p-4 text-sm text-green-200">
             {message}
@@ -369,7 +397,15 @@ export default function ChiefTeamJobsPage() {
 
         <section className="mt-6 grid gap-6 lg:grid-cols-[1fr_360px]">
           <div className="rounded-2xl border border-neutral-800 bg-neutral-950 p-5">
-            <h2 className="text-xl font-bold">Add Team Job</h2>
+            <h2 className="text-xl font-bold">
+              {readOnly ? "Team Job Entry Disabled" : "Add Team Job"}
+            </h2>
+
+            {readOnly && (
+              <p className="mt-2 text-sm leading-6 text-neutral-500">
+                This section is visible for context only. Guest users cannot create draft jobs.
+              </p>
+            )}
 
             <label className="mt-5 block text-xs font-semibold uppercase tracking-[0.22em] text-neutral-500">
               Job
@@ -380,7 +416,7 @@ export default function ChiefTeamJobsPage() {
               onChange={(event) => setJobText(event.target.value)}
               rows={3}
               placeholder="Example: Clean pit wall kit and check all radio chargers"
-              disabled={!canCreateJobs}
+              disabled={readOnly || !canCreateJobs}
               className="mt-2 w-full rounded-xl border border-neutral-800 bg-black p-3 text-sm text-white outline-none focus:border-red-500 disabled:cursor-not-allowed disabled:opacity-50"
             />
 
@@ -393,7 +429,7 @@ export default function ChiefTeamJobsPage() {
               onChange={(event) => setNotes(event.target.value)}
               rows={3}
               placeholder="Optional extra detail..."
-              disabled={!canCreateJobs}
+              disabled={readOnly || !canCreateJobs}
               className="mt-2 w-full rounded-xl border border-neutral-800 bg-black p-3 text-sm text-white outline-none focus:border-red-500 disabled:cursor-not-allowed disabled:opacity-50"
             />
 
@@ -404,7 +440,7 @@ export default function ChiefTeamJobsPage() {
             <select
               value={priority}
               onChange={(event) => setPriority(event.target.value as Priority)}
-              disabled={!canCreateJobs}
+              disabled={readOnly || !canCreateJobs}
               className="mt-2 w-full rounded-xl border border-neutral-800 bg-black p-3 text-sm text-white outline-none focus:border-red-500 disabled:cursor-not-allowed disabled:opacity-50"
             >
               <option value="low">Low</option>
@@ -416,7 +452,7 @@ export default function ChiefTeamJobsPage() {
             <button
               type="button"
               onClick={addJob}
-              disabled={saving || !canCreateJobs}
+              disabled={readOnly || saving || !canCreateJobs}
               className="mt-6 rounded-xl bg-red-600 px-5 py-3 text-sm font-bold text-white hover:bg-red-500 disabled:cursor-not-allowed disabled:opacity-50"
             >
               {saving ? "Adding..." : "Add Draft Job"}
@@ -461,7 +497,7 @@ export default function ChiefTeamJobsPage() {
             <button
               type="button"
               onClick={publishDraftJobs}
-              disabled={publishing || draftJobs.length === 0 || !canPublishJobs}
+              disabled={readOnly || publishing || draftJobs.length === 0 || !canPublishJobs}
               className="mt-6 w-full rounded-xl bg-red-600 px-5 py-3 text-sm font-bold text-white hover:bg-red-500 disabled:cursor-not-allowed disabled:opacity-50"
             >
               {publishing
@@ -521,7 +557,7 @@ export default function ChiefTeamJobsPage() {
                     <button
                       type="button"
                       onClick={() => deleteJob(job)}
-                      disabled={deletingId === job.id || !canCreateJobs}
+                      disabled={readOnly || deletingId === job.id || !canCreateJobs}
                       className="rounded-lg border border-red-800 px-4 py-2 text-sm font-semibold text-red-300 hover:border-red-500 disabled:cursor-not-allowed disabled:opacity-50"
                     >
                       {deletingId === job.id ? "Deleting..." : "Delete"}
@@ -594,7 +630,7 @@ export default function ChiefTeamJobsPage() {
                         <button
                           type="button"
                           onClick={() => resetCompleted(job)}
-                          disabled={!canCreateJobs}
+                          disabled={readOnly || !canCreateJobs}
                           className="rounded-lg border border-neutral-700 px-4 py-2 text-sm font-semibold text-neutral-300 hover:border-red-500 disabled:cursor-not-allowed disabled:opacity-50"
                         >
                           Reset
@@ -604,7 +640,7 @@ export default function ChiefTeamJobsPage() {
                       <button
                         type="button"
                         onClick={() => deleteJob(job)}
-                        disabled={deletingId === job.id || !canCreateJobs}
+                        disabled={readOnly || deletingId === job.id || !canCreateJobs}
                         className="rounded-lg border border-red-800 px-4 py-2 text-sm font-semibold text-red-300 hover:border-red-500 disabled:cursor-not-allowed disabled:opacity-50"
                       >
                         {deletingId === job.id ? "Deleting..." : "Delete"}
