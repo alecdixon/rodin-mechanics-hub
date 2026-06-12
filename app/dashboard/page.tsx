@@ -1,11 +1,11 @@
 "use client";
 
-import { ChangeEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import LogoutButton from "@/app/components/LogoutButton";
 import { supabase } from "@/lib/supabase";
 import { getAssignedCar, getUserRole, hasPermission } from "@/lib/userAccess";
-import LogoutButton from "@/app/components/LogoutButton";
 
 type DashboardCar = {
   id: number;
@@ -40,50 +40,6 @@ type ClutchInventoryItem = {
   created_at?: string | null;
 };
 
-type CalendarEvent = {
-  id: string;
-  event_name: string;
-  track_name: string | null;
-  start_date: string;
-  end_date: string | null;
-  event_type: string | null;
-  location: string | null;
-  notes: string | null;
-  colour: string | null;
-  created_at: string | null;
-};
-
-type CsvCalendarRow = {
-  event_name: string;
-  track_name: string | null;
-  start_date: string;
-  end_date: string | null;
-  event_type: string | null;
-  location: string | null;
-  notes: string | null;
-  colour: string | null;
-};
-
-type ClutchMeasurement = {
-  id: string | number;
-  car_id: number;
-  car_name?: string | null;
-  created_at: string | null;
-  original_stack_height?: number | string | null;
-  driven_plates?: unknown;
-  intermediate_plates?: unknown;
-};
-
-type ClutchWearPoint = {
-  id: string;
-  car_id: number;
-  carName: string;
-  colour: string;
-  date: string;
-  labelDate: string;
-  wear: number;
-};
-
 const DEFAULT_CAR_COLOUR = "#b91c1c";
 
 function clutchDisplayName(clutch: ClutchInventoryItem) {
@@ -100,175 +56,6 @@ function carDisplayName(car: Pick<CarProgress, "id" | "name">) {
   return `${car.name} / Car ${car.id}`;
 }
 
-function niceDate(value: string | null | undefined) {
-  if (!value) return "—";
-
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-
-  return date.toLocaleDateString("en-GB");
-}
-
-function shortDate(value: string | null | undefined) {
-  if (!value) return "—";
-
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "—";
-
-  return date.toLocaleDateString("en-GB", {
-    day: "2-digit",
-    month: "2-digit",
-  });
-}
-
-function dateOnlyKey(value: string | null | undefined) {
-  if (!value) return "";
-
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "";
-
-  return date.toISOString().slice(0, 10);
-}
-
-function splitCsvLine(line: string) {
-  const result: string[] = [];
-  let current = "";
-  let insideQuotes = false;
-
-  for (let index = 0; index < line.length; index += 1) {
-    const char = line[index];
-    const nextChar = line[index + 1];
-
-    if (char === '"' && insideQuotes && nextChar === '"') {
-      current += '"';
-      index += 1;
-    } else if (char === '"') {
-      insideQuotes = !insideQuotes;
-    } else if (char === "," && !insideQuotes) {
-      result.push(current.trim());
-      current = "";
-    } else {
-      current += char;
-    }
-  }
-
-  result.push(current.trim());
-  return result;
-}
-
-function parseCalendarCsv(csvText: string): CsvCalendarRow[] {
-  const lines = csvText
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter(Boolean);
-
-  if (lines.length < 2) return [];
-
-  const headers = splitCsvLine(lines[0]).map((header) =>
-    header.trim().toLowerCase(),
-  );
-
-  const requiredHeaders = ["event_name", "start_date"];
-
-  for (const required of requiredHeaders) {
-    if (!headers.includes(required)) {
-      throw new Error(`CSV is missing required column: ${required}`);
-    }
-  }
-
-  return lines.slice(1).map((line, index) => {
-    const values = splitCsvLine(line);
-    const row: Record<string, string> = {};
-
-    headers.forEach((header, headerIndex) => {
-      row[header] = values[headerIndex]?.trim() ?? "";
-    });
-
-    if (!row.event_name) {
-      throw new Error(`Row ${index + 2} is missing event_name.`);
-    }
-
-    if (!row.start_date) {
-      throw new Error(`Row ${index + 2} is missing start_date.`);
-    }
-
-    return {
-      event_name: row.event_name,
-      track_name: row.track_name || null,
-      start_date: row.start_date,
-      end_date: row.end_date || null,
-      event_type: row.event_type || null,
-      location: row.location || null,
-      notes: row.notes || null,
-      colour: row.colour || DEFAULT_CAR_COLOUR,
-    };
-  });
-}
-
-function parsePlateRows(
-  value: unknown,
-): { a?: unknown; b?: unknown; c?: unknown }[] {
-  if (!value) return [];
-
-  if (Array.isArray(value)) {
-    return value as { a?: unknown; b?: unknown; c?: unknown }[];
-  }
-
-  if (typeof value === "string") {
-    try {
-      const parsed = JSON.parse(value);
-      return Array.isArray(parsed) ? parsed : [];
-    } catch {
-      return [];
-    }
-  }
-
-  return [];
-}
-
-function numeric(value: unknown) {
-  const n = Number(value);
-  return Number.isFinite(n) ? n : null;
-}
-
-function rowMean(row: { a?: unknown; b?: unknown; c?: unknown }) {
-  const values = [numeric(row.a), numeric(row.b), numeric(row.c)].filter(
-    (value): value is number => value !== null,
-  );
-
-  if (values.length === 0) return null;
-
-  return values.reduce((sum, value) => sum + value, 0) / values.length;
-}
-
-function calculateClutchStack(record: ClutchMeasurement) {
-  const driven = parsePlateRows(record.driven_plates);
-  const intermediate = parsePlateRows(record.intermediate_plates);
-
-  const drivenTotal = driven.reduce((sum, row) => {
-    const mean = rowMean(row);
-    return mean === null ? sum : sum + mean;
-  }, 0);
-
-  const intermediateTotal = intermediate.reduce((sum, row) => {
-    const mean = rowMean(row);
-    return mean === null ? sum : sum + mean;
-  }, 0);
-
-  const total = drivenTotal + intermediateTotal;
-
-  return total > 0 ? total : null;
-}
-
-function calculateClutchWear(record: ClutchMeasurement) {
-  const originalStack = numeric(record.original_stack_height);
-  const measuredStack = calculateClutchStack(record);
-
-  if (originalStack === null || measuredStack === null) return null;
-
-  return Math.max(0, originalStack - measuredStack);
-}
-
 function ProgressDial({
   progress,
   colour,
@@ -280,15 +67,15 @@ function ProgressDial({
 
   return (
     <div
-      className="grid h-36 w-36 place-items-center rounded-full shadow-inner"
+      className="grid h-32 w-32 shrink-0 place-items-center rounded-full shadow-inner"
       style={{
         background: `conic-gradient(${colour} ${angle}deg, #2a2f36 ${angle}deg)`,
       }}
     >
-      <div className="grid h-28 w-28 place-items-center rounded-full bg-[#111418]">
+      <div className="grid h-24 w-24 place-items-center rounded-full bg-[#111418]">
         <div className="text-center">
-          <div className="text-3xl font-semibold">{progress}%</div>
-          <div className="text-xs uppercase tracking-widest text-zinc-500">
+          <div className="text-2xl font-semibold">{progress}%</div>
+          <div className="text-[10px] uppercase tracking-[0.22em] text-zinc-500">
             Jobs
           </div>
         </div>
@@ -300,7 +87,7 @@ function ProgressDial({
 function JobStatusPill({ status, colour }: { status: string; colour: string }) {
   return (
     <div
-      className="mt-3 inline-flex rounded-full border bg-[#0d0f12] px-3 py-1 text-xs text-zinc-300"
+      className="inline-flex rounded-full border bg-[#0d0f12] px-3 py-1 text-xs font-semibold text-zinc-300"
       style={{
         borderColor: colour,
       }}
@@ -310,274 +97,80 @@ function JobStatusPill({ status, colour }: { status: string; colour: string }) {
   );
 }
 
-function CardLink({
+function QuickLink({
   href,
   title,
   description,
+  variant = "dark",
 }: {
   href: string;
   title: string;
   description: string;
+  variant?: "dark" | "red";
 }) {
+  const className =
+    variant === "red"
+      ? "rounded-2xl border border-red-600 bg-red-700 px-5 py-4 text-sm font-semibold text-white shadow-lg shadow-red-950/25 transition hover:border-red-400 hover:bg-red-600"
+      : "rounded-2xl border border-zinc-700 bg-[#1b2026] px-5 py-4 text-sm font-semibold text-zinc-100 transition hover:border-red-500 hover:bg-[#222832] hover:text-red-200";
+
   return (
-    <Link
-      href={href}
-      className="rounded-xl border border-zinc-700 bg-[#0d0f12] px-4 py-3 text-sm font-semibold text-zinc-200 transition hover:border-red-500 hover:bg-[#111418] hover:text-red-300"
-    >
-      {title}
-      <span className="mt-1 block text-xs font-normal leading-5 text-zinc-500">
+    <Link href={href} className={className}>
+      <span>{title}</span>
+      <span className="mt-1 block text-xs font-normal leading-5 opacity-70">
         {description}
       </span>
     </Link>
   );
 }
 
-function ClutchWearChart({ points }: { points: ClutchWearPoint[] }) {
-  const width = 1000;
-  const height = 360;
+function SectionHeading({
+  eyebrow,
+  title,
+  description,
+}: {
+  eyebrow: string;
+  title: string;
+  description: string;
+}) {
+  return (
+    <div>
+      <p className="text-xs font-semibold uppercase tracking-[0.35em] text-red-400">
+        {eyebrow}
+      </p>
 
-  const padding = {
-    top: 28,
-    right: 36,
-    bottom: 58,
-    left: 62,
-  };
+      <h2 className="mt-3 text-2xl font-semibold text-zinc-100 md:text-3xl">
+        {title}
+      </h2>
 
-  const innerWidth = width - padding.left - padding.right;
-  const innerHeight = height - padding.top - padding.bottom;
-
-  const uniqueCars = Array.from(
-    new Map(points.map((point) => [point.car_id, point])).values(),
+      <p className="mt-2 max-w-3xl text-sm leading-6 text-zinc-400">
+        {description}
+      </p>
+    </div>
   );
+}
 
-  const uniqueDateKeys = Array.from(
-    new Set(points.map((point) => point.date)),
-  ).sort();
-
-  const dateIndexMap = new Map(
-    uniqueDateKeys.map((date, index) => [date, index]),
-  );
-
-  const maxWear = points.length
-    ? Math.max(...points.map((point) => point.wear), 0.1)
-    : 1;
-
-  function xFor(date: string) {
-    const index = dateIndexMap.get(date) ?? 0;
-
-    if (uniqueDateKeys.length <= 1) {
-      return padding.left + innerWidth / 2;
-    }
-
-    return padding.left + (index / (uniqueDateKeys.length - 1)) * innerWidth;
-  }
-
-  function yFor(wear: number) {
-    return padding.top + innerHeight - (wear / maxWear) * innerHeight;
-  }
-
-  const grouped = uniqueCars.map((car) => {
-    const carPoints = points
-      .filter((point) => point.car_id === car.car_id)
-      .sort((a, b) => a.date.localeCompare(b.date));
-
-    const d = carPoints
-      .map((point, index) => {
-        const command = index === 0 ? "M" : "L";
-        return `${command} ${xFor(point.date)} ${yFor(point.wear)}`;
-      })
-      .join(" ");
-
-    return {
-      car,
-      points: carPoints,
-      d,
-    };
-  });
-
-  const gridLines = [0, 0.25, 0.5, 0.75, 1].map((ratio) => {
-    const value = maxWear * ratio;
-    const y = padding.top + innerHeight - ratio * innerHeight;
-
-    return {
-      y,
-      value,
-    };
-  });
-
-  const xLabels = uniqueDateKeys.map((date) => ({
-    date,
-    labelDate: shortDate(date),
-  }));
+function StatBox({
+  label,
+  value,
+  tone = "neutral",
+}: {
+  label: string;
+  value: string | number;
+  tone?: "neutral" | "red" | "green";
+}) {
+  const valueClass =
+    tone === "red"
+      ? "text-red-300"
+      : tone === "green"
+        ? "text-green-300"
+        : "text-zinc-100";
 
   return (
-    <div className="rounded-3xl border border-zinc-800 bg-[#0d0f12] p-5">
-      <div className="mb-5 flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.3em] text-red-400">
-            Clutch Analysis
-          </p>
-
-          <h3 className="mt-3 text-2xl font-semibold text-zinc-100">
-            Clutch Wear Trend
-          </h3>
-
-          <p className="mt-1 text-sm text-zinc-500">
-            Wear is calculated from original stack height minus measured stack
-            height. Uploads from the same day are aligned on the same date.
-          </p>
-        </div>
-
-        <div className="rounded-2xl border border-zinc-700 bg-black px-4 py-3 text-sm font-semibold text-red-300">
-          {points.length} record{points.length === 1 ? "" : "s"}
-        </div>
-      </div>
-
-      {points.length === 0 ? (
-        <div className="grid min-h-[360px] place-items-center rounded-2xl border border-dashed border-zinc-700 bg-[#111418] p-8 text-center text-sm text-zinc-500">
-          No clutch wear data available yet. Submit clutch measurement sheets
-          with original stack height and plate measurements.
-        </div>
-      ) : (
-        <>
-          <div className="overflow-x-auto">
-            <svg
-              viewBox={`0 0 ${width} ${height}`}
-              className="min-w-[860px] rounded-2xl border border-zinc-800 bg-[#111418]"
-            >
-              {gridLines.map((line) => (
-                <g key={line.y}>
-                  <line
-                    x1={padding.left}
-                    y1={line.y}
-                    x2={width - padding.right}
-                    y2={line.y}
-                    stroke="#2a2f36"
-                    strokeWidth="1"
-                  />
-
-                  <text
-                    x={padding.left - 12}
-                    y={line.y + 4}
-                    textAnchor="end"
-                    fontSize="12"
-                    fill="#a1a1aa"
-                  >
-                    {line.value.toFixed(2)}
-                  </text>
-                </g>
-              ))}
-
-              <line
-                x1={padding.left}
-                y1={padding.top}
-                x2={padding.left}
-                y2={height - padding.bottom}
-                stroke="#52525b"
-                strokeWidth="1"
-              />
-
-              <line
-                x1={padding.left}
-                y1={height - padding.bottom}
-                x2={width - padding.right}
-                y2={height - padding.bottom}
-                stroke="#52525b"
-                strokeWidth="1"
-              />
-
-              <text
-                x={20}
-                y={height / 2}
-                transform={`rotate(-90 20 ${height / 2})`}
-                textAnchor="middle"
-                fontSize="13"
-                fill="#d4d4d8"
-              >
-                Clutch wear
-              </text>
-
-              <text
-                x={width / 2}
-                y={height - 14}
-                textAnchor="middle"
-                fontSize="13"
-                fill="#d4d4d8"
-              >
-                Upload date
-              </text>
-
-              {xLabels.map((point) => (
-                <g key={`${point.date}-x-label`}>
-                  <line
-                    x1={xFor(point.date)}
-                    y1={height - padding.bottom}
-                    x2={xFor(point.date)}
-                    y2={height - padding.bottom + 6}
-                    stroke="#52525b"
-                  />
-
-                  <text
-                    x={xFor(point.date)}
-                    y={height - padding.bottom + 24}
-                    textAnchor="middle"
-                    fontSize="12"
-                    fill="#a1a1aa"
-                  >
-                    {point.labelDate}
-                  </text>
-                </g>
-              ))}
-
-              {grouped.map((group) => (
-                <g key={group.car.car_id}>
-                  <path
-                    d={group.d}
-                    fill="none"
-                    stroke={group.car.colour}
-                    strokeWidth="3"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  />
-
-                  {group.points.map((point) => (
-                    <g key={point.id}>
-                      <circle
-                        cx={xFor(point.date)}
-                        cy={yFor(point.wear)}
-                        r="5"
-                        fill={point.colour}
-                        stroke="#0d0f12"
-                        strokeWidth="2"
-                      />
-
-                      <title>
-                        {point.carName} · {point.labelDate} · {point.wear} wear
-                      </title>
-                    </g>
-                  ))}
-                </g>
-              ))}
-            </svg>
-          </div>
-
-          <div className="mt-5 flex flex-wrap gap-3">
-            {uniqueCars.map((car) => (
-              <div
-                key={car.car_id}
-                className="inline-flex items-center gap-2 rounded-full border border-zinc-700 bg-[#111418] px-3 py-2 text-xs font-semibold text-zinc-300"
-              >
-                <span
-                  className="h-2.5 w-2.5 rounded-full"
-                  style={{ backgroundColor: car.colour }}
-                />
-
-                {car.carName}
-              </div>
-            ))}
-          </div>
-        </>
-      )}
+    <div className="rounded-2xl border border-zinc-800 bg-[#0d0f12] p-4">
+      <p className={`text-3xl font-semibold ${valueClass}`}>{value}</p>
+      <p className="mt-1 text-xs uppercase tracking-[0.2em] text-zinc-500">
+        {label}
+      </p>
     </div>
   );
 }
@@ -587,22 +180,7 @@ export default function DashboardPage() {
 
   const [loading, setLoading] = useState(true);
   const [cars, setCars] = useState<CarProgress[]>([]);
-  const [calendarEvents, setCalendarEvents] = useState<CalendarEvent[]>([]);
-  const [clutchMeasurements, setClutchMeasurements] = useState<
-    ClutchMeasurement[]
-  >([]);
   const [clutches, setClutches] = useState<ClutchInventoryItem[]>([]);
-
-  const [savingClutchId, setSavingClutchId] = useState<string | null>(null);
-  const [addingClutch, setAddingClutch] = useState(false);
-
-  const [newClutchSerial, setNewClutchSerial] = useState("");
-  const [newClutchLabel, setNewClutchLabel] = useState("");
-  const [newClutchCarId, setNewClutchCarId] = useState<string>("spare");
-  const [newClutchNotes, setNewClutchNotes] = useState("");
-
-  const [calendarLoading, setCalendarLoading] = useState(false);
-  const [importingCalendar, setImportingCalendar] = useState(false);
 
   const [carSettingsOpen, setCarSettingsOpen] = useState(false);
   const [expandedCarId, setExpandedCarId] = useState<number | null>(null);
@@ -610,9 +188,17 @@ export default function DashboardPage() {
   const [savingCarId, setSavingCarId] = useState<number | null>(null);
   const [addingCar, setAddingCar] = useState(false);
 
+  const [savingClutchId, setSavingClutchId] = useState<string | null>(null);
+  const [addingClutch, setAddingClutch] = useState(false);
+
   const [newCarId, setNewCarId] = useState("");
   const [newCarName, setNewCarName] = useState("");
   const [newCarColour, setNewCarColour] = useState(DEFAULT_CAR_COLOUR);
+
+  const [newClutchSerial, setNewClutchSerial] = useState("");
+  const [newClutchLabel, setNewClutchLabel] = useState("");
+  const [newClutchCarId, setNewClutchCarId] = useState<string>("spare");
+  const [newClutchNotes, setNewClutchNotes] = useState("");
 
   const [message, setMessage] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
@@ -715,39 +301,6 @@ export default function DashboardPage() {
     setCars(cleanCars);
   }, []);
 
-  const loadCalendar = useCallback(async () => {
-    setCalendarLoading(true);
-    setErrorMessage("");
-
-    const { data, error } = await supabase
-      .from("season_calendar")
-      .select("*")
-      .order("start_date", { ascending: true });
-
-    if (error) {
-      setErrorMessage(error.message);
-      setCalendarLoading(false);
-      return;
-    }
-
-    setCalendarEvents((data ?? []) as CalendarEvent[]);
-    setCalendarLoading(false);
-  }, []);
-
-  const loadClutchMeasurements = useCallback(async () => {
-    const { data, error } = await supabase
-      .from("clutch_measurements")
-      .select("*")
-      .order("created_at", { ascending: true });
-
-    if (error) {
-      setErrorMessage(error.message);
-      return;
-    }
-
-    setClutchMeasurements((data ?? []) as ClutchMeasurement[]);
-  }, []);
-
   const loadClutches = useCallback(async () => {
     const { data, error } = await supabase
       .from("clutch_inventory")
@@ -792,21 +345,13 @@ export default function DashboardPage() {
       }
 
       await loadCarsAndProgress();
-      await loadCalendar();
-      await loadClutchMeasurements();
       await loadClutches();
 
       setLoading(false);
     }
 
     checkAccess();
-  }, [
-    loadCarsAndProgress,
-    loadCalendar,
-    loadClutchMeasurements,
-    loadClutches,
-    router,
-  ]);
+  }, [loadCarsAndProgress, loadClutches, router]);
 
   useEffect(() => {
     const channel = supabase
@@ -840,21 +385,6 @@ export default function DashboardPage() {
 
   useEffect(() => {
     const channel = supabase
-      .channel("dashboard-clutch-measurements")
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "clutch_measurements" },
-        () => loadClutchMeasurements(),
-      )
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, [loadClutchMeasurements]);
-
-  useEffect(() => {
-    const channel = supabase
       .channel("dashboard-clutch-inventory")
       .on(
         "postgres_changes",
@@ -875,7 +405,6 @@ export default function DashboardPage() {
   }, [cars]);
 
   const activeClutches = useMemo(() => {
-    // The clutch_inventory table does not use an active column, so all rows are treated as available.
     return [...clutches].sort((a, b) => a.serial_no.localeCompare(b.serial_no));
   }, [clutches]);
 
@@ -895,39 +424,15 @@ export default function DashboardPage() {
     return map;
   }, [activeClutches]);
 
-  const clutchWearPoints = useMemo<ClutchWearPoint[]>(() => {
-    const carColourMap = new Map<number, { name: string; colour: string }>();
+  const totalJobs = useMemo(() => {
+    return activeCars.reduce((sum, car) => sum + car.total, 0);
+  }, [activeCars]);
 
-    cars.forEach((car) => {
-      carColourMap.set(car.id, {
-        name: car.name,
-        colour: car.colour || DEFAULT_CAR_COLOUR,
-      });
-    });
+  const completedJobs = useMemo(() => {
+    return activeCars.reduce((sum, car) => sum + car.completed, 0);
+  }, [activeCars]);
 
-    return clutchMeasurements
-      .map((record) => {
-        const wear = calculateClutchWear(record);
-        const uploadDateOnly = dateOnlyKey(record.created_at);
-
-        if (wear === null || !uploadDateOnly) return null;
-
-        const carDetails = carColourMap.get(record.car_id);
-
-        return {
-          id: String(record.id),
-          car_id: record.car_id,
-          carName:
-            carDetails?.name || record.car_name || `Car ${record.car_id}`,
-          colour: carDetails?.colour || DEFAULT_CAR_COLOUR,
-          date: uploadDateOnly,
-          labelDate: shortDate(uploadDateOnly),
-          wear: Number(wear.toFixed(3)),
-        };
-      })
-      .filter((point): point is ClutchWearPoint => point !== null)
-      .sort((a, b) => a.date.localeCompare(b.date));
-  }, [clutchMeasurements, cars]);
+  const openJobs = Math.max(0, totalJobs - completedJobs);
 
   async function updateCar(car: CarProgress, updates: Partial<DashboardCar>) {
     setSavingCarId(car.id);
@@ -1258,64 +763,6 @@ export default function DashboardPage() {
     await loadClutches();
   }
 
-  async function handleCalendarCsvUpload(event: ChangeEvent<HTMLInputElement>) {
-    const file = event.target.files?.[0];
-    if (!file) return;
-
-    setMessage("");
-    setErrorMessage("");
-    setImportingCalendar(true);
-
-    try {
-      const csvText = await file.text();
-      const rows = parseCalendarCsv(csvText);
-
-      if (rows.length === 0) {
-        throw new Error("CSV contains no calendar rows.");
-      }
-
-      const { error } = await supabase.from("season_calendar").insert(rows);
-
-      if (error) {
-        throw new Error(error.message);
-      }
-
-      setMessage(`Imported ${rows.length} calendar event(s).`);
-      await loadCalendar();
-    } catch (error) {
-      setErrorMessage(
-        error instanceof Error ? error.message : "Calendar import failed.",
-      );
-    }
-
-    event.target.value = "";
-    setImportingCalendar(false);
-  }
-
-  async function clearCalendar() {
-    const confirmed = window.confirm(
-      "Clear the whole season calendar? This will remove all imported calendar events.",
-    );
-
-    if (!confirmed) return;
-
-    setMessage("");
-    setErrorMessage("");
-
-    const { error } = await supabase
-      .from("season_calendar")
-      .delete()
-      .neq("id", "00000000-0000-0000-0000-000000000000");
-
-    if (error) {
-      setErrorMessage(error.message);
-      return;
-    }
-
-    setMessage("Season calendar cleared.");
-    await loadCalendar();
-  }
-
   if (loading) {
     return (
       <main className="flex min-h-screen items-center justify-center bg-[#0d0f12] text-zinc-400">
@@ -1326,61 +773,75 @@ export default function DashboardPage() {
 
   return (
     <main className="min-h-screen bg-[#0d0f12] p-6 text-zinc-100">
-      <header className="mb-8 rounded-3xl border border-zinc-800 bg-[#14181d] p-6 shadow-xl">
-        <div className="flex flex-wrap items-center justify-between gap-5">
-          <div>
-            <p className="text-xs uppercase tracking-[0.35em] text-red-400">
-              Rodin Motorsport
-            </p>
+      <header className="mb-8 overflow-hidden rounded-3xl border border-zinc-800 bg-[#14181d] shadow-xl">
+        <div className="grid gap-6 p-6 lg:grid-cols-[1fr_auto] lg:items-center">
+          <div className="flex flex-col gap-5 md:flex-row md:items-center">
+            <div className="flex h-28 w-52 shrink-0 items-center justify-center rounded-3xl border border-zinc-800 bg-black/35 px-5 py-4">
+              <img
+                src="/gb3-logo.png"
+                alt="GB3 Championship logo"
+                className="max-h-20 w-auto object-contain"
+              />
+            </div>
 
-            <h1 className="mt-3 text-4xl font-semibold tracking-tight">
-              Chief Mechanic Dashboard
-            </h1>
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.35em] text-red-400">
+                Rodin Motorsport
+              </p>
 
-            <p className="mt-2 max-w-2xl text-sm text-zinc-400">
-              Live overview of workshop progress, evening preparation, clutch
-              wear, car settings and the season calendar.
-            </p>
+              <h1 className="mt-3 text-4xl font-semibold tracking-tight md:text-5xl">
+                Chief Mechanic Dashboard
+              </h1>
+
+              <p className="mt-3 max-w-3xl text-sm leading-6 text-zinc-400">
+                Live workshop control for car preparation, evening prep, clutch
+                allocation and team operations.
+              </p>
+            </div>
           </div>
 
-          <div className="flex flex-wrap gap-3">
-            <Link
+          <div className="flex justify-start lg:justify-end">
+            <LogoutButton />
+          </div>
+        </div>
+
+        <div className="border-t border-zinc-800 bg-[#0d0f12]/70 p-4">
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+            <QuickLink
               href="/drain-out"
-              className="rounded-xl border border-red-600 bg-red-700 px-5 py-3 text-sm font-semibold text-white shadow-lg shadow-red-950/30 transition hover:border-red-400 hover:bg-red-600"
-            >
-              Drain Out
-            </Link>
+              title="Drain Out"
+              description="Submit and review drain-out reports"
+              variant="red"
+            />
 
-            <Link
+            <QuickLink
               href="/sticker-list"
-              className="rounded-xl border border-zinc-700 bg-[#1b2026] px-5 py-3 text-sm font-semibold text-zinc-200 transition hover:border-red-500 hover:bg-[#222832]"
-            >
-              Sticker List
-            </Link>
+              title="Sticker List"
+              description="Sticker requests and printable sheet"
+            />
 
-            <Link
+            <QuickLink
               href="/recorded-issues"
-              className="rounded-xl border border-zinc-700 bg-[#1b2026] px-5 py-3 text-sm font-semibold text-zinc-200 transition hover:border-red-500 hover:bg-[#222832]"
-            >
-              Recorded Issues
-            </Link>
+              title="Recorded Issues"
+              description="Faults, fixes and approved solutions"
+            />
 
-            <Link
+            <QuickLink
               href="/dashboard/team-jobs"
-              className="rounded-xl border border-red-800 bg-red-950/30 px-5 py-3 text-sm font-semibold text-red-200 transition hover:border-red-500 hover:bg-red-950/50"
-            >
-              Team Jobs
-            </Link>
+              title="Team Jobs"
+              description="Create and publish team-wide jobs"
+            />
 
             <button
               type="button"
               onClick={() => setCarSettingsOpen((current) => !current)}
-              className="rounded-xl border border-zinc-700 bg-[#1b2026] px-5 py-3 text-sm font-semibold text-zinc-200 transition hover:border-red-500 hover:bg-[#222832]"
+              className="rounded-2xl border border-zinc-700 bg-[#1b2026] px-5 py-4 text-left text-sm font-semibold text-zinc-100 transition hover:border-red-500 hover:bg-[#222832] hover:text-red-200"
             >
-              {carSettingsOpen ? "Hide Car Settings" : "Manage Cars"}
+              {carSettingsOpen ? "Hide Settings" : "Manage Cars"}
+              <span className="mt-1 block text-xs font-normal leading-5 text-zinc-500">
+                Cars, colours and clutch allocation
+              </span>
             </button>
-
-            <LogoutButton />
           </div>
         </div>
       </header>
@@ -1397,48 +858,47 @@ export default function DashboardPage() {
         </div>
       )}
 
+      <section className="mb-8 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <StatBox label="Active cars" value={activeCars.length} />
+        <StatBox label="Open jobs" value={openJobs} tone="red" />
+        <StatBox label="Completed jobs" value={completedJobs} tone="green" />
+        <StatBox label="Spare clutches" value={spareActiveClutches.length} />
+      </section>
+
       {carSettingsOpen && (
         <section className="mb-8 rounded-3xl border border-zinc-800 bg-[#14181d] p-6 shadow-xl">
-          <div className="mb-6">
-            <p className="text-xs font-semibold uppercase tracking-[0.35em] text-red-400">
-              Dashboard Settings
-            </p>
+          <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
+            <SectionHeading
+              eyebrow="Dashboard Settings"
+              title="Cars and clutch allocation"
+              description="Manage car names, colours, display order and current clutch allocation from one consistent control area."
+            />
 
-            <h2 className="mt-3 text-3xl font-semibold">Manage Cars</h2>
-
-            <p className="mt-2 max-w-3xl text-sm text-zinc-400">
-              Change car names, dashboard colours, visibility and display order.
-              Hiding a car does not delete any historic job data.
-            </p>
+            <div className="rounded-2xl border border-zinc-700 bg-[#0d0f12] px-4 py-3 text-sm font-semibold text-red-300">
+              {activeClutches.length} clutch
+              {activeClutches.length === 1 ? "" : "es"} ·{" "}
+              {spareActiveClutches.length} spare
+            </div>
           </div>
 
-          <div className="mb-6 rounded-2xl border-2 border-red-700 bg-red-950/20 p-5">
-            <div className="flex flex-wrap items-start justify-between gap-4">
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.35em] text-red-400">
-                  Clutch Control - Add / Allocate / Remove
-                </p>
+          <div className="rounded-2xl border border-red-900/40 bg-[#181315] p-5">
+            <div className="mb-5">
+              <p className="text-xs font-semibold uppercase tracking-[0.35em] text-red-400">
+                Quick Clutch Control
+              </p>
 
-                <h3 className="mt-3 text-2xl font-semibold text-red-100">
-                  Clutch Inventory & Allocation
-                </h3>
+              <h3 className="mt-3 text-2xl font-semibold text-red-100">
+                Allocate clutches to cars
+              </h3>
 
-                <p className="mt-2 max-w-3xl text-sm text-zinc-400">
-                  This section is deliberately placed at the top of Manage Cars
-                  so the chief mechanic can change the fitted clutch quickly.
-                  Select a clutch against a car, move a fitted clutch back to
-                  spare, edit serial numbers, or add a new clutch.
-                </p>
-              </div>
-
-              <div className="rounded-xl border border-zinc-700 bg-black px-4 py-3 text-sm font-semibold text-red-300">
-                {activeClutches.length} clutch
-                {activeClutches.length === 1 ? "" : "es"} ·{" "}
-                {spareActiveClutches.length} spare
-              </div>
+              <p className="mt-2 max-w-3xl text-sm leading-6 text-zinc-400">
+                Select the fitted clutch for each active car. Only one clutch is
+                kept allocated to each car; changing the dropdown moves the old
+                clutch back to spare automatically.
+              </p>
             </div>
 
-            <div className="mt-5 grid gap-3">
+            <div className="grid gap-3">
               {activeCars.length === 0 ? (
                 <div className="rounded-2xl border border-dashed border-zinc-700 bg-[#0d0f12] p-5 text-sm text-zinc-500">
                   No active cars available for clutch allocation.
@@ -1454,7 +914,7 @@ export default function DashboardPage() {
 
                   return (
                     <div
-                      key={`top-clutch-allocation-${car.id}`}
+                      key={`clutch-allocation-${car.id}`}
                       className="grid gap-3 rounded-2xl border border-zinc-800 bg-[#0d0f12] p-4 lg:grid-cols-[260px_1fr_auto]"
                     >
                       <div className="flex items-center gap-3">
@@ -1507,7 +967,7 @@ export default function DashboardPage() {
                         </select>
                       </label>
 
-                      <div className="flex items-end gap-2">
+                      <div className="flex items-end">
                         <button
                           type="button"
                           onClick={() =>
@@ -1517,7 +977,7 @@ export default function DashboardPage() {
                           disabled={
                             !fittedClutch || savingClutchId === fittedClutch.id
                           }
-                          className="rounded-xl border border-zinc-700 px-4 py-3 text-sm font-semibold text-zinc-300 hover:border-red-500 hover:text-red-300 disabled:cursor-not-allowed disabled:opacity-50"
+                          className="w-full rounded-xl border border-zinc-700 px-4 py-3 text-sm font-semibold text-zinc-300 hover:border-red-500 hover:text-red-300 disabled:cursor-not-allowed disabled:opacity-50 lg:w-auto"
                         >
                           Move to Spare
                         </button>
@@ -1527,8 +987,213 @@ export default function DashboardPage() {
                 })
               )}
             </div>
+          </div>
 
-            <div className="mt-6 overflow-x-auto rounded-2xl border border-zinc-800">
+          <div className="mt-6 rounded-2xl border border-zinc-800 bg-[#0d0f12] p-5">
+            <h3 className="text-2xl font-semibold text-zinc-100">
+              Manage Cars
+            </h3>
+
+            <p className="mt-2 max-w-3xl text-sm leading-6 text-zinc-400">
+              Change car names, dashboard colours, visibility and display order.
+              Hiding a car does not delete historic job data.
+            </p>
+
+            <div className="mt-5 space-y-3">
+              {cars.map((car) => (
+                <div
+                  key={car.id}
+                  className="grid gap-3 rounded-2xl border border-zinc-800 bg-[#111418] p-4 lg:grid-cols-[80px_1fr_140px_120px_120px_auto]"
+                >
+                  <div>
+                    <p className="text-xs uppercase tracking-[0.22em] text-zinc-500">
+                      ID
+                    </p>
+
+                    <p className="mt-2 text-lg font-semibold text-zinc-100">
+                      {car.id}
+                    </p>
+                  </div>
+
+                  <label>
+                    <span className="text-xs uppercase tracking-[0.22em] text-zinc-500">
+                      Name
+                    </span>
+
+                    <input
+                      value={car.name}
+                      onChange={(event) =>
+                        setCars((current) =>
+                          current.map((item) =>
+                            item.id === car.id
+                              ? { ...item, name: event.target.value }
+                              : item,
+                          ),
+                        )
+                      }
+                      className="mt-2 w-full rounded-xl border border-zinc-700 bg-[#0d0f12] px-4 py-3 text-sm text-zinc-100 outline-none focus:border-red-500"
+                    />
+                  </label>
+
+                  <label>
+                    <span className="text-xs uppercase tracking-[0.22em] text-zinc-500">
+                      Colour
+                    </span>
+
+                    <input
+                      type="color"
+                      value={car.colour}
+                      onChange={(event) =>
+                        setCars((current) =>
+                          current.map((item) =>
+                            item.id === car.id
+                              ? { ...item, colour: event.target.value }
+                              : item,
+                          ),
+                        )
+                      }
+                      className="mt-2 h-[46px] w-full rounded-xl border border-zinc-700 bg-[#0d0f12] p-1"
+                    />
+                  </label>
+
+                  <label>
+                    <span className="text-xs uppercase tracking-[0.22em] text-zinc-500">
+                      Order
+                    </span>
+
+                    <input
+                      type="number"
+                      value={car.sort_order}
+                      onChange={(event) =>
+                        setCars((current) =>
+                          current.map((item) =>
+                            item.id === car.id
+                              ? {
+                                  ...item,
+                                  sort_order: Number(event.target.value),
+                                }
+                              : item,
+                          ),
+                        )
+                      }
+                      className="mt-2 w-full rounded-xl border border-zinc-700 bg-[#0d0f12] px-4 py-3 text-sm text-zinc-100 outline-none focus:border-red-500"
+                    />
+                  </label>
+
+                  <label>
+                    <span className="text-xs uppercase tracking-[0.22em] text-zinc-500">
+                      Active
+                    </span>
+
+                    <select
+                      value={car.active ? "active" : "hidden"}
+                      onChange={(event) =>
+                        setCars((current) =>
+                          current.map((item) =>
+                            item.id === car.id
+                              ? {
+                                  ...item,
+                                  active: event.target.value === "active",
+                                }
+                              : item,
+                          ),
+                        )
+                      }
+                      className="mt-2 w-full rounded-xl border border-zinc-700 bg-[#0d0f12] px-4 py-3 text-sm text-zinc-100 outline-none focus:border-red-500"
+                    >
+                      <option value="active">Active</option>
+                      <option value="hidden">Hidden</option>
+                    </select>
+                  </label>
+
+                  <div className="flex items-end">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        updateCar(car, {
+                          name: car.name.trim() || `Car ${car.id}`,
+                          colour: car.colour || DEFAULT_CAR_COLOUR,
+                          active: car.active,
+                          sort_order: car.sort_order,
+                        })
+                      }
+                      disabled={savingCarId === car.id}
+                      className="w-full rounded-xl bg-red-700 px-5 py-3 text-sm font-semibold text-white hover:bg-red-600 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      {savingCarId === car.id ? "Saving..." : "Save"}
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <div className="mt-6 rounded-2xl border border-red-900/40 bg-[#181315] p-5">
+              <h4 className="text-xl font-semibold text-red-100">Add Car</h4>
+
+              <p className="mt-1 text-sm leading-6 text-zinc-400">
+                Use a unique numeric car ID. This ID links the car card to the
+                job list and mechanic page.
+              </p>
+
+              <div className="mt-4 grid gap-3 md:grid-cols-[160px_1fr_160px_auto]">
+                <input
+                  type="number"
+                  value={newCarId}
+                  onChange={(event) => setNewCarId(event.target.value)}
+                  placeholder="Car ID"
+                  className="rounded-xl border border-red-900/50 bg-[#0d0f12] px-4 py-3 text-sm text-zinc-100 outline-none focus:border-red-500"
+                />
+
+                <input
+                  value={newCarName}
+                  onChange={(event) => setNewCarName(event.target.value)}
+                  placeholder="Car name, e.g. GB3-04"
+                  className="rounded-xl border border-red-900/50 bg-[#0d0f12] px-4 py-3 text-sm text-zinc-100 outline-none focus:border-red-500"
+                />
+
+                <input
+                  type="color"
+                  value={newCarColour}
+                  onChange={(event) => setNewCarColour(event.target.value)}
+                  className="h-[46px] rounded-xl border border-red-900/50 bg-[#0d0f12] p-1"
+                />
+
+                <button
+                  type="button"
+                  onClick={addCar}
+                  disabled={addingCar}
+                  className="rounded-xl bg-red-700 px-5 py-3 text-sm font-semibold text-white hover:bg-red-600 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {addingCar ? "Adding..." : "Add Car"}
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div className="mt-6 rounded-2xl border border-zinc-800 bg-[#0d0f12] p-5">
+            <div className="mb-5 flex flex-wrap items-start justify-between gap-4">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.35em] text-red-400">
+                  Clutch Inventory
+                </p>
+
+                <h3 className="mt-3 text-2xl font-semibold text-zinc-100">
+                  Manage Clutches
+                </h3>
+
+                <p className="mt-2 max-w-3xl text-sm leading-6 text-zinc-400">
+                  Add clutch serial numbers, allocate them to cars, move them
+                  back to spare, or delete an inventory row if it was added by
+                  mistake.
+                </p>
+              </div>
+
+              <div className="rounded-xl border border-zinc-700 bg-black px-4 py-3 text-sm font-semibold text-red-300">
+                {clutches.length} total
+              </div>
+            </div>
+
+            <div className="overflow-x-auto rounded-2xl border border-zinc-800">
               <table className="w-full min-w-[900px] text-sm">
                 <thead className="bg-zinc-900 text-zinc-300">
                   <tr>
@@ -1541,21 +1206,18 @@ export default function DashboardPage() {
                 </thead>
 
                 <tbody>
-                  {activeClutches.length === 0 ? (
+                  {clutches.length === 0 ? (
                     <tr>
                       <td
                         colSpan={5}
                         className="px-4 py-6 text-center text-zinc-500"
                       >
-                        No clutches added yet. Use Add Clutch below.
+                        No clutches added yet.
                       </td>
                     </tr>
                   ) : (
-                    activeClutches.map((clutch) => (
-                      <tr
-                        key={`top-clutch-row-${clutch.id}`}
-                        className="border-t border-zinc-800"
-                      >
+                    clutches.map((clutch) => (
+                      <tr key={clutch.id} className="border-t border-zinc-800">
                         <td className="px-4 py-3">
                           <input
                             value={clutch.serial_no}
@@ -1724,511 +1386,6 @@ export default function DashboardPage() {
               </div>
             </div>
           </div>
-
-          <div className="space-y-3">
-            {cars.map((car) => (
-              <div
-                key={car.id}
-                className="grid gap-3 rounded-2xl border border-zinc-800 bg-[#0d0f12] p-4 lg:grid-cols-[80px_1fr_140px_120px_120px_auto]"
-              >
-                <div>
-                  <p className="text-xs uppercase tracking-[0.22em] text-zinc-500">
-                    ID
-                  </p>
-
-                  <p className="mt-2 text-lg font-semibold text-zinc-100">
-                    {car.id}
-                  </p>
-                </div>
-
-                <label>
-                  <span className="text-xs uppercase tracking-[0.22em] text-zinc-500">
-                    Name
-                  </span>
-
-                  <input
-                    value={car.name}
-                    onChange={(event) =>
-                      setCars((current) =>
-                        current.map((item) =>
-                          item.id === car.id
-                            ? { ...item, name: event.target.value }
-                            : item,
-                        ),
-                      )
-                    }
-                    className="mt-2 w-full rounded-xl border border-zinc-700 bg-[#111418] px-4 py-3 text-sm text-zinc-100 outline-none focus:border-red-500"
-                  />
-                </label>
-
-                <label>
-                  <span className="text-xs uppercase tracking-[0.22em] text-zinc-500">
-                    Colour
-                  </span>
-
-                  <input
-                    type="color"
-                    value={car.colour}
-                    onChange={(event) =>
-                      setCars((current) =>
-                        current.map((item) =>
-                          item.id === car.id
-                            ? { ...item, colour: event.target.value }
-                            : item,
-                        ),
-                      )
-                    }
-                    className="mt-2 h-[46px] w-full rounded-xl border border-zinc-700 bg-[#111418] p-1"
-                  />
-                </label>
-
-                <label>
-                  <span className="text-xs uppercase tracking-[0.22em] text-zinc-500">
-                    Order
-                  </span>
-
-                  <input
-                    type="number"
-                    value={car.sort_order}
-                    onChange={(event) =>
-                      setCars((current) =>
-                        current.map((item) =>
-                          item.id === car.id
-                            ? {
-                                ...item,
-                                sort_order: Number(event.target.value),
-                              }
-                            : item,
-                        ),
-                      )
-                    }
-                    className="mt-2 w-full rounded-xl border border-zinc-700 bg-[#111418] px-4 py-3 text-sm text-zinc-100 outline-none focus:border-red-500"
-                  />
-                </label>
-
-                <label>
-                  <span className="text-xs uppercase tracking-[0.22em] text-zinc-500">
-                    Active
-                  </span>
-
-                  <select
-                    value={car.active ? "active" : "hidden"}
-                    onChange={(event) =>
-                      setCars((current) =>
-                        current.map((item) =>
-                          item.id === car.id
-                            ? {
-                                ...item,
-                                active: event.target.value === "active",
-                              }
-                            : item,
-                        ),
-                      )
-                    }
-                    className="mt-2 w-full rounded-xl border border-zinc-700 bg-[#111418] px-4 py-3 text-sm text-zinc-100 outline-none focus:border-red-500"
-                  >
-                    <option value="active">Active</option>
-                    <option value="hidden">Hidden</option>
-                  </select>
-                </label>
-
-                <div className="flex items-end">
-                  <button
-                    type="button"
-                    onClick={() =>
-                      updateCar(car, {
-                        name: car.name.trim() || `Car ${car.id}`,
-                        colour: car.colour || DEFAULT_CAR_COLOUR,
-                        active: car.active,
-                        sort_order: car.sort_order,
-                      })
-                    }
-                    disabled={savingCarId === car.id}
-                    className="w-full rounded-xl bg-red-700 px-5 py-3 text-sm font-semibold text-white hover:bg-red-600 disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    {savingCarId === car.id ? "Saving..." : "Save"}
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-
-          <div className="mt-6 rounded-2xl border border-red-900/40 bg-[#181315] p-5">
-            <h3 className="text-xl font-semibold text-red-100">Add Car</h3>
-
-            <p className="mt-1 text-sm text-zinc-400">
-              Use a unique numeric car ID. This ID is what links the car card to
-              its job list and mechanic page.
-            </p>
-
-            <div className="mt-4 grid gap-3 md:grid-cols-[160px_1fr_160px_auto]">
-              <input
-                type="number"
-                value={newCarId}
-                onChange={(event) => setNewCarId(event.target.value)}
-                placeholder="Car ID"
-                className="rounded-xl border border-red-900/50 bg-[#0d0f12] px-4 py-3 text-sm text-zinc-100 outline-none focus:border-red-500"
-              />
-
-              <input
-                value={newCarName}
-                onChange={(event) => setNewCarName(event.target.value)}
-                placeholder="Car name, e.g. GB3-04"
-                className="rounded-xl border border-red-900/50 bg-[#0d0f12] px-4 py-3 text-sm text-zinc-100 outline-none focus:border-red-500"
-              />
-
-              <input
-                type="color"
-                value={newCarColour}
-                onChange={(event) => setNewCarColour(event.target.value)}
-                className="h-[46px] rounded-xl border border-red-900/50 bg-[#0d0f12] p-1"
-              />
-
-              <button
-                type="button"
-                onClick={addCar}
-                disabled={addingCar}
-                className="rounded-xl bg-red-700 px-5 py-3 text-sm font-semibold text-white hover:bg-red-600 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                {addingCar ? "Adding..." : "Add Car"}
-              </button>
-            </div>
-          </div>
-
-          <div className="mt-6 rounded-2xl border border-red-900/40 bg-[#181315] p-5">
-            <div className="flex flex-wrap items-start justify-between gap-4">
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.35em] text-red-400">
-                  Car Clutch Allocation
-                </p>
-
-                <h3 className="mt-3 text-2xl font-semibold text-red-100">
-                  Allocate Clutches to Cars
-                </h3>
-
-                <p className="mt-2 max-w-3xl text-sm text-zinc-400">
-                  This is the quick chief mechanic view. Select the current
-                  clutch for each car. The clutch wear record stays with the
-                  clutch serial number when it moves between cars.
-                </p>
-              </div>
-
-              <div className="rounded-xl border border-zinc-700 bg-black px-4 py-3 text-sm font-semibold text-red-300">
-                {spareActiveClutches.length} spare
-              </div>
-            </div>
-
-            <div className="mt-5 grid gap-3">
-              {activeCars.length === 0 ? (
-                <div className="rounded-2xl border border-dashed border-zinc-700 bg-[#0d0f12] p-5 text-sm text-zinc-500">
-                  No active cars available for clutch allocation.
-                </div>
-              ) : (
-                activeCars.map((car) => {
-                  const fittedClutch = currentClutchByCarId.get(car.id);
-                  const options = activeClutches.filter(
-                    (clutch) =>
-                      clutch.current_car_id === null ||
-                      clutch.current_car_id === car.id,
-                  );
-
-                  return (
-                    <div
-                      key={`clutch-allocation-${car.id}`}
-                      className="grid gap-3 rounded-2xl border border-zinc-800 bg-[#0d0f12] p-4 lg:grid-cols-[260px_1fr_auto]"
-                    >
-                      <div className="flex items-center gap-3">
-                        <span
-                          className="h-12 w-2 rounded-full"
-                          style={{ backgroundColor: car.colour }}
-                        />
-
-                        <div>
-                          <p className="text-lg font-semibold text-zinc-100">
-                            {car.name}
-                          </p>
-
-                          <p className="text-xs uppercase tracking-[0.22em] text-zinc-500">
-                            Car ID {car.id}
-                          </p>
-                        </div>
-                      </div>
-
-                      <label>
-                        <span className="text-xs uppercase tracking-[0.22em] text-zinc-500">
-                          Current clutch
-                        </span>
-
-                        <select
-                          value={fittedClutch?.id ?? "spare"}
-                          onChange={(event) => {
-                            if (event.target.value === "spare") {
-                              if (fittedClutch) {
-                                allocateClutch(fittedClutch.id, null);
-                              }
-                              return;
-                            }
-
-                            allocateClutch(event.target.value, car.id);
-                          }}
-                          className="mt-2 w-full rounded-xl border border-zinc-700 bg-[#111418] px-4 py-3 text-sm text-zinc-100 outline-none focus:border-red-500"
-                        >
-                          <option value="spare">
-                            No clutch fitted / spare
-                          </option>
-                          {options.map((clutch) => (
-                            <option key={clutch.id} value={clutch.id}>
-                              {clutchDisplayName(clutch)}
-                              {clutch.current_car_id === car.id
-                                ? " — fitted"
-                                : ""}
-                            </option>
-                          ))}
-                        </select>
-                      </label>
-
-                      <div className="flex items-end gap-2">
-                        <button
-                          type="button"
-                          onClick={() =>
-                            fittedClutch &&
-                            allocateClutch(fittedClutch.id, null)
-                          }
-                          disabled={
-                            !fittedClutch || savingClutchId === fittedClutch.id
-                          }
-                          className="rounded-xl border border-zinc-700 px-4 py-3 text-sm font-semibold text-zinc-300 hover:border-red-500 hover:text-red-300 disabled:cursor-not-allowed disabled:opacity-50"
-                        >
-                          Move to Spare
-                        </button>
-                      </div>
-                    </div>
-                  );
-                })
-              )}
-            </div>
-          </div>
-
-          <div className="mt-6 rounded-2xl border border-zinc-800 bg-[#0d0f12] p-5">
-            <div className="flex flex-wrap items-start justify-between gap-4">
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.35em] text-red-400">
-                  Clutch Allocation
-                </p>
-
-                <h3 className="mt-3 text-2xl font-semibold">Manage Clutches</h3>
-
-                <p className="mt-2 max-w-3xl text-sm text-zinc-400">
-                  Add clutch serial numbers, allocate them to cars, move them
-                  back to spare, or delete an inventory row if it was added by
-                  mistake. Only one clutch is kept allocated to each car;
-                  changing the dropdown moves the previous clutch back to spare.
-                </p>
-              </div>
-
-              <div className="rounded-xl border border-zinc-700 bg-black px-4 py-3 text-sm font-semibold text-red-300">
-                {clutches.length} total
-              </div>
-            </div>
-
-            <div className="mt-5 overflow-x-auto rounded-2xl border border-zinc-800">
-              <table className="w-full min-w-[900px] text-sm">
-                <thead className="bg-zinc-900 text-zinc-300">
-                  <tr>
-                    <th className="px-4 py-3 text-left">Serial No.</th>
-                    <th className="px-4 py-3 text-left">Label</th>
-                    <th className="px-4 py-3 text-left">Allocated To</th>
-                    <th className="px-4 py-3 text-left">Notes</th>
-                    <th className="px-4 py-3 text-left">Actions</th>
-                  </tr>
-                </thead>
-
-                <tbody>
-                  {clutches.length === 0 ? (
-                    <tr>
-                      <td
-                        colSpan={5}
-                        className="px-4 py-6 text-center text-zinc-500"
-                      >
-                        No clutches added yet.
-                      </td>
-                    </tr>
-                  ) : (
-                    clutches.map((clutch) => (
-                      <tr key={clutch.id} className="border-t border-zinc-800">
-                        <td className="px-4 py-3">
-                          <input
-                            value={clutch.serial_no}
-                            onChange={(event) =>
-                              setClutches((current) =>
-                                current.map((item) =>
-                                  item.id === clutch.id
-                                    ? { ...item, serial_no: event.target.value }
-                                    : item,
-                                ),
-                              )
-                            }
-                            className="w-full rounded-xl border border-zinc-700 bg-[#111418] px-3 py-2 text-sm text-zinc-100 outline-none focus:border-red-500"
-                            placeholder="e.g. 28819"
-                          />
-                        </td>
-
-                        <td className="px-4 py-3">
-                          <input
-                            value={clutch.label ?? ""}
-                            onChange={(event) =>
-                              setClutches((current) =>
-                                current.map((item) =>
-                                  item.id === clutch.id
-                                    ? { ...item, label: event.target.value }
-                                    : item,
-                                ),
-                              )
-                            }
-                            className="w-full rounded-xl border border-zinc-700 bg-[#111418] px-3 py-2 text-sm text-zinc-100 outline-none focus:border-red-500"
-                            placeholder="e.g. AP clutch A"
-                          />
-                        </td>
-
-                        <td className="px-4 py-3">
-                          <select
-                            value={clutch.current_car_id ?? "spare"}
-                            onChange={(event) =>
-                              setClutches((current) =>
-                                current.map((item) =>
-                                  item.id === clutch.id
-                                    ? {
-                                        ...item,
-                                        current_car_id:
-                                          event.target.value === "spare"
-                                            ? null
-                                            : Number(event.target.value),
-                                      }
-                                    : item,
-                                ),
-                              )
-                            }
-                            className="w-full rounded-xl border border-zinc-700 bg-[#111418] px-3 py-2 text-sm text-zinc-100 outline-none focus:border-red-500"
-                          >
-                            <option value="spare">Spare clutch</option>
-                            {activeCars.map((car) => (
-                              <option key={car.id} value={car.id}>
-                                {carDisplayName(car)}
-                              </option>
-                            ))}
-                          </select>
-                        </td>
-
-                        <td className="px-4 py-3">
-                          <input
-                            value={clutch.notes ?? ""}
-                            onChange={(event) =>
-                              setClutches((current) =>
-                                current.map((item) =>
-                                  item.id === clutch.id
-                                    ? { ...item, notes: event.target.value }
-                                    : item,
-                                ),
-                              )
-                            }
-                            className="w-full rounded-xl border border-zinc-700 bg-[#111418] px-3 py-2 text-sm text-zinc-100 outline-none focus:border-red-500"
-                            placeholder="Optional notes"
-                          />
-                        </td>
-
-                        <td className="px-4 py-3">
-                          <div className="flex flex-wrap gap-2">
-                            <button
-                              type="button"
-                              onClick={() => updateClutch(clutch)}
-                              disabled={savingClutchId === clutch.id}
-                              className="rounded-lg bg-red-700 px-3 py-2 text-xs font-semibold text-white hover:bg-red-600 disabled:cursor-not-allowed disabled:opacity-50"
-                            >
-                              {savingClutchId === clutch.id
-                                ? "Saving..."
-                                : "Save"}
-                            </button>
-
-                            <button
-                              type="button"
-                              onClick={() => removeClutch(clutch)}
-                              disabled={savingClutchId === clutch.id}
-                              className="rounded-lg border border-zinc-700 px-3 py-2 text-xs font-semibold text-zinc-300 hover:border-red-500 hover:text-red-300 disabled:cursor-not-allowed disabled:opacity-50"
-                            >
-                              Move Spare
-                            </button>
-
-                            <button
-                              type="button"
-                              onClick={() => deleteClutch(clutch)}
-                              disabled={savingClutchId === clutch.id}
-                              className="rounded-lg border border-red-900/70 px-3 py-2 text-xs font-semibold text-red-300 hover:bg-red-950/40 disabled:cursor-not-allowed disabled:opacity-50"
-                            >
-                              Delete
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
-
-            <div className="mt-6 rounded-2xl border border-red-900/40 bg-[#181315] p-5">
-              <h4 className="text-xl font-semibold text-red-100">Add Clutch</h4>
-
-              <p className="mt-1 text-sm text-zinc-400">
-                Add current car clutches and spare clutches here. Choose “Spare
-                clutch” if it is not fitted to a car.
-              </p>
-
-              <div className="mt-4 grid gap-3 lg:grid-cols-[160px_1fr_220px_1fr_auto]">
-                <input
-                  value={newClutchSerial}
-                  onChange={(event) => setNewClutchSerial(event.target.value)}
-                  placeholder="Serial No."
-                  className="rounded-xl border border-red-900/50 bg-[#0d0f12] px-4 py-3 text-sm text-zinc-100 outline-none focus:border-red-500"
-                />
-
-                <input
-                  value={newClutchLabel}
-                  onChange={(event) => setNewClutchLabel(event.target.value)}
-                  placeholder="Label, e.g. AP clutch A"
-                  className="rounded-xl border border-red-900/50 bg-[#0d0f12] px-4 py-3 text-sm text-zinc-100 outline-none focus:border-red-500"
-                />
-
-                <select
-                  value={newClutchCarId}
-                  onChange={(event) => setNewClutchCarId(event.target.value)}
-                  className="rounded-xl border border-red-900/50 bg-[#0d0f12] px-4 py-3 text-sm text-zinc-100 outline-none focus:border-red-500"
-                >
-                  <option value="spare">Spare clutch</option>
-                  {activeCars.map((car) => (
-                    <option key={car.id} value={car.id}>
-                      {carDisplayName(car)}
-                    </option>
-                  ))}
-                </select>
-
-                <input
-                  value={newClutchNotes}
-                  onChange={(event) => setNewClutchNotes(event.target.value)}
-                  placeholder="Notes"
-                  className="rounded-xl border border-red-900/50 bg-[#0d0f12] px-4 py-3 text-sm text-zinc-100 outline-none focus:border-red-500"
-                />
-
-                <button
-                  type="button"
-                  onClick={addClutch}
-                  disabled={addingClutch}
-                  className="rounded-xl bg-red-700 px-5 py-3 text-sm font-semibold text-white hover:bg-red-600 disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  {addingClutch ? "Adding..." : "Add Clutch"}
-                </button>
-              </div>
-            </div>
-          </div>
         </section>
       )}
 
@@ -2240,6 +1397,7 @@ export default function DashboardPage() {
         ) : (
           activeCars.map((car) => {
             const isExpanded = expandedCarId === car.id;
+            const fittedClutch = currentClutchByCarId.get(car.id);
 
             return (
               <article
@@ -2247,9 +1405,72 @@ export default function DashboardPage() {
                 className={`rounded-3xl border bg-[#14181d] p-6 shadow-lg transition ${
                   isExpanded
                     ? "border-red-500/70 shadow-red-950/20"
-                    : "border-zinc-800 hover:border-zinc-600"
+                    : "border-zinc-800"
                 }`}
               >
+                <div className="flex items-start justify-between gap-4">
+                  <div className="flex items-center gap-3">
+                    <span
+                      className="h-14 w-2 rounded-full"
+                      style={{ backgroundColor: car.colour }}
+                    />
+
+                    <div>
+                      <p className="text-xs uppercase tracking-[0.25em] text-zinc-500">
+                        Car {car.id}
+                      </p>
+
+                      <h2 className="mt-1 text-2xl font-semibold">
+                        {car.name}
+                      </h2>
+
+                      <JobStatusPill status={car.status} colour={car.colour} />
+                    </div>
+                  </div>
+
+                  <ProgressDial progress={car.progress} colour={car.colour} />
+                </div>
+
+                <div className="mt-6 grid gap-3 sm:grid-cols-2">
+                  <div className="rounded-2xl border border-zinc-800 bg-[#0d0f12] p-4">
+                    <p className="text-xs uppercase tracking-[0.22em] text-zinc-500">
+                      Workshop
+                    </p>
+
+                    <p className="mt-2 text-2xl font-semibold text-zinc-100">
+                      {car.completed}/{car.total}
+                    </p>
+
+                    <p className="mt-1 text-sm text-zinc-500">
+                      {car.progress}% complete
+                    </p>
+                  </div>
+
+                  <div className="rounded-2xl border border-zinc-800 bg-[#0d0f12] p-4">
+                    <p className="text-xs uppercase tracking-[0.22em] text-zinc-500">
+                      Evening Prep
+                    </p>
+
+                    <p className="mt-2 text-2xl font-semibold text-zinc-100">
+                      {car.eveningCompleted}/{car.eveningTotal}
+                    </p>
+
+                    <p className="mt-1 text-sm text-zinc-500">
+                      {car.eveningProgress}% complete
+                    </p>
+                  </div>
+                </div>
+
+                <div className="mt-4 rounded-2xl border border-zinc-800 bg-[#0d0f12] p-4">
+                  <p className="text-xs uppercase tracking-[0.22em] text-zinc-500">
+                    Current Clutch
+                  </p>
+
+                  <p className="mt-2 text-sm font-semibold text-zinc-100">
+                    {fittedClutch ? clutchDisplayName(fittedClutch) : "No clutch fitted"}
+                  </p>
+                </div>
+
                 <button
                   type="button"
                   onClick={() =>
@@ -2257,254 +1478,42 @@ export default function DashboardPage() {
                       current === car.id ? null : car.id,
                     )
                   }
-                  className="w-full rounded-2xl border border-transparent p-2 text-left transition hover:border-zinc-700 hover:bg-[#0d0f12]"
+                  className="mt-5 w-full rounded-xl border border-zinc-700 bg-[#1b2026] px-4 py-3 text-sm font-semibold text-zinc-200 transition hover:border-red-500 hover:bg-[#222832] hover:text-red-200"
                 >
-                  <div className="flex flex-col items-center border-b border-zinc-800 pb-6">
-                    <ProgressDial progress={car.progress} colour={car.colour} />
-
-                    <div className="mt-5 text-center">
-                      <h2 className="text-2xl font-semibold tracking-tight">
-                        {car.name}
-                      </h2>
-
-                      <JobStatusPill status={car.status} colour={car.colour} />
-
-                      <p className="mt-3 text-sm text-zinc-500">
-                        {car.completed} of {car.total || "—"} workshop jobs
-                        complete
-                      </p>
-
-                      <p className="mt-3 text-xs font-semibold uppercase tracking-[0.2em] text-zinc-500">
-                        {isExpanded
-                          ? "Close car options ↑"
-                          : "Open car options ↓"}
-                      </p>
-                    </div>
-                  </div>
+                  {isExpanded ? "Hide Car Links" : "Open Car Links"}
                 </button>
 
-                <div className="mt-5 rounded-2xl border border-zinc-800 bg-[#0d0f12] p-4">
-                  <div className="flex items-center justify-between gap-3">
-                    <div>
-                      <p className="text-xs font-semibold uppercase tracking-[0.25em] text-red-400">
-                        Evening Prep
-                      </p>
-
-                      <p className="mt-1 text-sm text-zinc-500">
-                        {car.eveningCompleted} of {car.eveningTotal || "—"}{" "}
-                        evening jobs complete
-                      </p>
-                    </div>
-
-                    <div className="rounded-xl border border-zinc-700 bg-black px-3 py-2 text-lg font-bold text-zinc-100">
-                      {car.eveningProgress}%
-                    </div>
-                  </div>
-
-                  <div className="mt-4 h-2 overflow-hidden rounded-full bg-zinc-800">
-                    <div
-                      className="h-full rounded-full bg-red-700"
-                      style={{
-                        width: `${car.eveningProgress}%`,
-                      }}
-                    />
-                  </div>
-                </div>
-
                 {isExpanded && (
-                  <div className="mt-6 space-y-5 rounded-3xl border border-zinc-800 bg-[#0d0f12] p-5">
-                    <div className="flex flex-wrap items-start justify-between gap-4 border-b border-zinc-800 pb-5">
-                      <div>
-                        <p className="text-xs font-semibold uppercase tracking-[0.3em] text-red-400">
-                          Car Hub
-                        </p>
+                  <div className="mt-5 grid gap-3">
+                    <QuickLink
+                      href={`/dashboard/car/${car.id}/job-list`}
+                      title="Workshop Job List"
+                      description="Main workshop jobs for this car"
+                    />
 
-                        <h3 className="mt-2 text-2xl font-semibold text-zinc-100">
-                          {car.name}
-                        </h3>
+                    <QuickLink
+                      href={`/dashboard/car/${car.id}/evening-job-list`}
+                      title="Evening Prep Job List"
+                      description="Evening preparation jobs for this car"
+                    />
 
-                        <p className="mt-1 text-sm text-zinc-500">
-                          Select what you want to manage or review for this car.
-                        </p>
-                      </div>
+                    <QuickLink
+                      href={`/dashboard/car/${car.id}/clutch-measurement`}
+                      title="Clutch Measurement"
+                      description="Measurement sheet and saved clutch data"
+                    />
 
-                      <Link
-                        href={`/dashboard/car/${car.id}/viewer`}
-                        className="rounded-xl border border-zinc-700 bg-[#14181d] px-4 py-3 text-sm font-semibold text-zinc-200 hover:border-red-500 hover:text-red-300"
-                      >
-                        Open Full Overview
-                      </Link>
-                    </div>
-
-                    <div className="grid gap-4">
-                      <div className="rounded-2xl border border-zinc-800 bg-[#14181d] p-4">
-                        <p className="mb-3 text-xs font-semibold uppercase tracking-[0.25em] text-red-400">
-                          Preparation Lists
-                        </p>
-
-                        <div className="grid gap-2">
-                          <CardLink
-                            href={`/dashboard/car/${car.id}/job-list`}
-                            title="Workshop Job List"
-                            description="Set, check and modify the main workshop jobs"
-                          />
-
-                          <CardLink
-                            href={`/dashboard/car/${car.id}/evening-job-list`}
-                            title="Evening Prep Job List"
-                            description="Set, check and modify evening prep jobs"
-                          />
-
-                          <CardLink
-                            href="/dashboard/team-jobs"
-                            title="Team Jobs"
-                            description="Add and publish team-wide jobs for all mechanics"
-                          />
-                        </div>
-                      </div>
-
-                      <div className="rounded-2xl border border-zinc-800 bg-[#14181d] p-4">
-                        <p className="mb-3 text-xs font-semibold uppercase tracking-[0.25em] text-red-400">
-                          Sheets / Records
-                        </p>
-
-                        <div className="grid gap-2">
-                          <CardLink
-                            href={`/dashboard/car/${car.id}/clutch-measurement`}
-                            title="Clutch Measurement"
-                            description="Review clutch data submitted for this car"
-                          />
-
-                          <CardLink
-                            href={`/dashboard/car/${car.id}/post-event`}
-                            title="Post Event Sheet"
-                            description="Review post-event information and saved PDFs"
-                          />
-                        </div>
-                      </div>
-                    </div>
+                    <QuickLink
+                      href={`/dashboard/car/${car.id}/post-event`}
+                      title="Post Event Sheet"
+                      description="Post-event notes and saved PDFs"
+                    />
                   </div>
                 )}
               </article>
             );
           })
         )}
-      </section>
-
-      <section className="mt-8 rounded-3xl border border-zinc-800 bg-[#14181d] p-6 shadow-xl">
-        <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.35em] text-red-400">
-              Season Overview
-            </p>
-
-            <h2 className="mt-3 text-3xl font-semibold">
-              Clutch Wear & Calendar
-            </h2>
-
-            <p className="mt-2 max-w-3xl text-sm text-zinc-400">
-              Track clutch wear over time while keeping the full imported season
-              calendar visible on the right.
-            </p>
-          </div>
-
-          <div className="flex flex-wrap gap-3">
-            <label className="cursor-pointer rounded-xl bg-red-700 px-5 py-3 text-sm font-semibold text-white hover:bg-red-600">
-              {importingCalendar ? "Importing..." : "Import CSV"}
-              <input
-                type="file"
-                accept=".csv,text/csv"
-                onChange={handleCalendarCsvUpload}
-                disabled={importingCalendar}
-                className="hidden"
-              />
-            </label>
-
-            <button
-              type="button"
-              onClick={clearCalendar}
-              className="rounded-xl border border-red-900/70 px-5 py-3 text-sm font-semibold text-red-300 hover:bg-red-950/40"
-            >
-              Clear Calendar
-            </button>
-          </div>
-        </div>
-
-        <div className="grid gap-6 lg:grid-cols-[1fr_360px]">
-          <ClutchWearChart points={clutchWearPoints} />
-
-          <aside className="rounded-2xl border border-zinc-800 bg-[#0d0f12] p-5">
-            <div className="mb-5 flex items-start justify-between gap-3">
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.3em] text-red-400">
-                  Calendar
-                </p>
-
-                <h3 className="mt-3 text-2xl font-semibold">All Events</h3>
-
-                <p className="mt-1 text-sm text-zinc-500">
-                  Full imported season calendar.
-                </p>
-              </div>
-
-              <div className="rounded-xl border border-zinc-700 bg-black px-3 py-2 text-xs font-semibold text-red-300">
-                {calendarEvents.length}
-              </div>
-            </div>
-
-            {calendarLoading ? (
-              <div className="rounded-2xl border border-zinc-800 bg-[#14181d] p-6 text-sm text-zinc-500">
-                Loading calendar...
-              </div>
-            ) : calendarEvents.length === 0 ? (
-              <div className="rounded-2xl border border-dashed border-zinc-700 bg-[#14181d] p-6 text-sm text-zinc-500">
-                No calendar events imported yet.
-              </div>
-            ) : (
-              <div className="max-h-[520px] space-y-3 overflow-y-auto pr-2">
-                {calendarEvents.map((event) => (
-                  <div
-                    key={event.id}
-                    className="rounded-xl border border-zinc-800 bg-[#14181d] p-4"
-                  >
-                    <div className="flex items-start gap-3">
-                      <span
-                        className="mt-1 h-2.5 w-2.5 shrink-0 rounded-full"
-                        style={{
-                          backgroundColor: event.colour || DEFAULT_CAR_COLOUR,
-                        }}
-                      />
-
-                      <div className="min-w-0 flex-1">
-                        <p className="text-sm font-semibold text-zinc-100">
-                          {event.event_name}
-                        </p>
-
-                        <p className="mt-1 text-xs text-zinc-500">
-                          {niceDate(event.start_date)}
-                          {event.end_date && event.end_date !== event.start_date
-                            ? ` to ${niceDate(event.end_date)}`
-                            : ""}
-                        </p>
-
-                        <p className="mt-1 truncate text-xs text-zinc-500">
-                          {event.track_name || "No track"}
-                          {event.location ? ` · ${event.location}` : ""}
-                        </p>
-
-                        {event.event_type && (
-                          <p className="mt-2 inline-flex rounded-full border border-zinc-700 bg-black px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.15em] text-zinc-400">
-                            {event.event_type}
-                          </p>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </aside>
-        </div>
       </section>
     </main>
   );
