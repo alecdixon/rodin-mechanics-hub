@@ -773,27 +773,29 @@ export default function DashboardPage() {
 
   return (
     <main className="min-h-screen bg-[#0d0f12] p-6 text-zinc-100">
-      <header className="mb-8 overflow-hidden rounded-[2rem] border border-zinc-800 bg-[#111418] shadow-2xl shadow-black/30">
-        <div className="relative isolate overflow-hidden border-b border-zinc-800 bg-gradient-to-br from-black via-[#101317] to-[#181315]">
-          <div className="absolute -right-8 top-1/2 hidden -translate-y-1/2 opacity-[0.08] xl:block">
-            <img
-              src="/rodin-logo.png"
-              alt=""
-              className="h-72 w-auto object-contain"
-            />
-          </div>
+      <header className="mb-8 overflow-hidden rounded-3xl border border-zinc-800 bg-[#14181d] shadow-xl">
+        <div className="border-b border-zinc-800 p-6 md:p-7">
+          <div className="grid gap-6 lg:grid-cols-[auto_1fr_auto] lg:items-center">
+            <div className="flex items-center gap-5">
+              <div className="flex h-24 w-56 shrink-0 items-center justify-center rounded-2xl border border-zinc-800 bg-black px-5 py-4">
+                <img
+                  src="/rodin-logo.png"
+                  alt="Rodin Motorsport logo"
+                  className="max-h-16 w-auto object-contain"
+                />
+              </div>
 
-          <div className="absolute left-8 top-1/2 hidden -translate-y-1/2 opacity-[0.16] lg:block">
-            <img
-              src="/gb3-logo.png"
-              alt=""
-              className="h-80 w-auto object-contain"
-            />
-          </div>
+              <div className="hidden h-24 w-40 shrink-0 items-center justify-center rounded-2xl border border-zinc-800 bg-[#0d0f12] px-4 py-3 md:flex">
+                <img
+                  src="/gb3-logo.png"
+                  alt="GB3 Championship logo"
+                  className="max-h-16 w-auto object-contain"
+                />
+              </div>
+            </div>
 
-          <div className="relative grid min-h-[260px] gap-8 p-8 lg:grid-cols-[1fr_auto] lg:items-center">
-            <div className="lg:pl-[340px]">
-              <p className="text-xs font-semibold uppercase tracking-[0.42em] text-red-400">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.35em] text-red-400">
                 Chief Mechanic Control
               </p>
 
@@ -813,7 +815,7 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        <div className="bg-[#0d0f12]/80 p-4">
+        <div className="bg-[#0d0f12] p-4">
           <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
             <QuickLink
               href="/drain-out"
