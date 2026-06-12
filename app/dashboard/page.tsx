@@ -775,23 +775,23 @@ export default function DashboardPage() {
     <main className="min-h-screen bg-[#0d0f12] p-6 text-zinc-100">
       <header className="mb-8 overflow-hidden rounded-[2rem] border border-zinc-800 bg-[#111418] shadow-2xl shadow-black/30">
         <div className="relative isolate overflow-hidden border-b border-zinc-800 bg-gradient-to-br from-black via-[#101317] to-[#171114]">
-          <div className="pointer-events-none absolute inset-y-0 left-0 hidden w-1/2 items-center justify-start overflow-hidden lg:flex">
+          <div className="pointer-events-none absolute inset-y-0 left-0 hidden w-1/2 items-center justify-start overflow-hidden md:flex">
             <img
               src="/rodin-logo.png"
               alt=""
-              className="ml-8 h-56 w-auto object-contain opacity-[0.10]"
+              className="ml-8 h-56 w-auto object-contain opacity-[0.26]"
             />
           </div>
 
-          <div className="pointer-events-none absolute inset-y-0 right-0 hidden w-1/2 items-center justify-end overflow-hidden lg:flex">
+          <div className="pointer-events-none absolute inset-y-0 right-0 hidden w-1/2 items-center justify-end overflow-hidden md:flex">
             <img
               src="/gb3-logo.png"
               alt=""
-              className="mr-8 h-60 w-auto object-contain opacity-[0.12]"
+              className="mr-8 h-60 w-auto object-contain opacity-[0.28]"
             />
           </div>
 
-          <div className="pointer-events-none absolute inset-0 bg-gradient-to-r from-[#0d0f12]/85 via-[#111418]/92 to-[#0d0f12]/85" />
+          <div className="pointer-events-none absolute inset-0 bg-gradient-to-r from-[#0d0f12]/58 via-[#111418]/76 to-[#0d0f12]/58" />
 
           <div className="relative grid min-h-[230px] gap-8 p-8 lg:grid-cols-[1fr_auto] lg:items-center">
             <div>
