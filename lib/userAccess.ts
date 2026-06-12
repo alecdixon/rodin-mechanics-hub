@@ -23,7 +23,10 @@ export type Permission =
   | "clutch:edit"
   | "calendar:manage"
   | "drain_out:view"
-  | "drain_out:manage";
+  | "drain_out:manage"
+  | "recorded_issues:view"
+  | "recorded_issues:edit"
+  | "recorded_issues:delete";
 
 type UserAccess = {
   role: UserRole;
@@ -50,6 +53,9 @@ const ALL_PERMISSIONS: Permission[] = [
   "calendar:manage",
   "drain_out:view",
   "drain_out:manage",
+  "recorded_issues:view",
+  "recorded_issues:edit",
+  "recorded_issues:delete",
 ];
 
 const NUMBER1_MECHANIC_PERMISSIONS: Permission[] = [
@@ -64,12 +70,16 @@ const NUMBER1_MECHANIC_PERMISSIONS: Permission[] = [
   "clutch:view",
   "clutch:edit",
   "drain_out:view",
+  "recorded_issues:view",
+  "recorded_issues:edit",
 ];
 
 const NUMBER2_MECHANIC_PERMISSIONS: Permission[] = [
   "team_jobs:view",
   "team_jobs:complete",
   "drain_out:view",
+  "recorded_issues:view",
+  "recorded_issues:edit",
 ];
 
 const ENGINEER_PERMISSIONS: Permission[] = [
@@ -78,6 +88,9 @@ const ENGINEER_PERMISSIONS: Permission[] = [
   "team_jobs:view",
   "post_event:view",
   "clutch:view",
+  "drain_out:view",
+  "recorded_issues:view",
+  "recorded_issues:edit",
 ];
 
 const USER_ACCESS: Record<string, UserAccess> = {
@@ -123,16 +136,20 @@ const USER_ACCESS: Record<string, UserAccess> = {
   },
 
   /*
-   * Future engineer example.
-   * Leave this commented or replace with real engineer emails later.
+   * Engineers.
+   * Add real engineer Supabase Auth email addresses here.
+   * Example:
+   * "first.last@rodinmotorsport.com": {
+   *   role: "engineer",
+   *   assignedCar: null,
+   *   permissions: ENGINEER_PERMISSIONS,
+   * },
    */
-  /*
-  "engineer.example@rodinmotorsport.com": {
+  "alec.dixon@rodinmotorsport.com": {
     role: "engineer",
     assignedCar: null,
     permissions: ENGINEER_PERMISSIONS,
   },
-  */
 };
 
 export function normaliseEmail(email: string | null | undefined): string {
@@ -212,6 +229,24 @@ export function canManageDrainOut(email: string | null | undefined): boolean {
   return hasPermission(email, "drain_out:manage");
 }
 
+export function canAccessRecordedIssues(
+  email: string | null | undefined,
+): boolean {
+  return hasPermission(email, "recorded_issues:view");
+}
+
+export function canEditRecordedIssues(
+  email: string | null | undefined,
+): boolean {
+  return hasPermission(email, "recorded_issues:edit");
+}
+
+export function canDeleteRecordedIssues(
+  email: string | null | undefined,
+): boolean {
+  return hasPermission(email, "recorded_issues:delete");
+}
+
 export function canAccessCarPages(
   email: string | null | undefined,
   carId: number,
@@ -249,7 +284,7 @@ export function getLoginRedirect(email: string | null | undefined): string {
   }
 
   if (access.role === "engineer") {
-    return "/dashboard";
+    return "/recorded-issues";
   }
 
   return "/login";

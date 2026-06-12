@@ -1359,6 +1359,13 @@ export default function DashboardPage() {
             </Link>
 
             <Link
+              href="/recorded-issues"
+              className="rounded-xl border border-zinc-700 bg-[#1b2026] px-5 py-3 text-sm font-semibold text-zinc-200 transition hover:border-red-500 hover:bg-[#222832]"
+            >
+              Recorded Issues
+            </Link>
+
+            <Link
               href="/dashboard/team-jobs"
               className="rounded-xl border border-red-800 bg-red-950/30 px-5 py-3 text-sm font-semibold text-red-200 transition hover:border-red-500 hover:bg-red-950/50"
             >

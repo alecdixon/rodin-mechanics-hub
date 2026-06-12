@@ -111,6 +111,11 @@ export default function CarLayout({ children }: Props) {
         description: "Create and print sticker requirements",
       },
       {
+        name: "Recorded Issues",
+        href: "/recorded-issues",
+        description: "Log and search known faults and fixes",
+      },
+      {
         name: "Clutch Measurement",
         href: `/car/${carId}/clutch-measurement`,
         description: "Measure and save clutch sheet",
@@ -150,6 +155,10 @@ export default function CarLayout({ children }: Props) {
       {
         name: "Sticker List",
         href: "/sticker-list",
+      },
+      {
+        name: "Recorded Issues",
+        href: "/recorded-issues",
       },
     ],
     [carId],
@@ -208,6 +217,7 @@ export default function CarLayout({ children }: Props) {
             const active = isRouteActive(pathname, item.href);
             const isDrainOut = item.name === "Drain Out";
             const isStickerList = item.name === "Sticker List";
+            const isRecordedIssues = item.name === "Recorded Issues";
 
             return (
               <Link
@@ -219,7 +229,7 @@ export default function CarLayout({ children }: Props) {
                     ? "border-red-500 bg-red-950/40 text-red-100"
                     : isDrainOut
                       ? "border-red-900/70 bg-red-950/20 text-red-100 hover:border-red-500 hover:bg-red-950/40"
-                      : isStickerList
+                      : isStickerList || isRecordedIssues
                         ? "border-zinc-700 bg-[#1b2026] text-zinc-100 hover:border-red-500 hover:bg-[#222832]"
                         : "border-neutral-800 bg-black text-neutral-200 hover:border-red-500",
                 ].join(" ")}
@@ -237,6 +247,12 @@ export default function CarLayout({ children }: Props) {
                     Add / print sticker list
                   </span>
                 )}
+
+                {isRecordedIssues && (
+                  <span className="mt-1 block text-xs font-normal leading-4 text-zinc-400">
+                    Faults / fixes database
+                  </span>
+                )}
               </Link>
             );
           })}
@@ -250,6 +266,7 @@ export default function CarLayout({ children }: Props) {
               {chiefItems.map((item) => {
                 const active = isRouteActive(pathname, item.href);
                 const isStickerList = item.name === "Sticker List";
+                const isRecordedIssues = item.name === "Recorded Issues";
 
                 return (
                   <Link
@@ -259,7 +276,7 @@ export default function CarLayout({ children }: Props) {
                       "block rounded-lg border px-4 py-3 text-sm font-semibold transition",
                       active
                         ? "border-red-500 bg-red-950/50 text-red-100"
-                        : isStickerList
+                        : isStickerList || isRecordedIssues
                           ? "border-zinc-700 bg-[#1b2026] text-zinc-100 hover:border-red-500 hover:bg-[#222832]"
                           : "border-red-800 bg-red-950/30 text-red-200 hover:border-red-500",
                     ].join(" ")}

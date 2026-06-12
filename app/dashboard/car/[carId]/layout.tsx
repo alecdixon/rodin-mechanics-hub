@@ -143,6 +143,11 @@ export default function ChiefCarLayout({ children }: Props) {
           title: "Post Event Sheet",
           description: "Review post-event information and saved PDFs",
         },
+        {
+          href: "/recorded-issues",
+          title: "Recorded Issues",
+          description: "Log and search known issues, fixes and subsystems",
+        },
       ],
     },
     {

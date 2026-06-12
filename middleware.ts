@@ -1,44 +1,66 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
+import {
+  canAccessCarPages,
+  getAssignedCar,
+  getLoginRedirect,
+  getUserRole,
+  hasPermission,
+  normaliseEmail,
+} from "@/lib/userAccess";
 
 export function middleware(request: NextRequest) {
   const url = request.nextUrl.clone();
-
-  const email = request.cookies.get("user-email")?.value;
+  const path = request.nextUrl.pathname;
+  const email = normaliseEmail(request.cookies.get("user-email")?.value);
 
   if (!email) {
     url.pathname = "/login";
     return NextResponse.redirect(url);
   }
 
-  const chiefEmails = ["dan.crain@rodinmotorsport.com"];
+  const role = getUserRole(email);
 
-  const mechanicCars: Record<string, number> = {
-    "simon.crain@rodinmotorsport.com": 1,
-    "olli.moss@rodinmotorsport.com": 2,
-    "jack.carter@rodinmotorsport.com": 3,
-  };
-
-  const isChief = chiefEmails.includes(email);
-  const assignedCar = mechanicCars[email];
-
-  const path = request.nextUrl.pathname;
-
-  // Chief trying to access mechanic routes
-  if (path.startsWith("/car") && isChief) {
-    url.pathname = "/dashboard";
+  if (role === "unknown") {
+    url.pathname = "/login";
     return NextResponse.redirect(url);
   }
 
-  // Mechanic trying to access dashboard
-  if (path.startsWith("/dashboard") && !isChief) {
-    url.pathname = `/car/${assignedCar}`;
-    return NextResponse.redirect(url);
+  if (path.startsWith("/recorded-issues")) {
+    if (!hasPermission(email, "recorded_issues:view")) {
+      url.pathname = getLoginRedirect(email);
+      return NextResponse.redirect(url);
+    }
+
+    return NextResponse.next();
+  }
+
+  if (path.startsWith("/dashboard")) {
+    if (!hasPermission(email, "dashboard:view")) {
+      url.pathname = getLoginRedirect(email);
+      return NextResponse.redirect(url);
+    }
+
+    return NextResponse.next();
+  }
+
+  if (path.startsWith("/car/")) {
+    const carIdMatch = path.match(/^\/car\/(\d+)/);
+    const carId = carIdMatch ? Number(carIdMatch[1]) : null;
+
+    if (!carId || !canAccessCarPages(email, carId)) {
+      const assignedCar = getAssignedCar(email);
+      url.pathname =
+        role === "number1_mechanic" && assignedCar
+          ? `/car/${assignedCar}/job-list`
+          : getLoginRedirect(email);
+      return NextResponse.redirect(url);
+    }
   }
 
   return NextResponse.next();
 }
 
 export const config = {
-  matcher: ["/dashboard/:path*", "/car/:path*"],
+  matcher: ["/dashboard/:path*", "/car/:path*", "/recorded-issues", "/recorded-issues/:path*"],
 };
