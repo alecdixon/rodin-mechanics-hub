@@ -41,20 +41,10 @@ export type UserAccess = {
   readOnly: boolean;
 };
 
-const VIEW_PERMISSIONS: Permission[] = [
-  "dashboard:view",
-  "cars:view",
-  "job_lists:view",
-  "evening_jobs:view",
-  "team_jobs:view",
-  "post_event:view",
-  "clutch:view",
-  "calendar:view",
-  "drain_out:view",
-  "recorded_issues:view",
-  "sticker_list:view",
-];
-
+/*
+ * Keep every known permission in this one list.
+ * Guest permissions are generated from this list by taking only ":view" permissions.
+ */
 const ALL_PERMISSIONS: Permission[] = [
   "dashboard:view",
   "cars:view",
@@ -83,6 +73,17 @@ const ALL_PERMISSIONS: Permission[] = [
   "sticker_list:delete",
   "sticker_list:send",
 ];
+
+const VIEW_PERMISSIONS: Permission[] = ALL_PERMISSIONS.filter((permission) =>
+  permission.endsWith(":view"),
+) as Permission[];
+
+/*
+ * Guest profile:
+ * - Can view every app area.
+ * - Cannot write/edit/delete/send/submit/clear/complete/publish/manage anything.
+ */
+const GUEST_PERMISSIONS: Permission[] = VIEW_PERMISSIONS;
 
 const NUMBER1_MECHANIC_PERMISSIONS: Permission[] = [
   "job_lists:view",
@@ -124,14 +125,10 @@ const ENGINEER_PERMISSIONS: Permission[] = [
   "sticker_list:view",
 ];
 
-/*
- * Showcase guest profile.
- * Guest can view the whole app, but cannot write/edit/delete/send/clear/submit.
- */
-const GUEST_PERMISSIONS: Permission[] = VIEW_PERMISSIONS;
-
 const LOGIN_ALIASES: Record<string, string> = {
   iamaguest: "guest@rodinmotorsport.com",
+  "iama guest": "guest@rodinmotorsport.com",
+  "i-am-a-guest": "guest@rodinmotorsport.com",
 };
 
 const USER_ACCESS: Record<string, UserAccess> = {
@@ -192,6 +189,13 @@ const USER_ACCESS: Record<string, UserAccess> = {
   },
 };
 
+const UNKNOWN_ACCESS: UserAccess = {
+  role: "unknown",
+  assignedCar: null,
+  permissions: [],
+  readOnly: true,
+};
+
 export function normaliseEmail(email: string | null | undefined): string {
   return email?.trim().toLowerCase() ?? "";
 }
@@ -205,16 +209,9 @@ export function resolveLoginIdentifier(
 }
 
 export function getUserAccess(email: string | null | undefined): UserAccess {
-  const cleanEmail = normaliseEmail(email);
+  const cleanEmail = resolveLoginIdentifier(email);
 
-  return (
-    USER_ACCESS[cleanEmail] ?? {
-      role: "unknown",
-      assignedCar: null,
-      permissions: [],
-      readOnly: true,
-    }
-  );
+  return USER_ACCESS[cleanEmail] ?? UNKNOWN_ACCESS;
 }
 
 export function getUserRole(email: string | null | undefined): UserRole {
@@ -248,9 +245,8 @@ export function hasAnyPermission(
 }
 
 /*
- * This is the key guest lockout.
- * Anything that writes, edits, deletes, sends, clears, allocates, uploads,
- * completes, publishes, or submits must use canWrite() or isReadOnlyUser().
+ * Main read-only lock.
+ * Use this anywhere the UI needs to disable a form/button.
  */
 export function isReadOnlyUser(email: string | null | undefined): boolean {
   const access = getUserAccess(email);
@@ -258,6 +254,10 @@ export function isReadOnlyUser(email: string | null | undefined): boolean {
   return access.readOnly === true || access.role === "guest";
 }
 
+/*
+ * Main write permission helper.
+ * Any action that changes data should use this, never hasPermission() alone.
+ */
 export function canWrite(
   email: string | null | undefined,
   permission: Permission,
@@ -265,6 +265,10 @@ export function canWrite(
   return !isReadOnlyUser(email) && hasPermission(email, permission);
 }
 
+/*
+ * Page access helpers.
+ * These allow guest read-only access to every view page.
+ */
 export function canAccessDashboard(email: string | null | undefined): boolean {
   return hasPermission(email, "dashboard:view");
 }
@@ -290,10 +294,7 @@ export function canCompleteTeamJobs(email: string | null | undefined): boolean {
 }
 
 export function canManageTeamJobs(email: string | null | undefined): boolean {
-  return (
-    canCreateTeamJobs(email) &&
-    canPublishTeamJobs(email)
-  );
+  return canCreateTeamJobs(email) && canPublishTeamJobs(email);
 }
 
 export function canAccessDrainOut(email: string | null | undefined): boolean {
@@ -432,9 +433,6 @@ export function isGuest(email: string | null | undefined): boolean {
   return getUserRole(email) === "guest";
 }
 
-/*
- * Use this in pages to show a small banner or disable forms.
- */
 export function getReadOnlyMessage(email: string | null | undefined): string {
   if (isGuest(email)) {
     return "Guest mode is view-only. Editing, deleting, submitting, sending, uploading and clearing actions are disabled.";
