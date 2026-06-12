@@ -1495,6 +1495,12 @@ export default function DashboardPage() {
                 {isExpanded && (
                   <div className="mt-5 grid gap-3">
                     <QuickLink
+                      href={`/dashboard/car/${car.id}/viewer`}
+                      title="Car Overview"
+                      description="Progress, notes, clutch and post-event records"
+                    />
+
+                    <QuickLink
                       href={`/dashboard/car/${car.id}/job-list`}
                       title="Workshop Job List"
                       description="Main workshop jobs for this car"
