@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import LogoutButton from "@/app/components/LogoutButton";
 import { supabase } from "@/lib/supabase";
+import { getCurrentUserEmail } from "@/lib/authHelpers";
 import {
   getAssignedCar,
   getUserRole,
@@ -323,9 +324,18 @@ export default function DashboardPage() {
   }, []);
 
   useEffect(() => {
+    let mounted = true;
+
     async function checkAccess() {
-      const { data } = await supabase.auth.getUser();
-      const email = data.user?.email ?? "";
+      const email = await getCurrentUserEmail();
+
+      if (!mounted) return;
+
+      if (!email) {
+        router.replace("/login");
+        return;
+      }
+
       const role = getUserRole(email);
       const userIsReadOnly = isReadOnlyUser(email);
 
@@ -356,10 +366,16 @@ export default function DashboardPage() {
       await loadCarsAndProgress();
       await loadClutches();
 
-      setLoading(false);
+      if (mounted) {
+        setLoading(false);
+      }
     }
 
     checkAccess();
+
+    return () => {
+      mounted = false;
+    };
   }, [loadCarsAndProgress, loadClutches, router]);
 
   useEffect(() => {
