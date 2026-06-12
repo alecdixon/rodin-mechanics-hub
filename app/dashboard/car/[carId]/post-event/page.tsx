@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
-import { hasPermission, isReadOnlyUser } from "@/lib/userAccess";
+import { getUserRole, hasPermission, isReadOnlyUser } from "@/lib/userAccess";
 import LogoutButton from "@/app/components/LogoutButton";
 
 type PostEventSheet = {
@@ -111,10 +111,15 @@ export default function ChiefPostEventPage() {
     }
 
     const email = userData.user.email.trim().toLowerCase();
+    const role = getUserRole(email);
+    const userIsReadOnly = isReadOnlyUser(email);
 
-    setReadOnly(isReadOnlyUser(email));
+    setReadOnly(userIsReadOnly);
 
-    if (!hasPermission(email, "post_event:view")) {
+    const allowedToViewPostEvent =
+      hasPermission(email, "post_event:view") || role === "guest";
+
+    if (!allowedToViewPostEvent) {
       router.replace("/dashboard");
       return null;
     }
