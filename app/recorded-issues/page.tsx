@@ -6,10 +6,12 @@ import { useRouter } from "next/navigation";
 import LogoutButton from "@/app/components/LogoutButton";
 import { supabase } from "@/lib/supabase";
 import {
+  canDeleteRecordedIssues,
   canEditRecordedIssues,
   getAssignedCar,
   getUserRole,
   hasPermission,
+  isReadOnlyUser,
   type UserRole,
 } from "@/lib/userAccess";
 
@@ -87,15 +89,30 @@ function normaliseSearch(value: string) {
 }
 
 function backHref(role: UserRole, assignedCar: number | null) {
-  if (role === "chief_mechanic" || role === "engineer") return "/dashboard";
-  if (role === "number1_mechanic" && assignedCar) return `/car/${assignedCar}/job-list`;
-  if (role === "number2_mechanic") return "/drain-out";
+  if (role === "chief_mechanic" || role === "engineer" || role === "guest") {
+    return "/dashboard";
+  }
+
+  if (role === "number1_mechanic" && assignedCar) {
+    return `/car/${assignedCar}/job-list`;
+  }
+
+  if (role === "number2_mechanic") {
+    return "/drain-out";
+  }
+
   return "/login";
 }
 
 function backLabel(role: UserRole) {
-  if (role === "chief_mechanic" || role === "engineer") return "Back to Dashboard";
-  if (role === "number2_mechanic") return "Back to Drain Out";
+  if (role === "chief_mechanic" || role === "engineer" || role === "guest") {
+    return "Back to Dashboard";
+  }
+
+  if (role === "number2_mechanic") {
+    return "Back to Drain Out";
+  }
+
   return "Back to Car Page";
 }
 
@@ -110,6 +127,7 @@ export default function RecordedIssuesPage() {
   const [userEmail, setUserEmail] = useState("");
   const [userRole, setUserRole] = useState<UserRole>("unknown");
   const [assignedCar, setAssignedCar] = useState<number | null>(null);
+  const [readOnly, setReadOnly] = useState(true);
 
   const [issues, setIssues] = useState<RecordedIssue[]>([]);
   const [message, setMessage] = useState("");
@@ -122,8 +140,13 @@ export default function RecordedIssuesPage() {
   const [recordedSolution, setRecordedSolution] = useState("");
   const [searchText, setSearchText] = useState("");
 
-  const canEdit = useMemo(() => canEditRecordedIssues(userEmail), [userEmail]);
-  const canDelete = userRole === "chief_mechanic";
+  const canEdit = useMemo(() => {
+    return !readOnly && canEditRecordedIssues(userEmail);
+  }, [readOnly, userEmail]);
+
+  const canDelete = useMemo(() => {
+    return !readOnly && canDeleteRecordedIssues(userEmail);
+  }, [readOnly, userEmail]);
 
   const subsystemOptions = useMemo(() => {
     const values = new Set<string>(DEFAULT_SUBSYSTEMS);
@@ -208,6 +231,8 @@ export default function RecordedIssuesPage() {
       setUserEmail(email);
       setUserRole(getUserRole(email));
       setAssignedCar(getAssignedCar(email));
+      setReadOnly(isReadOnlyUser(email));
+
       await loadIssues();
 
       if (!mounted) return;
@@ -251,7 +276,17 @@ export default function RecordedIssuesPage() {
     setRecordedSolution("");
   }
 
+  function blockReadOnlyAction() {
+    if (!readOnly) return false;
+
+    setMessage("");
+    setErrorMessage("Guest mode is view-only. Recorded issues cannot be edited.");
+    return true;
+  }
+
   function startEdit(issue: RecordedIssue) {
+    if (blockReadOnlyAction()) return;
+
     setEditingId(issue.id);
     setReportDate(issue.report_date || todayIsoDate());
     setCircuit(issue.circuit || "");
@@ -265,6 +300,8 @@ export default function RecordedIssuesPage() {
 
   async function saveIssue(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+
+    if (blockReadOnlyAction()) return;
 
     if (!canEdit) {
       setErrorMessage("You do not have permission to save recorded issues.");
@@ -333,10 +370,16 @@ export default function RecordedIssuesPage() {
   }
 
   async function deleteIssue(issueId: string) {
+    if (blockReadOnlyAction()) return;
+
     if (!canDelete) {
       setErrorMessage("Only the chief mechanic can delete recorded issues.");
       return;
     }
+
+    const confirmed = window.confirm("Delete this recorded issue? This cannot be undone.");
+
+    if (!confirmed) return;
 
     setDeletingId(issueId);
     setMessage("");
@@ -385,6 +428,13 @@ export default function RecordedIssuesPage() {
               Use this as a searchable reliability and lessons-learned record for
               mechanics and engineers.
             </p>
+
+            {readOnly && (
+              <div className="mt-4 rounded-2xl border border-yellow-800 bg-yellow-950/20 p-4 text-sm text-yellow-200">
+                Guest mode is view-only. You can search and read recorded issues,
+                but adding, editing and deleting are disabled.
+              </div>
+            )}
           </div>
 
           <div className="flex flex-wrap gap-2">
@@ -423,129 +473,142 @@ export default function RecordedIssuesPage() {
         )}
 
         <section className="mt-6 grid gap-6 lg:grid-cols-[420px_1fr]">
-          <form
-            onSubmit={saveIssue}
-            className="rounded-3xl border border-zinc-800 bg-[#14181d] p-6 shadow-xl"
-          >
-            <div className="flex items-start justify-between gap-4">
-              <div>
-                <h2 className="text-xl font-semibold">
-                  {editingId ? "Edit Recorded Issue" : "Add Recorded Issue"}
-                </h2>
+          {canEdit ? (
+            <form
+              onSubmit={saveIssue}
+              className="rounded-3xl border border-zinc-800 bg-[#14181d] p-6 shadow-xl"
+            >
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <h2 className="text-xl font-semibold">
+                    {editingId ? "Edit Recorded Issue" : "Add Recorded Issue"}
+                  </h2>
 
-                <p className="mt-1 text-sm text-zinc-500">
-                  Every field is searchable once saved.
-                </p>
+                  <p className="mt-1 text-sm text-zinc-500">
+                    Every field is searchable once saved.
+                  </p>
+                </div>
+
+                {editingId && (
+                  <button
+                    type="button"
+                    onClick={resetForm}
+                    className="rounded-xl border border-zinc-700 px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-zinc-300 hover:border-red-500 hover:text-red-200"
+                  >
+                    Cancel Edit
+                  </button>
+                )}
               </div>
 
-              {editingId && (
+              <div className="mt-6 space-y-4">
+                <div>
+                  <label className="mb-2 block text-xs font-semibold uppercase tracking-[0.18em] text-zinc-500">
+                    Date
+                  </label>
+                  <input
+                    type="date"
+                    value={reportDate}
+                    onChange={(event) => setReportDate(event.target.value)}
+                    className="w-full rounded-xl border border-zinc-700 bg-[#0d0f12] px-4 py-3 text-zinc-100 outline-none focus:border-red-500"
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label className="mb-2 block text-xs font-semibold uppercase tracking-[0.18em] text-zinc-500">
+                    Circuit
+                  </label>
+                  <input
+                    type="text"
+                    value={circuit}
+                    onChange={(event) => setCircuit(event.target.value)}
+                    placeholder="Silverstone, Spa, Snetterton..."
+                    className="w-full rounded-xl border border-zinc-700 bg-[#0d0f12] px-4 py-3 text-zinc-100 outline-none focus:border-red-500"
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label className="mb-2 block text-xs font-semibold uppercase tracking-[0.18em] text-zinc-500">
+                    Affected Subsystem
+                  </label>
+                  <input
+                    list="recorded-issue-subsystems"
+                    type="text"
+                    value={affectedSubsystem}
+                    onChange={(event) => setAffectedSubsystem(event.target.value)}
+                    placeholder="Select existing or type a new subsystem"
+                    className="w-full rounded-xl border border-zinc-700 bg-[#0d0f12] px-4 py-3 text-zinc-100 outline-none focus:border-red-500"
+                    required
+                  />
+                  <datalist id="recorded-issue-subsystems">
+                    {subsystemOptions.map((subsystem) => (
+                      <option key={subsystem} value={subsystem} />
+                    ))}
+                  </datalist>
+                  <p className="mt-2 text-xs leading-5 text-zinc-500">
+                    Type a new name to add another subsystem automatically.
+                  </p>
+                </div>
+
+                <div>
+                  <label className="mb-2 block text-xs font-semibold uppercase tracking-[0.18em] text-zinc-500">
+                    Recorded Issue
+                  </label>
+                  <textarea
+                    value={recordedIssue}
+                    onChange={(event) => setRecordedIssue(event.target.value)}
+                    placeholder="What happened? Include symptoms, session context and any useful observations."
+                    rows={5}
+                    className="w-full rounded-xl border border-zinc-700 bg-[#0d0f12] px-4 py-3 text-zinc-100 outline-none focus:border-red-500"
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label className="mb-2 block text-xs font-semibold uppercase tracking-[0.18em] text-zinc-500">
+                    Recorded Solution
+                  </label>
+                  <textarea
+                    value={recordedSolution}
+                    onChange={(event) => setRecordedSolution(event.target.value)}
+                    placeholder="What fixed it? Include parts changed, setup changes, checks completed or workaround."
+                    rows={5}
+                    className="w-full rounded-xl border border-zinc-700 bg-[#0d0f12] px-4 py-3 text-zinc-100 outline-none focus:border-red-500"
+                    required
+                  />
+                </div>
+
                 <button
-                  type="button"
-                  onClick={resetForm}
-                  className="rounded-xl border border-zinc-700 px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-zinc-300 hover:border-red-500 hover:text-red-200"
+                  type="submit"
+                  disabled={saving}
+                  className="w-full rounded-xl bg-red-700 px-4 py-3 font-semibold text-white transition hover:bg-red-600 disabled:cursor-not-allowed disabled:opacity-60"
                 >
-                  Cancel Edit
+                  {saving
+                    ? "Saving..."
+                    : editingId
+                      ? "Save Updated Issue"
+                      : "Add Recorded Issue"}
                 </button>
-              )}
-            </div>
-
-            <div className="mt-6 space-y-4">
-              <div>
-                <label className="mb-2 block text-xs font-semibold uppercase tracking-[0.18em] text-zinc-500">
-                  Date
-                </label>
-                <input
-                  type="date"
-                  value={reportDate}
-                  onChange={(event) => setReportDate(event.target.value)}
-                  disabled={!canEdit}
-                  className="w-full rounded-xl border border-zinc-700 bg-[#0d0f12] px-4 py-3 text-zinc-100 outline-none focus:border-red-500 disabled:opacity-60"
-                  required
-                />
               </div>
+            </form>
+          ) : (
+            <aside className="rounded-3xl border border-zinc-800 bg-[#14181d] p-6 shadow-xl">
+              <p className="text-xs font-semibold uppercase tracking-[0.35em] text-red-400">
+                View Only
+              </p>
 
-              <div>
-                <label className="mb-2 block text-xs font-semibold uppercase tracking-[0.18em] text-zinc-500">
-                  Circuit
-                </label>
-                <input
-                  type="text"
-                  value={circuit}
-                  onChange={(event) => setCircuit(event.target.value)}
-                  placeholder="Silverstone, Spa, Snetterton..."
-                  disabled={!canEdit}
-                  className="w-full rounded-xl border border-zinc-700 bg-[#0d0f12] px-4 py-3 text-zinc-100 outline-none focus:border-red-500 disabled:opacity-60"
-                  required
-                />
-              </div>
+              <h2 className="mt-3 text-xl font-semibold">
+                Recorded issue editing disabled
+              </h2>
 
-              <div>
-                <label className="mb-2 block text-xs font-semibold uppercase tracking-[0.18em] text-zinc-500">
-                  Affected Subsystem
-                </label>
-                <input
-                  list="recorded-issue-subsystems"
-                  type="text"
-                  value={affectedSubsystem}
-                  onChange={(event) => setAffectedSubsystem(event.target.value)}
-                  placeholder="Select existing or type a new subsystem"
-                  disabled={!canEdit}
-                  className="w-full rounded-xl border border-zinc-700 bg-[#0d0f12] px-4 py-3 text-zinc-100 outline-none focus:border-red-500 disabled:opacity-60"
-                  required
-                />
-                <datalist id="recorded-issue-subsystems">
-                  {subsystemOptions.map((subsystem) => (
-                    <option key={subsystem} value={subsystem} />
-                  ))}
-                </datalist>
-                <p className="mt-2 text-xs leading-5 text-zinc-500">
-                  Type a new name to add another subsystem automatically.
-                </p>
-              </div>
-
-              <div>
-                <label className="mb-2 block text-xs font-semibold uppercase tracking-[0.18em] text-zinc-500">
-                  Recorded Issue
-                </label>
-                <textarea
-                  value={recordedIssue}
-                  onChange={(event) => setRecordedIssue(event.target.value)}
-                  placeholder="What happened? Include symptoms, session context and any useful observations."
-                  disabled={!canEdit}
-                  rows={5}
-                  className="w-full rounded-xl border border-zinc-700 bg-[#0d0f12] px-4 py-3 text-zinc-100 outline-none focus:border-red-500 disabled:opacity-60"
-                  required
-                />
-              </div>
-
-              <div>
-                <label className="mb-2 block text-xs font-semibold uppercase tracking-[0.18em] text-zinc-500">
-                  Recorded Solution
-                </label>
-                <textarea
-                  value={recordedSolution}
-                  onChange={(event) => setRecordedSolution(event.target.value)}
-                  placeholder="What fixed it? Include parts changed, setup changes, checks completed or workaround."
-                  disabled={!canEdit}
-                  rows={5}
-                  className="w-full rounded-xl border border-zinc-700 bg-[#0d0f12] px-4 py-3 text-zinc-100 outline-none focus:border-red-500 disabled:opacity-60"
-                  required
-                />
-              </div>
-
-              <button
-                type="submit"
-                disabled={!canEdit || saving}
-                className="w-full rounded-xl bg-red-700 px-4 py-3 font-semibold text-white transition hover:bg-red-600 disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                {saving
-                  ? "Saving..."
-                  : editingId
-                    ? "Save Updated Issue"
-                    : "Add Recorded Issue"}
-              </button>
-            </div>
-          </form>
+              <p className="mt-2 text-sm leading-6 text-zinc-400">
+                This profile can view and search the recorded issue database,
+                but cannot add new issues, edit existing entries, or delete
+                records.
+              </p>
+            </aside>
+          )}
 
           <section className="rounded-3xl border border-zinc-800 bg-[#14181d] p-6 shadow-xl">
             <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
@@ -597,32 +660,35 @@ export default function RecordedIssuesPage() {
                       </div>
 
                       <p className="mt-3 text-xs text-zinc-500">
-                        Added by {issue.created_by || "unknown"} · Updated {niceDateTime(issue.updated_at || issue.created_at)}
+                        Added by {issue.created_by || "unknown"} · Updated{" "}
+                        {niceDateTime(issue.updated_at || issue.created_at)}
                       </p>
                     </div>
 
-                    <div className="flex flex-wrap gap-2">
-                      {canEdit && (
-                        <button
-                          type="button"
-                          onClick={() => startEdit(issue)}
-                          className="rounded-xl border border-zinc-700 px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-zinc-300 hover:border-red-500 hover:text-red-200"
-                        >
-                          Edit
-                        </button>
-                      )}
+                    {(canEdit || canDelete) && (
+                      <div className="flex flex-wrap gap-2">
+                        {canEdit && (
+                          <button
+                            type="button"
+                            onClick={() => startEdit(issue)}
+                            className="rounded-xl border border-zinc-700 px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-zinc-300 hover:border-red-500 hover:text-red-200"
+                          >
+                            Edit
+                          </button>
+                        )}
 
-                      {canDelete && (
-                        <button
-                          type="button"
-                          onClick={() => deleteIssue(issue.id)}
-                          disabled={deletingId === issue.id}
-                          className="rounded-xl border border-red-900/80 px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-red-200 hover:bg-red-950/40 disabled:cursor-not-allowed disabled:opacity-60"
-                        >
-                          {deletingId === issue.id ? "Deleting..." : "Delete"}
-                        </button>
-                      )}
-                    </div>
+                        {canDelete && (
+                          <button
+                            type="button"
+                            onClick={() => deleteIssue(issue.id)}
+                            disabled={deletingId === issue.id}
+                            className="rounded-xl border border-red-900/80 px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-red-200 hover:bg-red-950/40 disabled:cursor-not-allowed disabled:opacity-60"
+                          >
+                            {deletingId === issue.id ? "Deleting..." : "Delete"}
+                          </button>
+                        )}
+                      </div>
+                    )}
                   </div>
 
                   <div className="mt-5 grid gap-4 lg:grid-cols-2">

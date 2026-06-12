@@ -1,5 +1,6 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase";
+import { isReadOnlyUser } from "@/lib/userAccess";
 
 type StickerCategoryType = "car" | "general" | "custom";
 
@@ -14,6 +15,23 @@ type StickerListPayload = {
   done?: boolean;
   created_by?: string | null;
 };
+
+function getRequestUserEmail(request: NextRequest) {
+  return request.cookies.get("user-email")?.value?.trim().toLowerCase() ?? "";
+}
+
+function blockReadOnlyUser(request: NextRequest) {
+  const userEmail = getRequestUserEmail(request);
+
+  if (isReadOnlyUser(userEmail)) {
+    return NextResponse.json(
+      { error: "Guest mode is view-only. Sticker list changes are disabled." },
+      { status: 403 },
+    );
+  }
+
+  return null;
+}
 
 function cleanStickerPayload(payload: StickerListPayload) {
   const categoryType = payload.category_type || "general";
@@ -77,7 +95,13 @@ export async function GET() {
   }
 }
 
-export async function POST(request: Request) {
+export async function POST(request: NextRequest) {
+  const readOnlyBlock = blockReadOnlyUser(request);
+
+  if (readOnlyBlock) {
+    return readOnlyBlock;
+  }
+
   try {
     const payload = (await request.json()) as StickerListPayload;
     const cleanPayload = cleanStickerPayload(payload);
@@ -106,7 +130,13 @@ export async function POST(request: Request) {
   }
 }
 
-export async function PATCH(request: Request) {
+export async function PATCH(request: NextRequest) {
+  const readOnlyBlock = blockReadOnlyUser(request);
+
+  if (readOnlyBlock) {
+    return readOnlyBlock;
+  }
+
   try {
     const payload = (await request.json()) as StickerListPayload;
 
@@ -191,7 +221,13 @@ export async function PATCH(request: Request) {
   }
 }
 
-export async function DELETE(request: Request) {
+export async function DELETE(request: NextRequest) {
+  const readOnlyBlock = blockReadOnlyUser(request);
+
+  if (readOnlyBlock) {
+    return readOnlyBlock;
+  }
+
   try {
     const { searchParams } = new URL(request.url);
     const id = searchParams.get("id");

@@ -8,6 +8,7 @@ import {
   getAssignedCar,
   getUserRole,
   hasPermission,
+  isReadOnlyUser,
   type UserRole,
 } from "@/lib/userAccess";
 import LogoutButton from "@/app/components/LogoutButton";
@@ -50,6 +51,7 @@ export default function TeamJobsPage() {
   const [userRole, setUserRole] = useState<UserRole>("unknown");
   const [assignedCar, setAssignedCar] = useState<number | null>(null);
   const [canCompleteJobs, setCanCompleteJobs] = useState(false);
+  const [readOnly, setReadOnly] = useState(true);
 
   const [loading, setLoading] = useState(true);
   const [savingId, setSavingId] = useState<string | null>(null);
@@ -72,6 +74,7 @@ export default function TeamJobsPage() {
     const email = userData.user.email.trim().toLowerCase();
     const role = getUserRole(email);
     const carId = getAssignedCar(email);
+    const userIsReadOnly = isReadOnlyUser(email);
 
     if (!hasPermission(email, "team_jobs:view")) {
       router.replace("/login");
@@ -81,7 +84,10 @@ export default function TeamJobsPage() {
     setUserEmail(email);
     setUserRole(role);
     setAssignedCar(carId ? Number(carId) : null);
-    setCanCompleteJobs(hasPermission(email, "team_jobs:complete"));
+    setReadOnly(userIsReadOnly);
+    setCanCompleteJobs(
+      !userIsReadOnly && hasPermission(email, "team_jobs:complete"),
+    );
 
     const { data, error } = await supabase
       .from("team_jobs")
@@ -127,10 +133,7 @@ export default function TeamJobsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const openJobs = useMemo(
-    () => jobs.filter((job) => !job.completed),
-    [jobs],
-  );
+  const openJobs = useMemo(() => jobs.filter((job) => !job.completed), [jobs]);
 
   const completedJobs = useMemo(
     () => jobs.filter((job) => job.completed),
@@ -142,12 +145,16 @@ export default function TeamJobsPage() {
     : 0;
 
   function backHref() {
-    if (userRole === "number2_mechanic") {
-      return "/drain-out";
+    if (
+      userRole === "chief_mechanic" ||
+      userRole === "engineer" ||
+      userRole === "guest"
+    ) {
+      return "/dashboard";
     }
 
-    if (userRole === "chief_mechanic" || userRole === "engineer") {
-      return "/dashboard";
+    if (userRole === "number2_mechanic") {
+      return "/drain-out";
     }
 
     if (userRole === "number1_mechanic" && assignedCar) {
@@ -158,16 +165,20 @@ export default function TeamJobsPage() {
   }
 
   function backLabel() {
+    if (
+      userRole === "chief_mechanic" ||
+      userRole === "engineer" ||
+      userRole === "guest"
+    ) {
+      return "Back to Dashboard";
+    }
+
     if (userRole === "number2_mechanic") {
       return "Back to Drain Out";
     }
 
     if (userRole === "number1_mechanic") {
       return "Back to Car Jobs";
-    }
-
-    if (userRole === "chief_mechanic" || userRole === "engineer") {
-      return "Back to Dashboard";
     }
 
     return "Back";
@@ -190,7 +201,14 @@ export default function TeamJobsPage() {
   }
 
   async function toggleJob(job: TeamJob) {
+    if (readOnly) {
+      setMessage("");
+      setErrorMessage("Guest mode is view-only. Team jobs cannot be changed.");
+      return;
+    }
+
     if (!canCompleteJobs) {
+      setMessage("");
       setErrorMessage("You do not have permission to complete team jobs.");
       return;
     }
@@ -241,6 +259,7 @@ export default function TeamJobsPage() {
 
   function renderJob(job: TeamJob) {
     const isSaving = savingId === job.id;
+    const canToggleThisJob = canCompleteJobs && !readOnly;
 
     return (
       <div
@@ -252,23 +271,36 @@ export default function TeamJobsPage() {
         }`}
       >
         <div className="grid grid-cols-[44px_1fr] gap-4">
-          <button
-            type="button"
-            onClick={() => toggleJob(job)}
-            disabled={isSaving || !canCompleteJobs}
-            title={
-              canCompleteJobs
-                ? "Toggle team job"
-                : "You do not have permission to complete team jobs"
-            }
-            className={`grid h-9 w-9 place-items-center rounded-lg border text-sm font-bold transition disabled:cursor-not-allowed disabled:opacity-50 ${
-              job.completed
-                ? "border-green-500 bg-green-600 text-white"
-                : "border-zinc-600 bg-[#111418] text-transparent hover:border-red-500"
-            }`}
-          >
-            ✓
-          </button>
+          {canToggleThisJob ? (
+            <button
+              type="button"
+              onClick={() => toggleJob(job)}
+              disabled={isSaving}
+              title="Toggle team job"
+              className={`grid h-9 w-9 place-items-center rounded-lg border text-sm font-bold transition disabled:cursor-not-allowed disabled:opacity-50 ${
+                job.completed
+                  ? "border-green-500 bg-green-600 text-white"
+                  : "border-zinc-600 bg-[#111418] text-transparent hover:border-red-500"
+              }`}
+            >
+              ✓
+            </button>
+          ) : (
+            <div
+              title={
+                readOnly
+                  ? "Guest mode is view-only"
+                  : "You do not have permission to complete team jobs"
+              }
+              className={`grid h-9 w-9 place-items-center rounded-lg border text-sm font-bold ${
+                job.completed
+                  ? "border-green-500 bg-green-600 text-white"
+                  : "border-zinc-600 bg-[#111418] text-transparent"
+              }`}
+            >
+              ✓
+            </div>
+          )}
 
           <div>
             <div className="flex flex-wrap items-center gap-2">
@@ -375,11 +407,16 @@ export default function TeamJobsPage() {
                 shared list for all cars and all mechanics.
               </p>
 
-              {!canCompleteJobs && (
+              {readOnly ? (
+                <p className="mt-3 rounded-xl border border-yellow-800 bg-yellow-950/30 px-4 py-3 text-sm text-yellow-200">
+                  Guest mode is view-only. You can inspect team jobs, but cannot
+                  mark them complete or reopen them.
+                </p>
+              ) : !canCompleteJobs ? (
                 <p className="mt-3 rounded-xl border border-yellow-800 bg-yellow-950/30 px-4 py-3 text-sm text-yellow-200">
                   Your login can view team jobs, but cannot mark them complete.
                 </p>
-              )}
+              ) : null}
             </div>
 
             <LogoutButton />

@@ -4,7 +4,11 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
-import { getAssignedCar, getUserRole } from "@/lib/userAccess";
+import {
+  getAssignedCar,
+  getUserRole,
+  isReadOnlyUser,
+} from "@/lib/userAccess";
 import LogoutButton from "@/app/components/LogoutButton";
 
 type DashboardCar = {
@@ -219,7 +223,12 @@ export default function StickerListPage() {
     return getUserRole(currentUserEmail);
   }, [currentUserEmail]);
 
+  const readOnly = useMemo(() => {
+    return isReadOnlyUser(currentUserEmail);
+  }, [currentUserEmail]);
+
   const isChiefMechanic = userRole === "chief_mechanic";
+  const canEditStickerList = !readOnly;
 
   const loadCars = useCallback(async () => {
     const { data, error } = await supabase
@@ -385,7 +394,7 @@ export default function StickerListPage() {
   }, [items]);
 
   const backHref = useMemo(() => {
-    if (userRole === "chief_mechanic" || userRole === "engineer") {
+    if (userRole === "chief_mechanic" || userRole === "engineer" || userRole === "guest") {
       return "/dashboard";
     }
 
@@ -397,7 +406,19 @@ export default function StickerListPage() {
     return "/team-jobs";
   }, [currentUserEmail, userRole]);
 
+  function blockReadOnlyAction() {
+    if (!readOnly) return false;
+
+    setMessage("");
+    setErrorMessage("Guest mode is view-only. Sticker list editing is disabled.");
+    return true;
+  }
+
   async function uploadStickerImage(file: File) {
+    if (blockReadOnlyAction()) {
+      throw new Error("Guest mode is view-only.");
+    }
+
     if (!file.type.startsWith("image/")) {
       throw new Error("Attachment must be an image file.");
     }
@@ -440,6 +461,8 @@ export default function StickerListPage() {
   }
 
   async function addStickerItem() {
+    if (blockReadOnlyAction()) return;
+
     setMessage("");
     setErrorMessage("");
 
@@ -508,6 +531,8 @@ export default function StickerListPage() {
   }
 
   async function saveGeneralNeedByDate() {
+    if (blockReadOnlyAction()) return;
+
     if (!isChiefMechanic) {
       setErrorMessage("Only the chief mechanic can set the general Need by date.");
       return;
@@ -545,6 +570,8 @@ export default function StickerListPage() {
   }
 
   async function clearNeedByDate() {
+    if (blockReadOnlyAction()) return;
+
     if (!isChiefMechanic) {
       setErrorMessage("Only the chief mechanic can clear the general Need by date.");
       return;
@@ -584,6 +611,8 @@ export default function StickerListPage() {
   }
 
   async function toggleDone(item: StickerItem) {
+    if (blockReadOnlyAction()) return;
+
     setMessage("");
     setErrorMessage("");
 
@@ -613,6 +642,8 @@ export default function StickerListPage() {
   }
 
   function updateStickerText(item: StickerItem, value: string) {
+    if (readOnly) return;
+
     setItems((current) =>
       current.map((currentItem) =>
         currentItem.id === item.id
@@ -623,6 +654,8 @@ export default function StickerListPage() {
   }
 
   function updateStickerQuantity(item: StickerItem, value: string) {
+    if (readOnly) return;
+
     const cleanQuantity = safeQuantity(value);
 
     setItems((current) =>
@@ -635,6 +668,8 @@ export default function StickerListPage() {
   }
 
   function updateStickerNotes(item: StickerItem, value: string) {
+    if (readOnly) return;
+
     setItems((current) =>
       current.map((currentItem) =>
         currentItem.id === item.id
@@ -645,6 +680,8 @@ export default function StickerListPage() {
   }
 
   async function saveStickerItem(item: StickerItem) {
+    if (blockReadOnlyAction()) return;
+
     setMessage("");
     setErrorMessage("");
 
@@ -674,6 +711,8 @@ export default function StickerListPage() {
   }
 
   async function removeStickerItem(item: StickerItem) {
+    if (blockReadOnlyAction()) return;
+
     const confirmed = window.confirm(
       `Remove "${item.sticker_text}" from the sticker list?`,
     );
@@ -701,6 +740,8 @@ export default function StickerListPage() {
   }
 
   async function clearAllStickers() {
+    if (blockReadOnlyAction()) return;
+
     if (!isChiefMechanic) {
       setErrorMessage("Only the chief mechanic can clear all stickers.");
       return;
@@ -784,7 +825,6 @@ export default function StickerListPage() {
         .sticker-row-complete {
           opacity: 0.72;
         }
-
 
         @media print {
           body {
@@ -1031,6 +1071,13 @@ export default function StickerListPage() {
               Save the page as a PDF to send the list with clickable attachment
               links, or print the sheet for manual checkbox completion.
             </p>
+
+            {readOnly && (
+              <div className="mt-4 rounded-2xl border border-yellow-800 bg-yellow-950/20 p-4 text-sm text-yellow-200">
+                Guest mode is view-only. You can view and print the sticker list,
+                but adding, editing, ticking off and removing stickers is disabled.
+              </div>
+            )}
           </div>
 
           <div className="flex flex-wrap gap-3">
@@ -1049,7 +1096,7 @@ export default function StickerListPage() {
               Save / Send PDF
             </button>
 
-            {isChiefMechanic && (
+            {isChiefMechanic && canEditStickerList && (
               <button
                 type="button"
                 onClick={clearAllStickers}
@@ -1102,7 +1149,7 @@ export default function StickerListPage() {
           </div>
         </div>
 
-        {isChiefMechanic ? (
+        {isChiefMechanic && canEditStickerList ? (
           <div className="grid gap-3 md:grid-cols-[220px_auto_auto_1fr]">
             <input
               type="date"
@@ -1141,162 +1188,181 @@ export default function StickerListPage() {
           </div>
         ) : (
           <div className="rounded-2xl border border-yellow-800 bg-yellow-950/20 p-4 text-sm text-yellow-200">
-            Only the chief mechanic can change the general Need by date.
+            {readOnly
+              ? "Guest mode is view-only. The general Need by date cannot be changed."
+              : "Only the chief mechanic can change the general Need by date."}
           </div>
         )}
       </section>
 
-      <section className="no-print mb-8 rounded-3xl border border-zinc-800 bg-[#14181d] p-6 shadow-xl">
-        <div className="mb-5">
-          <p className="text-xs font-semibold uppercase tracking-[0.35em] text-red-400">
-            Add Sticker
-          </p>
+      {canEditStickerList ? (
+        <section className="no-print mb-8 rounded-3xl border border-zinc-800 bg-[#14181d] p-6 shadow-xl">
+          <div className="mb-5">
+            <p className="text-xs font-semibold uppercase tracking-[0.35em] text-red-400">
+              Add Sticker
+            </p>
 
-          <h2 className="mt-3 text-2xl font-semibold text-zinc-100">
-            New sticker item
-          </h2>
-        </div>
+            <h2 className="mt-3 text-2xl font-semibold text-zinc-100">
+              New sticker item
+            </h2>
+          </div>
 
-        <div className="grid gap-4 xl:grid-cols-[180px_220px_1fr_100px_1fr]">
-          <label>
-            <span className="text-xs uppercase tracking-[0.22em] text-zinc-500">
-              Category
-            </span>
-
-            <select
-              value={categoryType}
-              onChange={(event) =>
-                setCategoryType(event.target.value as StickerCategoryType)
-              }
-              className="mt-2 w-full rounded-xl border border-zinc-700 bg-[#111418] px-4 py-3 text-sm text-zinc-100 outline-none focus:border-red-500"
-            >
-              <option value="general">General</option>
-              <option value="car">Car</option>
-              <option value="custom">Custom</option>
-            </select>
-          </label>
-
-          {categoryType === "car" ? (
+          <div className="grid gap-4 xl:grid-cols-[180px_220px_1fr_100px_1fr]">
             <label>
               <span className="text-xs uppercase tracking-[0.22em] text-zinc-500">
-                Car
+                Category
               </span>
 
               <select
-                value={selectedCarId}
-                onChange={(event) => setSelectedCarId(event.target.value)}
+                value={categoryType}
+                onChange={(event) =>
+                  setCategoryType(event.target.value as StickerCategoryType)
+                }
                 className="mt-2 w-full rounded-xl border border-zinc-700 bg-[#111418] px-4 py-3 text-sm text-zinc-100 outline-none focus:border-red-500"
               >
-                {sortedCars.length === 0 ? (
-                  <option value="">No active cars</option>
-                ) : (
-                  sortedCars.map((car) => (
-                    <option key={car.id} value={car.id}>
-                      {carDisplayName(car)}
-                    </option>
-                  ))
-                )}
+                <option value="general">General</option>
+                <option value="car">Car</option>
+                <option value="custom">Custom</option>
               </select>
             </label>
-          ) : categoryType === "custom" ? (
+
+            {categoryType === "car" ? (
+              <label>
+                <span className="text-xs uppercase tracking-[0.22em] text-zinc-500">
+                  Car
+                </span>
+
+                <select
+                  value={selectedCarId}
+                  onChange={(event) => setSelectedCarId(event.target.value)}
+                  className="mt-2 w-full rounded-xl border border-zinc-700 bg-[#111418] px-4 py-3 text-sm text-zinc-100 outline-none focus:border-red-500"
+                >
+                  {sortedCars.length === 0 ? (
+                    <option value="">No active cars</option>
+                  ) : (
+                    sortedCars.map((car) => (
+                      <option key={car.id} value={car.id}>
+                        {carDisplayName(car)}
+                      </option>
+                    ))
+                  )}
+                </select>
+              </label>
+            ) : categoryType === "custom" ? (
+              <label>
+                <span className="text-xs uppercase tracking-[0.22em] text-zinc-500">
+                  Custom category
+                </span>
+
+                <input
+                  value={customCategory}
+                  onChange={(event) => setCustomCategory(event.target.value)}
+                  placeholder="e.g. Pit board"
+                  className="mt-2 w-full rounded-xl border border-zinc-700 bg-[#111418] px-4 py-3 text-sm text-zinc-100 outline-none focus:border-red-500"
+                />
+              </label>
+            ) : (
+              <div className="rounded-xl border border-zinc-800 bg-[#0d0f12] px-4 py-3">
+                <p className="text-xs uppercase tracking-[0.22em] text-zinc-500">
+                  Group
+                </p>
+                <p className="mt-2 text-sm font-semibold text-zinc-200">
+                  General
+                </p>
+              </div>
+            )}
+
             <label>
               <span className="text-xs uppercase tracking-[0.22em] text-zinc-500">
-                Custom category
+                Sticker
               </span>
 
               <input
-                value={customCategory}
-                onChange={(event) => setCustomCategory(event.target.value)}
-                placeholder="e.g. Pit board"
+                value={stickerText}
+                onChange={(event) => setStickerText(event.target.value)}
+                placeholder="e.g. Driver name decal"
+                className="mt-2 w-full rounded-xl border border-zinc-700 bg-[#111418] px-4 py-3 text-base font-semibold text-zinc-100 outline-none focus:border-red-500"
+              />
+            </label>
+
+            <label>
+              <span className="text-xs uppercase tracking-[0.22em] text-zinc-500">
+                Qty
+              </span>
+
+              <input
+                type="number"
+                min={1}
+                value={quantity}
+                onChange={(event) => setQuantity(event.target.value)}
                 className="mt-2 w-full rounded-xl border border-zinc-700 bg-[#111418] px-4 py-3 text-sm text-zinc-100 outline-none focus:border-red-500"
               />
             </label>
-          ) : (
-            <div className="rounded-xl border border-zinc-800 bg-[#0d0f12] px-4 py-3">
-              <p className="text-xs uppercase tracking-[0.22em] text-zinc-500">
-                Group
-              </p>
-              <p className="mt-2 text-sm font-semibold text-zinc-200">
-                General
-              </p>
-            </div>
-          )}
 
-          <label>
-            <span className="text-xs uppercase tracking-[0.22em] text-zinc-500">
-              Sticker
-            </span>
+            <label>
+              <span className="text-xs uppercase tracking-[0.22em] text-zinc-500">
+                Notes
+              </span>
 
-            <input
-              value={stickerText}
-              onChange={(event) => setStickerText(event.target.value)}
-              placeholder="e.g. Driver name decal"
-              className="mt-2 w-full rounded-xl border border-zinc-700 bg-[#111418] px-4 py-3 text-base font-semibold text-zinc-100 outline-none focus:border-red-500"
-            />
-          </label>
-
-          <label>
-            <span className="text-xs uppercase tracking-[0.22em] text-zinc-500">
-              Qty
-            </span>
-
-            <input
-              type="number"
-              min={1}
-              value={quantity}
-              onChange={(event) => setQuantity(event.target.value)}
-              className="mt-2 w-full rounded-xl border border-zinc-700 bg-[#111418] px-4 py-3 text-sm text-zinc-100 outline-none focus:border-red-500"
-            />
-          </label>
-
-          <label>
-            <span className="text-xs uppercase tracking-[0.22em] text-zinc-500">
-              Notes
-            </span>
-
-            <input
-              value={notes}
-              onChange={(event) => setNotes(event.target.value)}
-              placeholder="Optional"
-              className="mt-2 w-full rounded-xl border border-zinc-700 bg-[#111418] px-4 py-3 text-sm text-zinc-100 outline-none focus:border-red-500"
-            />
-          </label>
-        </div>
-
-        <div className="mt-4 grid gap-4 xl:grid-cols-[1fr_auto]">
-          <label>
-            <span className="text-xs uppercase tracking-[0.22em] text-zinc-500">
-              Add image
-            </span>
-
-            <input
-              type="file"
-              accept="image/*"
-              onChange={(event) =>
-                setAttachmentFile(event.target.files?.[0] ?? null)
-              }
-              className="mt-2 w-full rounded-xl border border-zinc-700 bg-[#111418] px-4 py-3 text-sm text-zinc-100 outline-none file:mr-4 file:rounded-lg file:border-0 file:bg-red-700 file:px-4 file:py-2 file:text-sm file:font-semibold file:text-white hover:file:bg-red-600 focus:border-red-500"
-            />
-
-            <p className="mt-2 text-xs text-zinc-500">
-              Optional. Upload a JPEG, PNG or WebP image. This will appear as an
-              openable image link in the PDF.
-              {attachmentFile ? ` Selected: ${attachmentFile.name}` : ""}
-            </p>
-          </label>
-
-          <div className="flex items-end">
-            <button
-              type="button"
-              onClick={addStickerItem}
-              disabled={saving}
-              className="w-full rounded-xl bg-red-700 px-5 py-3 text-sm font-semibold text-white hover:bg-red-600 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {saving ? "Adding..." : "Add"}
-            </button>
+              <input
+                value={notes}
+                onChange={(event) => setNotes(event.target.value)}
+                placeholder="Optional"
+                className="mt-2 w-full rounded-xl border border-zinc-700 bg-[#111418] px-4 py-3 text-sm text-zinc-100 outline-none focus:border-red-500"
+              />
+            </label>
           </div>
-        </div>
-      </section>
+
+          <div className="mt-4 grid gap-4 xl:grid-cols-[1fr_auto]">
+            <label>
+              <span className="text-xs uppercase tracking-[0.22em] text-zinc-500">
+                Add image
+              </span>
+
+              <input
+                type="file"
+                accept="image/*"
+                onChange={(event) =>
+                  setAttachmentFile(event.target.files?.[0] ?? null)
+                }
+                className="mt-2 w-full rounded-xl border border-zinc-700 bg-[#111418] px-4 py-3 text-sm text-zinc-100 outline-none file:mr-4 file:rounded-lg file:border-0 file:bg-red-700 file:px-4 file:py-2 file:text-sm file:font-semibold file:text-white hover:file:bg-red-600 focus:border-red-500"
+              />
+
+              <p className="mt-2 text-xs text-zinc-500">
+                Optional. Upload a JPEG, PNG or WebP image. This will appear as an
+                openable image link in the PDF.
+                {attachmentFile ? ` Selected: ${attachmentFile.name}` : ""}
+              </p>
+            </label>
+
+            <div className="flex items-end">
+              <button
+                type="button"
+                onClick={addStickerItem}
+                disabled={saving}
+                className="w-full rounded-xl bg-red-700 px-5 py-3 text-sm font-semibold text-white hover:bg-red-600 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {saving ? "Adding..." : "Add"}
+              </button>
+            </div>
+          </div>
+        </section>
+      ) : (
+        <section className="no-print mb-8 rounded-3xl border border-zinc-800 bg-[#14181d] p-6 shadow-xl">
+          <p className="text-xs font-semibold uppercase tracking-[0.35em] text-red-400">
+            Guest View
+          </p>
+
+          <h2 className="mt-3 text-2xl font-semibold text-zinc-100">
+            Sticker editing disabled
+          </h2>
+
+          <p className="mt-2 max-w-2xl text-sm text-zinc-400">
+            This profile can inspect the sticker list and export/print the PDF,
+            but cannot add, edit, complete, remove or clear sticker items.
+          </p>
+        </section>
+      )}
 
       <section className="print-area rounded-3xl border border-zinc-800 bg-[#14181d] p-6 shadow-xl">
         <div className="print-header">
@@ -1425,18 +1491,26 @@ export default function StickerListPage() {
                       }}
                     >
                       <tr>
-                        <th className="print-qty-col w-[80px] px-4 py-3 text-left">Qty</th>
-                        <th className="print-sticker-col px-4 py-3 text-left">Sticker</th>
-                        <th className="print-notes-col px-4 py-3 text-left">Notes</th>
+                        <th className="print-qty-col w-[80px] px-4 py-3 text-left">
+                          Qty
+                        </th>
+                        <th className="print-sticker-col px-4 py-3 text-left">
+                          Sticker
+                        </th>
+                        <th className="print-notes-col px-4 py-3 text-left">
+                          Notes
+                        </th>
                         <th className="print-image-col w-[150px] px-4 py-3 text-left">
                           Image
                         </th>
                         <th className="print-done-col w-[90px] px-4 py-3 text-left">
                           Done
                         </th>
-                        <th className="screen-only w-[260px] px-4 py-3 text-left">
-                          Actions
-                        </th>
+                        {canEditStickerList && (
+                          <th className="screen-only w-[260px] px-4 py-3 text-left">
+                            Actions
+                          </th>
+                        )}
                       </tr>
                     </thead>
 
@@ -1449,35 +1523,51 @@ export default function StickerListPage() {
                           }`}
                         >
                           <td className="px-4 py-3">
-                            <span className="print-only font-semibold print-text">
-                              {item.quantity}
-                            </span>
+                            {canEditStickerList ? (
+                              <>
+                                <span className="print-only font-semibold print-text">
+                                  {item.quantity}
+                                </span>
 
-                            <input
-                              type="number"
-                              min={1}
-                              value={item.quantity}
-                              onChange={(event) =>
-                                updateStickerQuantity(item, event.target.value)
-                              }
-                              className="screen-only w-20 rounded-lg border border-zinc-700 bg-[#111418] px-3 py-2 text-base font-semibold text-zinc-100 outline-none focus:border-red-500"
-                            />
+                                <input
+                                  type="number"
+                                  min={1}
+                                  value={item.quantity}
+                                  onChange={(event) =>
+                                    updateStickerQuantity(item, event.target.value)
+                                  }
+                                  className="screen-only w-20 rounded-lg border border-zinc-700 bg-[#111418] px-3 py-2 text-base font-semibold text-zinc-100 outline-none focus:border-red-500"
+                                />
+                              </>
+                            ) : (
+                              <span className="font-semibold text-zinc-100 print-text">
+                                {item.quantity}
+                              </span>
+                            )}
                           </td>
 
                           <td className="px-4 py-3">
-                            <span className="print-only print-item-text print-text">
-                              {item.sticker_text}
-                            </span>
+                            {canEditStickerList ? (
+                              <>
+                                <span className="print-only print-item-text print-text">
+                                  {item.sticker_text}
+                                </span>
 
-                            <input
-                              value={item.sticker_text}
-                              onChange={(event) =>
-                                updateStickerText(item, event.target.value)
-                              }
-                              className={`screen-only sticker-main-text w-full rounded-lg border border-zinc-700 bg-[#111418] px-3 py-2 text-base font-semibold outline-none focus:border-red-500 ${
-                                item.done ? "text-zinc-500" : "text-zinc-100"
-                              }`}
-                            />
+                                <input
+                                  value={item.sticker_text}
+                                  onChange={(event) =>
+                                    updateStickerText(item, event.target.value)
+                                  }
+                                  className={`screen-only sticker-main-text w-full rounded-lg border border-zinc-700 bg-[#111418] px-3 py-2 text-base font-semibold outline-none focus:border-red-500 ${
+                                    item.done ? "text-zinc-500" : "text-zinc-100"
+                                  }`}
+                                />
+                              </>
+                            ) : (
+                              <span className="sticker-main-text print-item-text text-zinc-100 print-text">
+                                {item.sticker_text}
+                              </span>
+                            )}
 
                             <p className="screen-only mt-1 text-xs text-zinc-600">
                               Added {niceDateTime(item.created_at)}
@@ -1486,18 +1576,26 @@ export default function StickerListPage() {
                           </td>
 
                           <td className="px-4 py-3">
-                            <span className="print-only print-text">
-                              {item.notes || "—"}
-                            </span>
+                            {canEditStickerList ? (
+                              <>
+                                <span className="print-only print-text">
+                                  {item.notes || "—"}
+                                </span>
 
-                            <input
-                              value={item.notes ?? ""}
-                              onChange={(event) =>
-                                updateStickerNotes(item, event.target.value)
-                              }
-                              placeholder="Optional notes"
-                              className="screen-only w-full rounded-lg border border-zinc-700 bg-[#111418] px-3 py-2 text-base text-zinc-100 outline-none focus:border-red-500"
-                            />
+                                <input
+                                  value={item.notes ?? ""}
+                                  onChange={(event) =>
+                                    updateStickerNotes(item, event.target.value)
+                                  }
+                                  placeholder="Optional notes"
+                                  className="screen-only w-full rounded-lg border border-zinc-700 bg-[#111418] px-3 py-2 text-base text-zinc-100 outline-none focus:border-red-500"
+                                />
+                              </>
+                            ) : (
+                              <span className="text-zinc-300 print-text">
+                                {item.notes || "—"}
+                              </span>
+                            )}
                           </td>
 
                           <td className="px-4 py-3">
@@ -1522,50 +1620,60 @@ export default function StickerListPage() {
                           </td>
 
                           <td className="px-4 py-3">
-                            <button
-                              type="button"
-                              onClick={() => toggleDone(item)}
-                              className="screen-only inline-flex items-center gap-2 rounded-lg border border-zinc-700 bg-[#111418] px-3 py-2 text-xs font-semibold text-zinc-300 hover:border-green-600 hover:text-green-300"
-                            >
-                              <span
-                                className={`grid h-4 w-4 place-items-center rounded border ${
-                                  item.done
-                                    ? "border-green-500 bg-green-600 text-white"
-                                    : "border-zinc-500 bg-transparent text-transparent"
-                                }`}
-                              >
-                                ✓
+                            {canEditStickerList ? (
+                              <>
+                                <button
+                                  type="button"
+                                  onClick={() => toggleDone(item)}
+                                  className="screen-only inline-flex items-center gap-2 rounded-lg border border-zinc-700 bg-[#111418] px-3 py-2 text-xs font-semibold text-zinc-300 hover:border-green-600 hover:text-green-300"
+                                >
+                                  <span
+                                    className={`grid h-4 w-4 place-items-center rounded border ${
+                                      item.done
+                                        ? "border-green-500 bg-green-600 text-white"
+                                        : "border-zinc-500 bg-transparent text-transparent"
+                                    }`}
+                                  >
+                                    ✓
+                                  </span>
+                                  Done
+                                </button>
+
+                                <span className="print-checkbox print-only">
+                                  {item.done ? "✓" : ""}
+                                </span>
+                              </>
+                            ) : (
+                              <span className="print-checkbox">
+                                {item.done ? "✓" : ""}
                               </span>
-                              Done
-                            </button>
-
-                            <span className="print-checkbox print-only">
-                              {item.done ? "✓" : ""}
-                            </span>
+                            )}
                           </td>
 
-                          <td className="screen-only px-4 py-3">
-                            <div className="flex flex-wrap gap-2">
-                              <button
-                                type="button"
-                                onClick={() => saveStickerItem(item)}
-                                className="rounded-lg bg-red-700 px-3 py-2 text-xs font-semibold text-white hover:bg-red-600"
-                              >
-                                Save
-                              </button>
+                          {canEditStickerList && (
+                            <td className="screen-only px-4 py-3">
+                              <div className="flex flex-wrap gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() => saveStickerItem(item)}
+                                  className="rounded-lg bg-red-700 px-3 py-2 text-xs font-semibold text-white hover:bg-red-600"
+                                >
+                                  Save
+                                </button>
 
-                              <button
-                                type="button"
-                                onClick={() => removeStickerItem(item)}
-                                disabled={removingId === item.id}
-                                className="rounded-lg border border-red-900/70 px-3 py-2 text-xs font-semibold text-red-300 hover:bg-red-950/40 disabled:cursor-not-allowed disabled:opacity-50"
-                              >
-                                {removingId === item.id
-                                  ? "Removing..."
-                                  : "Remove"}
-                              </button>
-                            </div>
-                          </td>
+                                <button
+                                  type="button"
+                                  onClick={() => removeStickerItem(item)}
+                                  disabled={removingId === item.id}
+                                  className="rounded-lg border border-red-900/70 px-3 py-2 text-xs font-semibold text-red-300 hover:bg-red-950/40 disabled:cursor-not-allowed disabled:opacity-50"
+                                >
+                                  {removingId === item.id
+                                    ? "Removing..."
+                                    : "Remove"}
+                                </button>
+                              </div>
+                            </td>
+                          )}
                         </tr>
                       ))}
                     </tbody>

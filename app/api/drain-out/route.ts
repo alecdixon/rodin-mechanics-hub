@@ -1,5 +1,6 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import nodemailer from "nodemailer";
+import { isReadOnlyUser } from "@/lib/userAccess";
 
 export const runtime = "nodejs";
 
@@ -24,6 +25,26 @@ type DrainOutPayload = {
   engineer_name?: string | null;
   engineer_email?: string | null;
 };
+
+function getRequestUserEmail(request: NextRequest) {
+  return request.cookies.get("user-email")?.value?.trim().toLowerCase() ?? "";
+}
+
+function blockReadOnlyUser(request: NextRequest) {
+  const userEmail = getRequestUserEmail(request);
+
+  if (isReadOnlyUser(userEmail)) {
+    return NextResponse.json(
+      {
+        error:
+          "Guest mode is view-only. Drain-out email sending is disabled.",
+      },
+      { status: 403 },
+    );
+  }
+
+  return null;
+}
 
 function clean(value: string | null | undefined) {
   return value?.trim() || "";
@@ -150,7 +171,13 @@ function buildFriendlyEmailError(rawMessage: string) {
   };
 }
 
-export async function POST(request: Request) {
+export async function POST(request: NextRequest) {
+  const readOnlyBlock = blockReadOnlyUser(request);
+
+  if (readOnlyBlock) {
+    return readOnlyBlock;
+  }
+
   try {
     const payload = (await request.json()) as DrainOutPayload;
 

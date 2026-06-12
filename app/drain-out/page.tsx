@@ -3,7 +3,11 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { supabase } from "@/lib/supabase";
-import { getUserRole, type UserRole } from "@/lib/userAccess";
+import {
+  getUserRole,
+  isReadOnlyUser,
+  type UserRole,
+} from "@/lib/userAccess";
 
 type DrainOutRecord = {
   id: string;
@@ -120,6 +124,7 @@ function formatReportDate(value: string | null) {
 
 export default function DrainOutPage() {
   const [userRole, setUserRole] = useState<UserRole>("unknown");
+  const [readOnly, setReadOnly] = useState(true);
 
   const [selectedAllocationId, setSelectedAllocationId] = useState(
     CAR_ALLOCATIONS[0]?.id || "",
@@ -187,9 +192,12 @@ export default function DrainOutPage() {
   }, [drainOutFigure]);
 
   const showChiefDashboardButton =
-    userRole === "chief_mechanic" || userRole === "engineer";
+    userRole === "chief_mechanic" ||
+    userRole === "engineer" ||
+    userRole === "guest";
 
-  const canDeleteDrainOuts = userRole === "chief_mechanic";
+  const canDeleteDrainOuts = userRole === "chief_mechanic" && !readOnly;
+  const canSubmitDrainOut = !readOnly;
 
   async function loadRecordsForCar(carId: number) {
     if (!Number.isFinite(carId) || carId <= 0) {
@@ -223,6 +231,7 @@ export default function DrainOutPage() {
 
       setCreatedBy(email);
       setUserRole(getUserRole(email));
+      setReadOnly(isReadOnlyUser(email));
 
       if (selectedAllocation) {
         await loadRecordsForCar(selectedAllocation.carId);
@@ -235,12 +244,24 @@ export default function DrainOutPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedAllocation?.carId]);
 
+  function blockReadOnlyAction() {
+    if (!readOnly) return false;
+
+    setMessage("");
+    setErrorMessage(
+      "Guest mode is view-only. Drain-out submissions and deletions are disabled.",
+    );
+    return true;
+  }
+
   function resetFormAfterSubmit() {
     setDrainOutFigure("");
     setNotes("");
   }
 
   async function submitDrainOut() {
+    if (blockReadOnlyAction()) return;
+
     setMessage("");
     setErrorMessage("");
 
@@ -350,6 +371,8 @@ export default function DrainOutPage() {
   }
 
   async function deleteDrainOutRecord(record: DrainOutRecord) {
+    if (blockReadOnlyAction()) return;
+
     setMessage("");
     setErrorMessage("");
 
@@ -412,6 +435,14 @@ export default function DrainOutPage() {
                 drain out figure. The engineer notification is handled from the
                 selected car allocation.
               </p>
+
+              {readOnly && (
+                <div className="mt-4 rounded-2xl border border-yellow-800 bg-yellow-950/20 p-4 text-sm text-yellow-200">
+                  Guest mode is view-only. You can inspect drain-out records,
+                  but submitting reports, notifying engineers and deleting
+                  records are disabled.
+                </div>
+              )}
             </div>
 
             <div className="flex flex-wrap gap-3">
@@ -453,153 +484,314 @@ export default function DrainOutPage() {
           </div>
         )}
 
-        <section className="rounded-3xl border border-zinc-800 bg-[#14181d] p-6 shadow-xl">
-          <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.35em] text-red-400">
-                New Report
-              </p>
+        {canSubmitDrainOut ? (
+          <section className="rounded-3xl border border-zinc-800 bg-[#14181d] p-6 shadow-xl">
+            <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.35em] text-red-400">
+                  New Report
+                </p>
 
-              <h2 className="mt-3 text-2xl font-semibold">
-                Submit Drain Out Figure
-              </h2>
+                <h2 className="mt-3 text-2xl font-semibold">
+                  Submit Drain Out Figure
+                </h2>
 
-              <p className="mt-2 max-w-3xl text-sm text-zinc-400">
-                Complete the event details first, then add the car, rig and
-                drain out value. The preview at the bottom shows exactly what
-                will be submitted.
-              </p>
-            </div>
-
-            <div className="rounded-2xl border border-zinc-800 bg-[#0d0f12] px-4 py-3">
-              <p className="text-xs uppercase tracking-[0.25em] text-zinc-500">
-                Selected Car
-              </p>
-
-              <p className="mt-1 text-lg font-semibold text-zinc-100">
-                {carDisplayLabel}
-              </p>
-            </div>
-          </div>
-
-          <div className="rounded-2xl border border-zinc-800 bg-[#101317] p-5">
-            <p className="mb-4 text-xs font-semibold uppercase tracking-[0.3em] text-zinc-500">
-              Event Details
-            </p>
-
-            <div className="grid gap-4 md:grid-cols-3">
-              <label>
-                <span className="mb-2 block text-xs font-semibold uppercase tracking-[0.2em] text-zinc-500">
-                  Date
-                </span>
-
-                <input
-                  type="date"
-                  value={reportDate}
-                  onChange={(event) => setReportDate(event.target.value)}
-                  className="w-full rounded-xl border border-zinc-700 bg-[#0d0f12] px-4 py-3 text-sm text-zinc-100 outline-none focus:border-red-500"
-                />
-              </label>
-
-              <label>
-                <span className="mb-2 block text-xs font-semibold uppercase tracking-[0.2em] text-zinc-500">
-                  Session
-                </span>
-
-                <select
-                  value={session}
-                  onChange={(event) => {
-                    setSession(
-                      event.target.value as (typeof SESSION_OPTIONS)[number],
-                    );
-                    setCustomSession("");
-                  }}
-                  className="w-full rounded-xl border border-zinc-700 bg-[#0d0f12] px-4 py-3 text-sm text-zinc-100 outline-none focus:border-red-500"
-                >
-                  {SESSION_OPTIONS.map((option) => (
-                    <option key={option} value={option}>
-                      {option}
-                    </option>
-                  ))}
-                </select>
-              </label>
-
-              <label>
-                <span className="mb-2 block text-xs font-semibold uppercase tracking-[0.2em] text-zinc-500">
-                  Circuit
-                </span>
-
-                <select
-                  value={circuit}
-                  onChange={(event) => {
-                    setCircuit(
-                      event.target.value as (typeof CIRCUIT_OPTIONS)[number],
-                    );
-                    setCustomCircuit("");
-                  }}
-                  className="w-full rounded-xl border border-zinc-700 bg-[#0d0f12] px-4 py-3 text-sm text-zinc-100 outline-none focus:border-red-500"
-                >
-                  {CIRCUIT_OPTIONS.map((option) => (
-                    <option key={option} value={option}>
-                      {option}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            </div>
-
-            {(session === "Other" || circuit === "Other") && (
-              <div className="mt-4 grid gap-4 md:grid-cols-2">
-                {session === "Other" && (
-                  <label>
-                    <span className="mb-2 block text-xs font-semibold uppercase tracking-[0.2em] text-zinc-500">
-                      Custom Session
-                    </span>
-
-                    <input
-                      value={customSession}
-                      onChange={(event) => setCustomSession(event.target.value)}
-                      placeholder="e.g. Warm-up"
-                      className="w-full rounded-xl border border-zinc-700 bg-[#0d0f12] px-4 py-3 text-sm text-zinc-100 outline-none focus:border-red-500"
-                    />
-                  </label>
-                )}
-
-                {circuit === "Other" && (
-                  <label>
-                    <span className="mb-2 block text-xs font-semibold uppercase tracking-[0.2em] text-zinc-500">
-                      Custom Circuit
-                    </span>
-
-                    <input
-                      value={customCircuit}
-                      onChange={(event) => setCustomCircuit(event.target.value)}
-                      placeholder="e.g. Red Bull Ring"
-                      className="w-full rounded-xl border border-zinc-700 bg-[#0d0f12] px-4 py-3 text-sm text-zinc-100 outline-none focus:border-red-500"
-                    />
-                  </label>
-                )}
+                <p className="mt-2 max-w-3xl text-sm text-zinc-400">
+                  Complete the event details first, then add the car, rig and
+                  drain out value. The preview at the bottom shows exactly what
+                  will be submitted.
+                </p>
               </div>
-            )}
-          </div>
 
-          <div className="mt-5 rounded-2xl border border-zinc-800 bg-[#101317] p-5">
-            <p className="mb-4 text-xs font-semibold uppercase tracking-[0.3em] text-zinc-500">
-              Car And Measurement
+              <div className="rounded-2xl border border-zinc-800 bg-[#0d0f12] px-4 py-3">
+                <p className="text-xs uppercase tracking-[0.25em] text-zinc-500">
+                  Selected Car
+                </p>
+
+                <p className="mt-1 text-lg font-semibold text-zinc-100">
+                  {carDisplayLabel}
+                </p>
+              </div>
+            </div>
+
+            <div className="rounded-2xl border border-zinc-800 bg-[#101317] p-5">
+              <p className="mb-4 text-xs font-semibold uppercase tracking-[0.3em] text-zinc-500">
+                Event Details
+              </p>
+
+              <div className="grid gap-4 md:grid-cols-3">
+                <label>
+                  <span className="mb-2 block text-xs font-semibold uppercase tracking-[0.2em] text-zinc-500">
+                    Date
+                  </span>
+
+                  <input
+                    type="date"
+                    value={reportDate}
+                    onChange={(event) => setReportDate(event.target.value)}
+                    className="w-full rounded-xl border border-zinc-700 bg-[#0d0f12] px-4 py-3 text-sm text-zinc-100 outline-none focus:border-red-500"
+                  />
+                </label>
+
+                <label>
+                  <span className="mb-2 block text-xs font-semibold uppercase tracking-[0.2em] text-zinc-500">
+                    Session
+                  </span>
+
+                  <select
+                    value={session}
+                    onChange={(event) => {
+                      setSession(
+                        event.target.value as (typeof SESSION_OPTIONS)[number],
+                      );
+                      setCustomSession("");
+                    }}
+                    className="w-full rounded-xl border border-zinc-700 bg-[#0d0f12] px-4 py-3 text-sm text-zinc-100 outline-none focus:border-red-500"
+                  >
+                    {SESSION_OPTIONS.map((option) => (
+                      <option key={option} value={option}>
+                        {option}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
+                <label>
+                  <span className="mb-2 block text-xs font-semibold uppercase tracking-[0.2em] text-zinc-500">
+                    Circuit
+                  </span>
+
+                  <select
+                    value={circuit}
+                    onChange={(event) => {
+                      setCircuit(
+                        event.target.value as (typeof CIRCUIT_OPTIONS)[number],
+                      );
+                      setCustomCircuit("");
+                    }}
+                    className="w-full rounded-xl border border-zinc-700 bg-[#0d0f12] px-4 py-3 text-sm text-zinc-100 outline-none focus:border-red-500"
+                  >
+                    {CIRCUIT_OPTIONS.map((option) => (
+                      <option key={option} value={option}>
+                        {option}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+
+              {(session === "Other" || circuit === "Other") && (
+                <div className="mt-4 grid gap-4 md:grid-cols-2">
+                  {session === "Other" && (
+                    <label>
+                      <span className="mb-2 block text-xs font-semibold uppercase tracking-[0.2em] text-zinc-500">
+                        Custom Session
+                      </span>
+
+                      <input
+                        value={customSession}
+                        onChange={(event) => setCustomSession(event.target.value)}
+                        placeholder="e.g. Warm-up"
+                        className="w-full rounded-xl border border-zinc-700 bg-[#0d0f12] px-4 py-3 text-sm text-zinc-100 outline-none focus:border-red-500"
+                      />
+                    </label>
+                  )}
+
+                  {circuit === "Other" && (
+                    <label>
+                      <span className="mb-2 block text-xs font-semibold uppercase tracking-[0.2em] text-zinc-500">
+                        Custom Circuit
+                      </span>
+
+                      <input
+                        value={customCircuit}
+                        onChange={(event) => setCustomCircuit(event.target.value)}
+                        placeholder="e.g. Red Bull Ring"
+                        className="w-full rounded-xl border border-zinc-700 bg-[#0d0f12] px-4 py-3 text-sm text-zinc-100 outline-none focus:border-red-500"
+                      />
+                    </label>
+                  )}
+                </div>
+              )}
+            </div>
+
+            <div className="mt-5 rounded-2xl border border-zinc-800 bg-[#101317] p-5">
+              <p className="mb-4 text-xs font-semibold uppercase tracking-[0.3em] text-zinc-500">
+                Car And Measurement
+              </p>
+
+              <div className="grid gap-4 lg:grid-cols-[1.3fr_180px_1fr_120px]">
+                <label>
+                  <span className="mb-2 block text-xs font-semibold uppercase tracking-[0.2em] text-zinc-500">
+                    Car
+                  </span>
+
+                  <select
+                    value={selectedAllocationId}
+                    onChange={(event) => {
+                      setSelectedAllocationId(event.target.value);
+                      setDrainOutFigure("");
+                      setNotes("");
+                      setMessage("");
+                      setErrorMessage("");
+                    }}
+                    className="w-full rounded-xl border border-zinc-700 bg-[#0d0f12] px-4 py-3 text-sm text-zinc-100 outline-none focus:border-red-500"
+                  >
+                    {CAR_ALLOCATIONS.map((allocation) => (
+                      <option key={allocation.id} value={allocation.id}>
+                        Car {allocation.carId} — {allocation.driverName}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
+                <label>
+                  <span className="mb-2 block text-xs font-semibold uppercase tracking-[0.2em] text-zinc-500">
+                    Rig
+                  </span>
+
+                  <select
+                    value={rig}
+                    onChange={(event) =>
+                      setRig(event.target.value as (typeof RIG_OPTIONS)[number])
+                    }
+                    className="w-full rounded-xl border border-zinc-700 bg-[#0d0f12] px-4 py-3 text-sm text-zinc-100 outline-none focus:border-red-500"
+                  >
+                    {RIG_OPTIONS.map((option) => (
+                      <option key={option} value={option}>
+                        {option}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
+                <label>
+                  <span className="mb-2 block text-xs font-semibold uppercase tracking-[0.2em] text-zinc-500">
+                    Drain Out Figure
+                  </span>
+
+                  <input
+                    value={drainOutFigure}
+                    onChange={(event) => setDrainOutFigure(event.target.value)}
+                    inputMode="decimal"
+                    placeholder="e.g. 2.35"
+                    className="w-full rounded-xl border border-zinc-700 bg-[#0d0f12] px-4 py-3 text-sm text-zinc-100 outline-none focus:border-red-500"
+                  />
+                </label>
+
+                <div>
+                  <span className="mb-2 block text-xs font-semibold uppercase tracking-[0.2em] text-zinc-500">
+                    Units
+                  </span>
+
+                  <div className="rounded-xl border border-zinc-700 bg-[#0d0f12] px-4 py-3 text-sm font-bold text-red-300">
+                    {units}
+                  </div>
+                </div>
+              </div>
+
+              <div className="mt-4 rounded-2xl border border-zinc-800 bg-[#0d0f12] p-4">
+                <p className="text-xs uppercase tracking-[0.25em] text-zinc-500">
+                  Auto-Filled Engineer
+                </p>
+
+                <div className="mt-2 flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <p className="font-semibold text-zinc-100">
+                      {activeEngineerName}
+                    </p>
+
+                    <p className="text-sm text-zinc-400">
+                      {selectedCarHasEmail
+                        ? activeEngineerEmail
+                        : `No email configured for Car ${activeCarId}`}
+                    </p>
+                  </div>
+
+                  <div
+                    className={`rounded-full border px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] ${
+                      selectedCarHasEmail
+                        ? "border-green-900/60 bg-green-950/20 text-green-300"
+                        : "border-red-900/60 bg-red-950/30 text-red-300"
+                    }`}
+                  >
+                    {selectedCarHasEmail ? "Ready To Notify" : "Missing Email"}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <label className="mt-5 block">
+              <span className="mb-2 block text-xs font-semibold uppercase tracking-[0.2em] text-zinc-500">
+                Notes
+              </span>
+
+              <textarea
+                value={notes}
+                onChange={(event) => setNotes(event.target.value)}
+                placeholder="Optional: oil condition, contamination, abnormal smell, leak notes..."
+                className="min-h-28 w-full rounded-xl border border-zinc-700 bg-[#0d0f12] px-4 py-3 text-sm text-zinc-100 outline-none focus:border-red-500"
+              />
+            </label>
+
+            <div className="mt-6 flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-red-900/40 bg-[#181315] p-5">
+              <div>
+                <p className="text-xs uppercase tracking-[0.25em] text-zinc-500">
+                  Submission Preview
+                </p>
+
+                <p className="mt-2 text-sm text-zinc-300">
+                  {formatReportDate(reportDate)} · {finalCircuit || "No circuit"}{" "}
+                  · {finalSession || "No session"} · Car {activeCarId} ·{" "}
+                  {activeDriverName} · {rig} ·{" "}
+                  <span className="font-bold text-red-300">
+                    {numericDrainOut !== null
+                      ? `${numericDrainOut} ${units}`
+                      : `0 ${units}`}
+                  </span>
+                </p>
+
+                <p className="mt-1 text-xs text-zinc-500">
+                  Notification recipient:{" "}
+                  {selectedCarHasEmail ? activeEngineerEmail : "No engineer email"}
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={submitDrainOut}
+                disabled={saving || !selectedCarHasEmail}
+                className="rounded-xl bg-red-700 px-6 py-3 text-sm font-semibold text-white hover:bg-red-600 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {saving ? "Submitting..." : "Submit & Notify Engineer"}
+              </button>
+            </div>
+          </section>
+        ) : (
+          <section className="rounded-3xl border border-zinc-800 bg-[#14181d] p-6 shadow-xl">
+            <p className="text-xs font-semibold uppercase tracking-[0.35em] text-red-400">
+              View Only
             </p>
 
-            <div className="grid gap-4 lg:grid-cols-[1.3fr_180px_1fr_120px]">
+            <h2 className="mt-3 text-2xl font-semibold">
+              Drain-out submission disabled
+            </h2>
+
+            <p className="mt-2 max-w-3xl text-sm leading-6 text-zinc-400">
+              This profile can inspect previous drain-out reports by car, but
+              cannot submit new reports, notify engineers, or delete records.
+            </p>
+
+            <div className="mt-5 max-w-md">
               <label>
                 <span className="mb-2 block text-xs font-semibold uppercase tracking-[0.2em] text-zinc-500">
-                  Car
+                  View Car
                 </span>
 
                 <select
                   value={selectedAllocationId}
                   onChange={(event) => {
                     setSelectedAllocationId(event.target.value);
-                    setDrainOutFigure("");
-                    setNotes("");
                     setMessage("");
                     setErrorMessage("");
                   }}
@@ -612,129 +804,9 @@ export default function DrainOutPage() {
                   ))}
                 </select>
               </label>
-
-              <label>
-                <span className="mb-2 block text-xs font-semibold uppercase tracking-[0.2em] text-zinc-500">
-                  Rig
-                </span>
-
-                <select
-                  value={rig}
-                  onChange={(event) =>
-                    setRig(event.target.value as (typeof RIG_OPTIONS)[number])
-                  }
-                  className="w-full rounded-xl border border-zinc-700 bg-[#0d0f12] px-4 py-3 text-sm text-zinc-100 outline-none focus:border-red-500"
-                >
-                  {RIG_OPTIONS.map((option) => (
-                    <option key={option} value={option}>
-                      {option}
-                    </option>
-                  ))}
-                </select>
-              </label>
-
-              <label>
-                <span className="mb-2 block text-xs font-semibold uppercase tracking-[0.2em] text-zinc-500">
-                  Drain Out Figure
-                </span>
-
-                <input
-                  value={drainOutFigure}
-                  onChange={(event) => setDrainOutFigure(event.target.value)}
-                  inputMode="decimal"
-                  placeholder="e.g. 2.35"
-                  className="w-full rounded-xl border border-zinc-700 bg-[#0d0f12] px-4 py-3 text-sm text-zinc-100 outline-none focus:border-red-500"
-                />
-              </label>
-
-              <div>
-                <span className="mb-2 block text-xs font-semibold uppercase tracking-[0.2em] text-zinc-500">
-                  Units
-                </span>
-
-                <div className="rounded-xl border border-zinc-700 bg-[#0d0f12] px-4 py-3 text-sm font-bold text-red-300">
-                  {units}
-                </div>
-              </div>
             </div>
-
-            <div className="mt-4 rounded-2xl border border-zinc-800 bg-[#0d0f12] p-4">
-              <p className="text-xs uppercase tracking-[0.25em] text-zinc-500">
-                Auto-Filled Engineer
-              </p>
-
-              <div className="mt-2 flex flex-wrap items-center justify-between gap-3">
-                <div>
-                  <p className="font-semibold text-zinc-100">
-                    {activeEngineerName}
-                  </p>
-
-                  <p className="text-sm text-zinc-400">
-                    {selectedCarHasEmail
-                      ? activeEngineerEmail
-                      : `No email configured for Car ${activeCarId}`}
-                  </p>
-                </div>
-
-                <div
-                  className={`rounded-full border px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] ${
-                    selectedCarHasEmail
-                      ? "border-green-900/60 bg-green-950/20 text-green-300"
-                      : "border-red-900/60 bg-red-950/30 text-red-300"
-                  }`}
-                >
-                  {selectedCarHasEmail ? "Ready To Notify" : "Missing Email"}
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <label className="mt-5 block">
-            <span className="mb-2 block text-xs font-semibold uppercase tracking-[0.2em] text-zinc-500">
-              Notes
-            </span>
-
-            <textarea
-              value={notes}
-              onChange={(event) => setNotes(event.target.value)}
-              placeholder="Optional: oil condition, contamination, abnormal smell, leak notes..."
-              className="min-h-28 w-full rounded-xl border border-zinc-700 bg-[#0d0f12] px-4 py-3 text-sm text-zinc-100 outline-none focus:border-red-500"
-            />
-          </label>
-
-          <div className="mt-6 flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-red-900/40 bg-[#181315] p-5">
-            <div>
-              <p className="text-xs uppercase tracking-[0.25em] text-zinc-500">
-                Submission Preview
-              </p>
-
-              <p className="mt-2 text-sm text-zinc-300">
-                {formatReportDate(reportDate)} · {finalCircuit || "No circuit"}{" "}
-                · {finalSession || "No session"} · Car {activeCarId} ·{" "}
-                {activeDriverName} · {rig} ·{" "}
-                <span className="font-bold text-red-300">
-                  {numericDrainOut !== null
-                    ? `${numericDrainOut} ${units}`
-                    : `0 ${units}`}
-                </span>
-              </p>
-
-              <p className="mt-1 text-xs text-zinc-500">
-                Notification recipient:{" "}
-                {selectedCarHasEmail ? activeEngineerEmail : "No engineer email"}
-              </p>
-            </div>
-
-            <button
-              type="button"
-              onClick={submitDrainOut}
-              disabled={saving || !selectedCarHasEmail}
-              className="rounded-xl bg-red-700 px-6 py-3 text-sm font-semibold text-white hover:bg-red-600 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {saving ? "Submitting..." : "Submit & Notify Engineer"}
-            </button>
-          </div>
-        </section>
+          </section>
+        )}
 
         <section className="mt-8 rounded-3xl border border-zinc-800 bg-[#14181d] p-6">
           <div className="flex flex-wrap items-start justify-between gap-4">
