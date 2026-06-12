@@ -15,18 +15,32 @@ import {
   type UserRole,
 } from "@/lib/userAccess";
 
+type IssueCategory = "Car 1" | "Car 2" | "Car 3" | "Truck" | "General";
+
 type RecordedIssue = {
   id: string;
   report_date: string;
   circuit: string;
+  issue_category: IssueCategory | string;
   affected_subsystem: string;
   recorded_issue: string;
-  recorded_solution: string;
+  recorded_solution: string | null;
+  solution_approved: boolean;
+  solution_approved_by: string | null;
+  solution_approved_at: string | null;
   created_by: string | null;
   created_at: string | null;
   updated_by: string | null;
   updated_at: string | null;
 };
+
+const ISSUE_CATEGORIES: IssueCategory[] = [
+  "Car 1",
+  "Car 2",
+  "Car 3",
+  "Truck",
+  "General",
+];
 
 const DEFAULT_SUBSYSTEMS = [
   "Aero",
@@ -116,6 +130,30 @@ function backLabel(role: UserRole) {
   return "Back to Car Page";
 }
 
+function categoryClass(category: string) {
+  if (category === "Car 1") {
+    return "border-blue-800 bg-blue-950/40 text-blue-200";
+  }
+
+  if (category === "Car 2") {
+    return "border-purple-800 bg-purple-950/40 text-purple-200";
+  }
+
+  if (category === "Car 3") {
+    return "border-orange-800 bg-orange-950/40 text-orange-200";
+  }
+
+  if (category === "Truck") {
+    return "border-yellow-800 bg-yellow-950/40 text-yellow-200";
+  }
+
+  return "border-zinc-700 bg-zinc-900 text-zinc-300";
+}
+
+function hasSolution(issue: RecordedIssue) {
+  return Boolean(issue.recorded_solution?.trim());
+}
+
 export default function RecordedIssuesPage() {
   const router = useRouter();
 
@@ -123,6 +161,7 @@ export default function RecordedIssuesPage() {
   const [saving, setSaving] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [approvingId, setApprovingId] = useState<string | null>(null);
 
   const [userEmail, setUserEmail] = useState("");
   const [userRole, setUserRole] = useState<UserRole>("unknown");
@@ -135,10 +174,16 @@ export default function RecordedIssuesPage() {
 
   const [reportDate, setReportDate] = useState(todayIsoDate());
   const [circuit, setCircuit] = useState("");
+  const [issueCategory, setIssueCategory] = useState<IssueCategory>("General");
   const [affectedSubsystem, setAffectedSubsystem] = useState("");
   const [recordedIssue, setRecordedIssue] = useState("");
   const [recordedSolution, setRecordedSolution] = useState("");
   const [searchText, setSearchText] = useState("");
+  const [categoryFilter, setCategoryFilter] = useState<"All" | IssueCategory>(
+    "All",
+  );
+
+  const isChiefMechanic = userRole === "chief_mechanic";
 
   const canEdit = useMemo(() => {
     return !readOnly && canEditRecordedIssues(userEmail);
@@ -147,6 +192,8 @@ export default function RecordedIssuesPage() {
   const canDelete = useMemo(() => {
     return !readOnly && canDeleteRecordedIssues(userEmail);
   }, [readOnly, userEmail]);
+
+  const canApproveSolution = !readOnly && isChiefMechanic;
 
   const subsystemOptions = useMemo(() => {
     const values = new Set<string>(DEFAULT_SUBSYSTEMS);
@@ -163,27 +210,39 @@ export default function RecordedIssuesPage() {
   const filteredIssues = useMemo(() => {
     const query = normaliseSearch(searchText);
 
-    if (!query) return issues;
-
     return issues.filter((issue) => {
+      if (categoryFilter !== "All" && issue.issue_category !== categoryFilter) {
+        return false;
+      }
+
+      if (!query) return true;
+
       const combined = [
         issue.report_date,
         issue.circuit,
+        issue.issue_category,
         issue.affected_subsystem,
         issue.recorded_issue,
         issue.recorded_solution,
+        issue.solution_approved ? "solution approved approved green" : "",
+        !hasSolution(issue) ? "solution pending pending" : "",
         issue.created_by,
         issue.updated_by,
+        issue.solution_approved_by,
       ]
         .join(" ")
         .toLowerCase();
 
       return combined.includes(query);
     });
-  }, [issues, searchText]);
+  }, [categoryFilter, issues, searchText]);
 
   const sortedIssues = useMemo(() => {
     return [...filteredIssues].sort((a, b) => {
+      if (a.solution_approved !== b.solution_approved) {
+        return a.solution_approved ? 1 : -1;
+      }
+
       const dateCompare = b.report_date.localeCompare(a.report_date);
       if (dateCompare !== 0) return dateCompare;
       return (b.created_at ?? "").localeCompare(a.created_at ?? "");
@@ -271,6 +330,7 @@ export default function RecordedIssuesPage() {
     setEditingId(null);
     setReportDate(todayIsoDate());
     setCircuit("");
+    setIssueCategory("General");
     setAffectedSubsystem("");
     setRecordedIssue("");
     setRecordedSolution("");
@@ -290,6 +350,11 @@ export default function RecordedIssuesPage() {
     setEditingId(issue.id);
     setReportDate(issue.report_date || todayIsoDate());
     setCircuit(issue.circuit || "");
+    setIssueCategory(
+      ISSUE_CATEGORIES.includes(issue.issue_category as IssueCategory)
+        ? (issue.issue_category as IssueCategory)
+        : "General",
+    );
     setAffectedSubsystem(issue.affected_subsystem || "");
     setRecordedIssue(issue.recorded_issue || "");
     setRecordedSolution(issue.recorded_solution || "");
@@ -308,12 +373,15 @@ export default function RecordedIssuesPage() {
       return;
     }
 
+    const cleanSolution = recordedSolution.trim();
+
     const cleanPayload = {
       report_date: reportDate,
       circuit: circuit.trim(),
+      issue_category: issueCategory,
       affected_subsystem: affectedSubsystem.trim(),
       recorded_issue: recordedIssue.trim(),
-      recorded_solution: recordedSolution.trim(),
+      recorded_solution: cleanSolution || null,
       updated_by: userEmail,
       updated_at: new Date().toISOString(),
     };
@@ -321,11 +389,13 @@ export default function RecordedIssuesPage() {
     if (
       !cleanPayload.report_date ||
       !cleanPayload.circuit ||
+      !cleanPayload.issue_category ||
       !cleanPayload.affected_subsystem ||
-      !cleanPayload.recorded_issue ||
-      !cleanPayload.recorded_solution
+      !cleanPayload.recorded_issue
     ) {
-      setErrorMessage("Please fill out date, circuit, subsystem, issue and solution.");
+      setErrorMessage(
+        "Please fill out date, circuit, issue category, subsystem and recorded issue. The solution can be left blank if it is still pending.",
+      );
       return;
     }
 
@@ -334,9 +404,27 @@ export default function RecordedIssuesPage() {
     setErrorMessage("");
 
     if (editingId) {
+      const currentIssue = issues.find((issue) => issue.id === editingId);
+      const solutionWasChanged =
+        (currentIssue?.recorded_solution ?? "").trim() !== cleanSolution;
+
       const { error } = await supabase
         .from("recorded_issues")
-        .update(cleanPayload)
+        .update({
+          ...cleanPayload,
+          solution_approved:
+            solutionWasChanged || !cleanSolution
+              ? false
+              : currentIssue?.solution_approved ?? false,
+          solution_approved_by:
+            solutionWasChanged || !cleanSolution
+              ? null
+              : currentIssue?.solution_approved_by ?? null,
+          solution_approved_at:
+            solutionWasChanged || !cleanSolution
+              ? null
+              : currentIssue?.solution_approved_at ?? null,
+        })
         .eq("id", editingId);
 
       setSaving(false);
@@ -346,7 +434,11 @@ export default function RecordedIssuesPage() {
         return;
       }
 
-      setMessage("Recorded issue updated.");
+      setMessage(
+        cleanSolution
+          ? "Recorded issue updated."
+          : "Recorded issue updated. Solution is still pending.",
+      );
       resetForm();
       await loadIssues();
       return;
@@ -354,6 +446,9 @@ export default function RecordedIssuesPage() {
 
     const { error } = await supabase.from("recorded_issues").insert({
       ...cleanPayload,
+      solution_approved: false,
+      solution_approved_by: null,
+      solution_approved_at: null,
       created_by: userEmail,
     });
 
@@ -364,8 +459,58 @@ export default function RecordedIssuesPage() {
       return;
     }
 
-    setMessage("Recorded issue added.");
+    setMessage(
+      cleanSolution
+        ? "Recorded issue added."
+        : "Recorded issue added with solution pending.",
+    );
     resetForm();
+    await loadIssues();
+  }
+
+  async function toggleSolutionApproved(issue: RecordedIssue) {
+    if (blockReadOnlyAction()) return;
+
+    if (!canApproveSolution) {
+      setErrorMessage("Only the chief mechanic can approve recorded solutions.");
+      return;
+    }
+
+    if (!hasSolution(issue)) {
+      setErrorMessage("A solution cannot be approved until the solution box has been filled in.");
+      return;
+    }
+
+    const nextApproved = !issue.solution_approved;
+    const now = new Date().toISOString();
+
+    setApprovingId(issue.id);
+    setMessage("");
+    setErrorMessage("");
+
+    const { error } = await supabase
+      .from("recorded_issues")
+      .update({
+        solution_approved: nextApproved,
+        solution_approved_by: nextApproved ? userEmail : null,
+        solution_approved_at: nextApproved ? now : null,
+        updated_by: userEmail,
+        updated_at: now,
+      })
+      .eq("id", issue.id);
+
+    setApprovingId(null);
+
+    if (error) {
+      setErrorMessage(error.message);
+      return;
+    }
+
+    setMessage(
+      nextApproved
+        ? "Solution approved."
+        : "Solution approval removed.",
+    );
     await loadIssues();
   }
 
@@ -424,15 +569,15 @@ export default function RecordedIssuesPage() {
             </h1>
 
             <p className="mt-2 max-w-3xl text-sm leading-6 text-zinc-400">
-              Log faults, fixes and repeat issues by date, circuit and subsystem.
-              Use this as a searchable reliability and lessons-learned record for
-              mechanics and engineers.
+              Log faults, fixes and repeat issues by date, circuit, category and
+              subsystem. Solutions can be added later, and the chief mechanic can
+              approve a solution once it is confirmed.
             </p>
 
             {readOnly && (
               <div className="mt-4 rounded-2xl border border-yellow-800 bg-yellow-950/20 p-4 text-sm text-yellow-200">
                 Guest mode is view-only. You can search and read recorded issues,
-                but adding, editing and deleting are disabled.
+                but adding, editing, approving and deleting are disabled.
               </div>
             )}
           </div>
@@ -485,7 +630,7 @@ export default function RecordedIssuesPage() {
                   </h2>
 
                   <p className="mt-1 text-sm text-zinc-500">
-                    Every field is searchable once saved.
+                    The solution can be left blank and filled in later.
                   </p>
                 </div>
 
@@ -530,6 +675,26 @@ export default function RecordedIssuesPage() {
 
                 <div>
                   <label className="mb-2 block text-xs font-semibold uppercase tracking-[0.18em] text-zinc-500">
+                    Issue Category
+                  </label>
+                  <select
+                    value={issueCategory}
+                    onChange={(event) =>
+                      setIssueCategory(event.target.value as IssueCategory)
+                    }
+                    className="w-full rounded-xl border border-zinc-700 bg-[#0d0f12] px-4 py-3 text-zinc-100 outline-none focus:border-red-500"
+                    required
+                  >
+                    {ISSUE_CATEGORIES.map((category) => (
+                      <option key={category} value={category}>
+                        {category}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="mb-2 block text-xs font-semibold uppercase tracking-[0.18em] text-zinc-500">
                     Affected Subsystem
                   </label>
                   <input
@@ -546,9 +711,6 @@ export default function RecordedIssuesPage() {
                       <option key={subsystem} value={subsystem} />
                     ))}
                   </datalist>
-                  <p className="mt-2 text-xs leading-5 text-zinc-500">
-                    Type a new name to add another subsystem automatically.
-                  </p>
                 </div>
 
                 <div>
@@ -558,7 +720,7 @@ export default function RecordedIssuesPage() {
                   <textarea
                     value={recordedIssue}
                     onChange={(event) => setRecordedIssue(event.target.value)}
-                    placeholder="What happened? Include symptoms, session context and any useful observations."
+                    placeholder="What happened? Include symptoms, session context and useful observations."
                     rows={5}
                     className="w-full rounded-xl border border-zinc-700 bg-[#0d0f12] px-4 py-3 text-zinc-100 outline-none focus:border-red-500"
                     required
@@ -572,11 +734,14 @@ export default function RecordedIssuesPage() {
                   <textarea
                     value={recordedSolution}
                     onChange={(event) => setRecordedSolution(event.target.value)}
-                    placeholder="What fixed it? Include parts changed, setup changes, checks completed or workaround."
+                    placeholder="Optional. Leave blank if solution is still pending."
                     rows={5}
                     className="w-full rounded-xl border border-zinc-700 bg-[#0d0f12] px-4 py-3 text-zinc-100 outline-none focus:border-red-500"
-                    required
                   />
+                  <p className="mt-2 text-xs text-zinc-500">
+                    Blank solution boxes will show as Solution Pending and can be
+                    filled out later.
+                  </p>
                 </div>
 
                 <button
@@ -604,8 +769,8 @@ export default function RecordedIssuesPage() {
 
               <p className="mt-2 text-sm leading-6 text-zinc-400">
                 This profile can view and search the recorded issue database,
-                but cannot add new issues, edit existing entries, or delete
-                records.
+                but cannot add new issues, edit existing entries, approve
+                solutions, or delete records.
               </p>
             </aside>
           )}
@@ -619,99 +784,194 @@ export default function RecordedIssuesPage() {
                 </p>
               </div>
 
-              <div className="w-full md:max-w-md">
-                <label className="mb-2 block text-xs font-semibold uppercase tracking-[0.18em] text-zinc-500">
-                  Search
+              <div className="grid w-full gap-3 md:max-w-2xl md:grid-cols-[180px_1fr]">
+                <label>
+                  <span className="mb-2 block text-xs font-semibold uppercase tracking-[0.18em] text-zinc-500">
+                    Category
+                  </span>
+                  <select
+                    value={categoryFilter}
+                    onChange={(event) =>
+                      setCategoryFilter(event.target.value as "All" | IssueCategory)
+                    }
+                    className="w-full rounded-xl border border-zinc-700 bg-[#0d0f12] px-4 py-3 text-zinc-100 outline-none focus:border-red-500"
+                  >
+                    <option value="All">All</option>
+                    {ISSUE_CATEGORIES.map((category) => (
+                      <option key={category} value={category}>
+                        {category}
+                      </option>
+                    ))}
+                  </select>
                 </label>
-                <input
-                  type="search"
-                  value={searchText}
-                  onChange={(event) => setSearchText(event.target.value)}
-                  placeholder="Search subsystem, issue, solution, circuit..."
-                  className="w-full rounded-xl border border-zinc-700 bg-[#0d0f12] px-4 py-3 text-zinc-100 outline-none focus:border-red-500"
-                />
+
+                <label>
+                  <span className="mb-2 block text-xs font-semibold uppercase tracking-[0.18em] text-zinc-500">
+                    Search
+                  </span>
+                  <input
+                    type="search"
+                    value={searchText}
+                    onChange={(event) => setSearchText(event.target.value)}
+                    placeholder="Search category, subsystem, issue, solution, circuit..."
+                    className="w-full rounded-xl border border-zinc-700 bg-[#0d0f12] px-4 py-3 text-zinc-100 outline-none focus:border-red-500"
+                  />
+                </label>
               </div>
             </div>
 
             <div className="mt-6 space-y-4">
               {sortedIssues.length === 0 && (
                 <div className="rounded-2xl border border-dashed border-zinc-700 bg-[#0d0f12] p-8 text-center text-sm text-zinc-500">
-                  No recorded issues match the current search.
+                  No recorded issues match the current filters.
                 </div>
               )}
 
-              {sortedIssues.map((issue) => (
-                <article
-                  key={issue.id}
-                  className="rounded-2xl border border-zinc-800 bg-[#0d0f12] p-5"
-                >
-                  <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
-                    <div>
-                      <div className="flex flex-wrap items-center gap-2">
-                        <span className="rounded-full border border-red-900 bg-red-950/40 px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-red-200">
-                          {issue.affected_subsystem}
-                        </span>
-                        <span className="rounded-full border border-zinc-700 px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-zinc-300">
-                          {niceDate(issue.report_date)}
-                        </span>
-                        <span className="rounded-full border border-zinc-700 px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-zinc-300">
-                          {issue.circuit}
-                        </span>
+              {sortedIssues.map((issue) => {
+                const solutionExists = hasSolution(issue);
+
+                return (
+                  <article
+                    key={issue.id}
+                    className={`rounded-2xl border p-5 transition ${
+                      issue.solution_approved
+                        ? "border-green-700 bg-green-950/20"
+                        : "border-zinc-800 bg-[#0d0f12]"
+                    }`}
+                  >
+                    <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+                      <div>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span
+                            className={`rounded-full border px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] ${categoryClass(
+                              issue.issue_category || "General",
+                            )}`}
+                          >
+                            {issue.issue_category || "General"}
+                          </span>
+
+                          <span className="rounded-full border border-red-900 bg-red-950/40 px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-red-200">
+                            {issue.affected_subsystem}
+                          </span>
+
+                          <span className="rounded-full border border-zinc-700 px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-zinc-300">
+                            {niceDate(issue.report_date)}
+                          </span>
+
+                          <span className="rounded-full border border-zinc-700 px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-zinc-300">
+                            {issue.circuit}
+                          </span>
+
+                          {issue.solution_approved ? (
+                            <span className="rounded-full border border-green-700 bg-green-900/50 px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-green-200">
+                              ✓ Solution Approved
+                            </span>
+                          ) : solutionExists ? (
+                            <span className="rounded-full border border-blue-800 bg-blue-950/40 px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-blue-200">
+                              Solution Added
+                            </span>
+                          ) : (
+                            <span className="rounded-full border border-yellow-800 bg-yellow-950/40 px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-yellow-200">
+                              Solution Pending
+                            </span>
+                          )}
+                        </div>
+
+                        <p className="mt-3 text-xs text-zinc-500">
+                          Added by {issue.created_by || "unknown"} · Updated{" "}
+                          {niceDateTime(issue.updated_at || issue.created_at)}
+                        </p>
+
+                        {issue.solution_approved && (
+                          <p className="mt-1 text-xs text-green-300">
+                            Solution approved by{" "}
+                            {issue.solution_approved_by || "unknown"} ·{" "}
+                            {niceDateTime(issue.solution_approved_at)}
+                          </p>
+                        )}
                       </div>
 
-                      <p className="mt-3 text-xs text-zinc-500">
-                        Added by {issue.created_by || "unknown"} · Updated{" "}
-                        {niceDateTime(issue.updated_at || issue.created_at)}
-                      </p>
+                      {(canEdit || canDelete || canApproveSolution) && (
+                        <div className="flex flex-wrap gap-2">
+                          {canApproveSolution && (
+                            <button
+                              type="button"
+                              onClick={() => toggleSolutionApproved(issue)}
+                              disabled={approvingId === issue.id || !solutionExists}
+                              className={`rounded-xl border px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] disabled:cursor-not-allowed disabled:opacity-50 ${
+                                issue.solution_approved
+                                  ? "border-green-700 bg-green-900/40 text-green-200 hover:bg-green-900/60"
+                                  : "border-zinc-700 text-zinc-300 hover:border-green-600 hover:text-green-200"
+                              }`}
+                            >
+                              {approvingId === issue.id
+                                ? "Saving..."
+                                : issue.solution_approved
+                                  ? "Approved ✓"
+                                  : "Approve Solution"}
+                            </button>
+                          )}
+
+                          {canEdit && (
+                            <button
+                              type="button"
+                              onClick={() => startEdit(issue)}
+                              className="rounded-xl border border-zinc-700 px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-zinc-300 hover:border-red-500 hover:text-red-200"
+                            >
+                              Edit
+                            </button>
+                          )}
+
+                          {canDelete && (
+                            <button
+                              type="button"
+                              onClick={() => deleteIssue(issue.id)}
+                              disabled={deletingId === issue.id}
+                              className="rounded-xl border border-red-900/80 px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-red-200 hover:bg-red-950/40 disabled:cursor-not-allowed disabled:opacity-60"
+                            >
+                              {deletingId === issue.id ? "Deleting..." : "Delete"}
+                            </button>
+                          )}
+                        </div>
+                      )}
                     </div>
 
-                    {(canEdit || canDelete) && (
-                      <div className="flex flex-wrap gap-2">
-                        {canEdit && (
-                          <button
-                            type="button"
-                            onClick={() => startEdit(issue)}
-                            className="rounded-xl border border-zinc-700 px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-zinc-300 hover:border-red-500 hover:text-red-200"
-                          >
-                            Edit
-                          </button>
-                        )}
+                    <div className="mt-5 grid gap-4 lg:grid-cols-2">
+                      <div className="rounded-2xl border border-zinc-800 bg-[#14181d] p-4">
+                        <h3 className="text-xs font-semibold uppercase tracking-[0.18em] text-zinc-500">
+                          Recorded Issue
+                        </h3>
+                        <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-zinc-200">
+                          {issue.recorded_issue}
+                        </p>
+                      </div>
 
-                        {canDelete && (
-                          <button
-                            type="button"
-                            onClick={() => deleteIssue(issue.id)}
-                            disabled={deletingId === issue.id}
-                            className="rounded-xl border border-red-900/80 px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-red-200 hover:bg-red-950/40 disabled:cursor-not-allowed disabled:opacity-60"
-                          >
-                            {deletingId === issue.id ? "Deleting..." : "Delete"}
-                          </button>
+                      <div
+                        className={`rounded-2xl border p-4 ${
+                          issue.solution_approved
+                            ? "border-green-800 bg-green-950/30"
+                            : solutionExists
+                              ? "border-zinc-800 bg-[#14181d]"
+                              : "border-yellow-800 bg-yellow-950/20"
+                        }`}
+                      >
+                        <h3 className="text-xs font-semibold uppercase tracking-[0.18em] text-zinc-500">
+                          Recorded Solution
+                        </h3>
+                        {solutionExists ? (
+                          <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-zinc-200">
+                            {issue.recorded_solution}
+                          </p>
+                        ) : (
+                          <p className="mt-2 text-sm font-semibold leading-6 text-yellow-200">
+                            Solution Pending
+                          </p>
                         )}
                       </div>
-                    )}
-                  </div>
-
-                  <div className="mt-5 grid gap-4 lg:grid-cols-2">
-                    <div className="rounded-2xl border border-zinc-800 bg-[#14181d] p-4">
-                      <h3 className="text-xs font-semibold uppercase tracking-[0.18em] text-zinc-500">
-                        Recorded Issue
-                      </h3>
-                      <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-zinc-200">
-                        {issue.recorded_issue}
-                      </p>
                     </div>
-
-                    <div className="rounded-2xl border border-zinc-800 bg-[#14181d] p-4">
-                      <h3 className="text-xs font-semibold uppercase tracking-[0.18em] text-zinc-500">
-                        Recorded Solution
-                      </h3>
-                      <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-zinc-200">
-                        {issue.recorded_solution}
-                      </p>
-                    </div>
-                  </div>
-                </article>
-              ))}
+                  </article>
+                );
+              })}
             </div>
           </section>
         </section>
