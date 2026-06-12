@@ -3,11 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
-import {
-  getAssignedCar,
-  getUserRole,
-  hasPermission,
-} from "@/lib/userAccess";
+import { getAssignedCar, getUserRole, hasPermission } from "@/lib/userAccess";
 import LogoutButton from "@/app/components/LogoutButton";
 
 type JobSection = "standard" | "special";
@@ -54,6 +50,19 @@ function niceDateTime(value: string | null | undefined) {
   }
 
   return date.toLocaleString("en-GB");
+}
+
+function sortEveningJobsOpenFirst(jobs: EveningJobRow[]) {
+  return [...jobs].sort((a, b) => {
+    const aDone = Boolean(a.done);
+    const bDone = Boolean(b.done);
+
+    if (aDone !== bDone) {
+      return aDone ? 1 : -1;
+    }
+
+    return a.job_id - b.job_id;
+  });
 }
 
 export default function MechanicEveningJobListPage() {
@@ -140,6 +149,7 @@ export default function MechanicEveningJobListPage() {
       .from("evening_job_progress")
       .select("*")
       .eq("car_id", carId)
+      .order("done", { ascending: true })
       .order("section", { ascending: false })
       .order("job_id", { ascending: true });
 
@@ -149,7 +159,7 @@ export default function MechanicEveningJobListPage() {
       return;
     }
 
-    setJobs((jobData ?? []) as EveningJobRow[]);
+    setJobs(sortEveningJobsOpenFirst((jobData ?? []) as EveningJobRow[]));
     setLoading(false);
   }
 
@@ -178,17 +188,19 @@ export default function MechanicEveningJobListPage() {
     const email = userData.user?.email?.trim().toLowerCase() ?? "unknown";
 
     setJobs((current) =>
-      current.map((item) =>
-        item.car_id === job.car_id &&
-        item.job_id === job.job_id &&
-        item.section === job.section
-          ? {
-              ...item,
-              done: nextDone,
-              updated_by: email,
-              updated_at: now,
-            }
-          : item,
+      sortEveningJobsOpenFirst(
+        current.map((item) =>
+          item.car_id === job.car_id &&
+          item.job_id === job.job_id &&
+          item.section === job.section
+            ? {
+                ...item,
+                done: nextDone,
+                updated_by: email,
+                updated_at: now,
+              }
+            : item,
+        ),
       ),
     );
 
@@ -257,17 +269,19 @@ export default function MechanicEveningJobListPage() {
     }
 
     setJobs((current) =>
-      current.map((item) =>
-        item.car_id === noteJob.car_id &&
-        item.job_id === noteJob.job_id &&
-        item.section === noteJob.section
-          ? {
-              ...item,
-              notes: cleanNote,
-              updated_by: email,
-              updated_at: now,
-            }
-          : item,
+      sortEveningJobsOpenFirst(
+        current.map((item) =>
+          item.car_id === noteJob.car_id &&
+          item.job_id === noteJob.job_id &&
+          item.section === noteJob.section
+            ? {
+                ...item,
+                notes: cleanNote,
+                updated_by: email,
+                updated_at: now,
+              }
+            : item,
+        ),
       ),
     );
 
@@ -277,12 +291,23 @@ export default function MechanicEveningJobListPage() {
     setMessage("Evening job note saved.");
   }
 
-  const standardJobs = jobs.filter((job) => job.section === "standard");
-  const specialJobs = jobs.filter((job) => job.section === "special");
+  const standardJobs = useMemo(() => {
+    return sortEveningJobsOpenFirst(
+      jobs.filter((job) => job.section === "standard"),
+    );
+  }, [jobs]);
+
+  const specialJobs = useMemo(() => {
+    return sortEveningJobsOpenFirst(
+      jobs.filter((job) => job.section === "special"),
+    );
+  }, [jobs]);
 
   const completedJobs = jobs.filter((job) => job.done).length;
   const totalJobs = jobs.length;
-  const progress = totalJobs ? Math.round((completedJobs / totalJobs) * 100) : 0;
+  const progress = totalJobs
+    ? Math.round((completedJobs / totalJobs) * 100)
+    : 0;
 
   const mechanicNotes = useMemo(() => {
     return jobs.filter((job) => job.notes && job.notes.trim().length > 0);
@@ -395,6 +420,10 @@ export default function MechanicEveningJobListPage() {
             <p className="mt-1 text-sm text-zinc-400">
               Extra car-specific jobs released by the chief mechanic.
             </p>
+
+            <p className="mt-1 text-xs text-zinc-500">
+              Open jobs are shown first. Completed jobs drop to the bottom.
+            </p>
           </div>
 
           <div className="rounded-2xl border border-red-900/50 bg-[#0d0f12] px-4 py-3 text-sm font-semibold text-red-300">
@@ -418,7 +447,7 @@ export default function MechanicEveningJobListPage() {
                   key={jobKey}
                   className={`rounded-xl border p-4 transition ${
                     job.done
-                      ? "border-green-900/70 bg-green-950/10"
+                      ? "border-green-900/40 bg-green-950/10 opacity-70"
                       : "border-red-900/40 bg-[#0d0f12]"
                   }`}
                 >
@@ -441,9 +470,7 @@ export default function MechanicEveningJobListPage() {
                     <div>
                       <p
                         className={`text-sm ${
-                          job.done
-                            ? "text-zinc-500 line-through"
-                            : "text-red-100"
+                          job.done ? "text-zinc-500" : "text-red-100"
                         }`}
                       >
                         {job.job_text}
@@ -493,6 +520,10 @@ export default function MechanicEveningJobListPage() {
             <p className="mt-1 text-sm text-zinc-500">
               Released evening preparation list for this car.
             </p>
+
+            <p className="mt-1 text-xs text-zinc-500">
+              Open jobs are shown first. Completed jobs drop to the bottom.
+            </p>
           </div>
 
           <div className="rounded-2xl border border-zinc-700 bg-[#0d0f12] px-4 py-3 text-sm font-semibold text-zinc-300">
@@ -516,7 +547,7 @@ export default function MechanicEveningJobListPage() {
                   key={jobKey}
                   className={`rounded-xl border p-4 transition ${
                     job.done
-                      ? "border-green-900/70 bg-green-950/10"
+                      ? "border-green-900/40 bg-green-950/10 opacity-70"
                       : "border-zinc-800 bg-[#0d0f12]"
                   }`}
                 >
@@ -539,9 +570,7 @@ export default function MechanicEveningJobListPage() {
                     <div>
                       <p
                         className={`text-sm ${
-                          job.done
-                            ? "text-zinc-500 line-through"
-                            : "text-zinc-100"
+                          job.done ? "text-zinc-500" : "text-zinc-100"
                         }`}
                       >
                         {job.job_text}
