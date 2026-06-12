@@ -5,7 +5,12 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import LogoutButton from "@/app/components/LogoutButton";
 import { supabase } from "@/lib/supabase";
-import { getAssignedCar, getUserRole, hasPermission } from "@/lib/userAccess";
+import {
+  getAssignedCar,
+  getUserRole,
+  hasPermission,
+  isReadOnlyUser,
+} from "@/lib/userAccess";
 
 type DashboardCar = {
   id: number;
@@ -181,6 +186,7 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
   const [cars, setCars] = useState<CarProgress[]>([]);
   const [clutches, setClutches] = useState<ClutchInventoryItem[]>([]);
+  const [readOnly, setReadOnly] = useState(false);
 
   const [carSettingsOpen, setCarSettingsOpen] = useState(false);
   const [expandedCarId, setExpandedCarId] = useState<number | null>(null);
@@ -321,6 +327,9 @@ export default function DashboardPage() {
       const { data } = await supabase.auth.getUser();
       const email = data.user?.email ?? "";
       const role = getUserRole(email);
+      const userIsReadOnly = isReadOnlyUser(email);
+
+      setReadOnly(userIsReadOnly);
 
       if (role === "number1_mechanic") {
         const carId = getAssignedCar(email);
@@ -434,7 +443,19 @@ export default function DashboardPage() {
 
   const openJobs = Math.max(0, totalJobs - completedJobs);
 
+  function blockReadOnlyAction() {
+    if (!readOnly) {
+      return false;
+    }
+
+    setMessage("");
+    setErrorMessage("Guest mode is view-only. Dashboard settings cannot be changed.");
+    return true;
+  }
+
   async function updateCar(car: CarProgress, updates: Partial<DashboardCar>) {
+    if (blockReadOnlyAction()) return;
+
     setSavingCarId(car.id);
     setMessage("");
     setErrorMessage("");
@@ -475,6 +496,8 @@ export default function DashboardPage() {
   }
 
   async function addCar() {
+    if (blockReadOnlyAction()) return;
+
     const id = Number(newCarId);
     const name = newCarName.trim();
 
@@ -524,6 +547,8 @@ export default function DashboardPage() {
   }
 
   async function addClutch() {
+    if (blockReadOnlyAction()) return;
+
     const serial = newClutchSerial.trim();
     const label = newClutchLabel.trim();
     const notes = newClutchNotes.trim();
@@ -596,6 +621,8 @@ export default function DashboardPage() {
   }
 
   async function allocateClutch(clutchId: string, carId: number | null) {
+    if (blockReadOnlyAction()) return;
+
     const clutch = clutches.find((item) => item.id === clutchId);
 
     setMessage("");
@@ -648,6 +675,8 @@ export default function DashboardPage() {
   }
 
   async function updateClutch(clutch: ClutchInventoryItem) {
+    if (blockReadOnlyAction()) return;
+
     const serial = clutch.serial_no.trim();
     const label = clutch.label?.trim() || null;
     const notes = clutch.notes?.trim() || null;
@@ -710,6 +739,8 @@ export default function DashboardPage() {
   }
 
   async function removeClutch(clutch: ClutchInventoryItem) {
+    if (blockReadOnlyAction()) return;
+
     const confirmed = window.confirm(
       `Move clutch ${clutch.serial_no} to spare? Existing measurement records will not be deleted.`,
     );
@@ -737,6 +768,8 @@ export default function DashboardPage() {
   }
 
   async function deleteClutch(clutch: ClutchInventoryItem) {
+    if (blockReadOnlyAction()) return;
+
     const confirmed = window.confirm(
       `Delete clutch ${clutch.serial_no} from the inventory? Only do this if it was added by mistake.`,
     );
@@ -816,7 +849,11 @@ export default function DashboardPage() {
         </div>
 
         <div className="bg-[#0d0f12]/80 p-4">
-          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+          <div
+            className={`grid gap-3 md:grid-cols-2 ${
+              readOnly ? "xl:grid-cols-4" : "xl:grid-cols-5"
+            }`}
+          >
             <QuickLink
               href="/drain-out"
               title="Drain Out"
@@ -842,19 +879,27 @@ export default function DashboardPage() {
               description="Create and publish team-wide jobs"
             />
 
-            <button
-              type="button"
-              onClick={() => setCarSettingsOpen((current) => !current)}
-              className="rounded-2xl border border-zinc-700 bg-[#1b2026] px-5 py-4 text-left text-sm font-semibold text-zinc-100 transition hover:border-red-500 hover:bg-[#222832] hover:text-red-200"
-            >
-              {carSettingsOpen ? "Hide Settings" : "Manage Cars"}
-              <span className="mt-1 block text-xs font-normal leading-5 text-zinc-500">
-                Cars, colours and clutch allocation
-              </span>
-            </button>
+            {!readOnly && (
+              <button
+                type="button"
+                onClick={() => setCarSettingsOpen((current) => !current)}
+                className="rounded-2xl border border-zinc-700 bg-[#1b2026] px-5 py-4 text-left text-sm font-semibold text-zinc-100 transition hover:border-red-500 hover:bg-[#222832] hover:text-red-200"
+              >
+                {carSettingsOpen ? "Hide Settings" : "Manage Cars"}
+                <span className="mt-1 block text-xs font-normal leading-5 text-zinc-500">
+                  Cars, colours and clutch allocation
+                </span>
+              </button>
+            )}
           </div>
         </div>
       </header>
+
+      {readOnly && (
+        <div className="mb-6 rounded-2xl border border-amber-800 bg-amber-950/25 p-4 text-sm text-amber-200">
+          Guest mode is view-only. Dashboard settings, cars and clutch allocation cannot be edited.
+        </div>
+      )}
 
       {message && (
         <div className="mb-6 rounded-2xl border border-green-800 bg-green-950/20 p-4 text-sm text-green-300">
@@ -874,7 +919,7 @@ export default function DashboardPage() {
         <StatBox label="Completed jobs" value={completedJobs} tone="green" />
       </section>
 
-      {carSettingsOpen && (
+      {!readOnly && carSettingsOpen && (
         <section className="mb-8 rounded-3xl border border-zinc-800 bg-[#14181d] p-6 shadow-xl">
           <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
             <SectionHeading
@@ -1494,12 +1539,6 @@ export default function DashboardPage() {
 
                 {isExpanded && (
                   <div className="mt-5 grid gap-3">
-                    <QuickLink
-                      href={`/dashboard/car/${car.id}/viewer`}
-                      title="Car Overview"
-                      description="Progress, notes, clutch and post-event records"
-                    />
-
                     <QuickLink
                       href={`/dashboard/car/${car.id}/job-list`}
                       title="Workshop Job List"
