@@ -3,6 +3,7 @@ export type UserRole =
   | "number1_mechanic"
   | "number2_mechanic"
   | "engineer"
+  | "guest"
   | "unknown";
 
 export type Permission =
@@ -93,6 +94,22 @@ const ENGINEER_PERMISSIONS: Permission[] = [
   "recorded_issues:edit",
 ];
 
+const GUEST_PERMISSIONS: Permission[] = [
+  "dashboard:view",
+  "cars:view",
+  "job_lists:view",
+  "evening_jobs:view",
+  "team_jobs:view",
+  "post_event:view",
+  "clutch:view",
+  "drain_out:view",
+  "recorded_issues:view",
+];
+
+const LOGIN_ALIASES: Record<string, string> = {
+  iamaguest: "guest@rodin.local",
+};
+
 const USER_ACCESS: Record<string, UserAccess> = {
   "dan.crain@rodinmotorsport.com": {
     role: "chief_mechanic",
@@ -150,10 +167,22 @@ const USER_ACCESS: Record<string, UserAccess> = {
     assignedCar: null,
     permissions: ENGINEER_PERMISSIONS,
   },
+
+  "guest@rodinmotorsport.com": {
+    role: "guest",
+    assignedCar: null,
+    permissions: GUEST_PERMISSIONS,
+  },
 };
 
 export function normaliseEmail(email: string | null | undefined): string {
   return email?.trim().toLowerCase() ?? "";
+}
+
+export function resolveLoginIdentifier(identifier: string | null | undefined): string {
+  const cleanIdentifier = normaliseEmail(identifier);
+
+  return LOGIN_ALIASES[cleanIdentifier] ?? cleanIdentifier;
 }
 
 export function getUserAccess(email: string | null | undefined): UserAccess {
@@ -257,7 +286,7 @@ export function canAccessCarPages(
     return true;
   }
 
-  if (access.role === "engineer") {
+  if (access.role === "engineer" || access.role === "guest") {
     return hasPermission(email, "cars:view");
   }
 
@@ -287,6 +316,10 @@ export function getLoginRedirect(email: string | null | undefined): string {
     return "/recorded-issues";
   }
 
+  if (access.role === "guest") {
+    return "/dashboard";
+  }
+
   return "/login";
 }
 
@@ -308,4 +341,8 @@ export function isNumber2Mechanic(email: string | null | undefined): boolean {
 
 export function isEngineer(email: string | null | undefined): boolean {
   return getUserRole(email) === "engineer";
+}
+
+export function isGuest(email: string | null | undefined): boolean {
+  return getUserRole(email) === "guest";
 }

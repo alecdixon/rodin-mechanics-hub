@@ -1,58 +1,81 @@
 "use client";
 
-import { useState } from "react";
+import { FormEvent, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
-import { getLoginRedirect, getUserRole } from "@/lib/userAccess";
+import { getLoginRedirect, getUserRole, resolveLoginIdentifier } from "@/lib/userAccess";
+
+const GUEST_USERNAME = "iamaguest";
+const GUEST_EMAIL = "guest@rodinmotorsport.com";
+
+function normaliseLoginIdentifier(value: string) {
+  const cleaned = value.trim().toLowerCase();
+
+  if (cleaned === GUEST_USERNAME) {
+    return GUEST_EMAIL;
+  }
+
+  return resolveLoginIdentifier(cleaned);
+}
 
 export default function LoginPage() {
   const router = useRouter();
 
-  const [email, setEmail] = useState("");
+  const [loginIdentifier, setLoginIdentifier] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
 
-  async function handleLogin(event: React.FormEvent<HTMLFormElement>) {
+  async function handleLogin(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+
+    const loginEmail = normaliseLoginIdentifier(loginIdentifier);
+    const loginPassword = password.trim();
+
+    if (!loginEmail || !loginPassword) {
+      setErrorMessage("Please enter your username/email and password.");
+      return;
+    }
 
     setLoading(true);
     setErrorMessage("");
 
-    const cleanEmail = email.trim().toLowerCase();
-
     const { data, error } = await supabase.auth.signInWithPassword({
-      email: cleanEmail,
-      password,
+      email: loginEmail,
+      password: loginPassword,
     });
 
     setLoading(false);
 
     if (error) {
-      setErrorMessage(error.message);
+      setErrorMessage(error.message || "Login failed. Please check your details.");
       return;
     }
 
-    const userEmail = data.user?.email?.trim().toLowerCase() ?? cleanEmail;
+    const userEmail = data.user?.email?.trim().toLowerCase() || loginEmail;
     const role = getUserRole(userEmail);
 
     if (role === "unknown") {
       await supabase.auth.signOut();
       document.cookie = "user-email=; path=/; max-age=0";
-      setErrorMessage("Your account is not assigned to a role yet.");
+      setErrorMessage(
+        `Your account is not assigned to a role yet. Logged in email: ${userEmail}`
+      );
       return;
     }
 
     const redirectPath = getLoginRedirect(userEmail);
 
-    if (redirectPath === "/login") {
+    if (!redirectPath || redirectPath === "/login") {
       await supabase.auth.signOut();
       document.cookie = "user-email=; path=/; max-age=0";
-      setErrorMessage("Your account is not assigned to a valid workspace yet.");
+      setErrorMessage(
+        `Your account is not assigned to a valid workspace yet. Logged in email: ${userEmail}`
+      );
       return;
     }
 
-    document.cookie = `user-email=${userEmail}; path=/; max-age=86400`;
+    document.cookie = `user-email=${userEmail}; path=/; max-age=86400; SameSite=Lax`;
     router.replace(redirectPath);
   }
 
@@ -77,15 +100,16 @@ export default function LoginPage() {
         <div className="mt-8 space-y-4">
           <div>
             <label className="mb-2 block text-xs uppercase tracking-widest text-zinc-500">
-              Email
+              Email / Username
             </label>
 
             <input
-              type="email"
-              value={email}
-              onChange={(event) => setEmail(event.target.value)}
-              placeholder="Rodin email"
+              type="text"
+              value={loginIdentifier}
+              onChange={(event) => setLoginIdentifier(event.target.value)}
+              placeholder="Rodin email or IamaGuest"
               className="w-full rounded-xl border border-zinc-700 bg-[#0d0f12] px-4 py-3 text-zinc-100 outline-none focus:border-red-500"
+              autoComplete="username"
               required
             />
           </div>
@@ -101,6 +125,7 @@ export default function LoginPage() {
               onChange={(event) => setPassword(event.target.value)}
               placeholder="Password"
               className="w-full rounded-xl border border-zinc-700 bg-[#0d0f12] px-4 py-3 text-zinc-100 outline-none focus:border-red-500"
+              autoComplete="current-password"
               required
             />
           </div>
