@@ -1507,6 +1507,12 @@ export default function DashboardPage() {
                     />
 
                     <QuickLink
+                      href={`/dashboard/car/${car.id}/clutch-measurement`}
+                      title="Clutch Records"
+                      description="Review saved clutch sheets and PDFs"
+                    />
+
+                    <QuickLink
                       href={`/dashboard/car/${car.id}/post-event`}
                       title="Post Event Sheet"
                       description="Post-event notes and saved PDFs"
