@@ -773,24 +773,38 @@ export default function DashboardPage() {
 
   return (
     <main className="min-h-screen bg-[#0d0f12] p-6 text-zinc-100">
-      <header className="mb-8 overflow-hidden rounded-3xl border border-zinc-800 bg-[#14181d] shadow-xl">
-        <div className="grid gap-6 p-6 lg:grid-cols-[1fr_auto] lg:items-center">
-          <div className="flex flex-col gap-5 md:flex-row md:items-center">
-            <div className="flex h-28 w-52 shrink-0 items-center justify-center rounded-3xl border border-zinc-800 bg-black/35 px-5 py-4">
+      <header className="mb-8 overflow-hidden rounded-[2rem] border border-zinc-800 bg-[#111418] shadow-2xl shadow-black/30">
+        <div className="relative isolate overflow-hidden border-b border-zinc-800 bg-gradient-to-br from-black via-[#101317] to-[#181315]">
+          <div className="absolute -right-10 top-1/2 hidden -translate-y-1/2 opacity-[0.08] xl:block">
+            <img
+              src="/rodin-logo.png"
+              alt=""
+              className="h-72 w-auto object-contain"
+            />
+          </div>
+
+          <div className="relative grid gap-8 p-7 lg:grid-cols-[320px_1fr_auto] lg:items-center">
+            <div className="flex min-h-36 items-center justify-center rounded-3xl border border-zinc-800/80 bg-black/20 px-6 py-5">
               <img
                 src="/gb3-logo.png"
                 alt="GB3 Championship logo"
-                className="max-h-20 w-auto object-contain"
+                className="h-32 w-auto scale-150 object-contain"
               />
             </div>
 
             <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.35em] text-red-400">
-                Rodin Motorsport
+              <img
+                src="/rodin-logo.png"
+                alt="Rodin Motorsport logo"
+                className="mb-5 h-16 w-auto object-contain"
+              />
+
+              <p className="text-xs font-semibold uppercase tracking-[0.42em] text-red-400">
+                Chief Mechanic Control
               </p>
 
-              <h1 className="mt-3 text-4xl font-semibold tracking-tight md:text-5xl">
-                Chief Mechanic Dashboard
+              <h1 className="mt-3 text-4xl font-semibold tracking-tight text-white md:text-5xl">
+                Dashboard
               </h1>
 
               <p className="mt-3 max-w-3xl text-sm leading-6 text-zinc-400">
@@ -798,14 +812,14 @@ export default function DashboardPage() {
                 allocation and team operations.
               </p>
             </div>
-          </div>
 
-          <div className="flex justify-start lg:justify-end">
-            <LogoutButton />
+            <div className="flex justify-start lg:justify-end">
+              <LogoutButton />
+            </div>
           </div>
         </div>
 
-        <div className="border-t border-zinc-800 bg-[#0d0f12]/70 p-4">
+        <div className="bg-[#0d0f12]/80 p-4">
           <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
             <QuickLink
               href="/drain-out"
@@ -858,11 +872,10 @@ export default function DashboardPage() {
         </div>
       )}
 
-      <section className="mb-8 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+      <section className="mb-8 grid gap-4 md:grid-cols-3">
         <StatBox label="Active cars" value={activeCars.length} />
         <StatBox label="Open jobs" value={openJobs} tone="red" />
         <StatBox label="Completed jobs" value={completedJobs} tone="green" />
-        <StatBox label="Spare clutches" value={spareActiveClutches.length} />
       </section>
 
       {carSettingsOpen && (
@@ -1431,7 +1444,7 @@ export default function DashboardPage() {
                   <ProgressDial progress={car.progress} colour={car.colour} />
                 </div>
 
-                <div className="mt-6 grid gap-3 sm:grid-cols-2">
+                <div className="mt-6 grid gap-3 md:grid-cols-3">
                   <div className="rounded-2xl border border-zinc-800 bg-[#0d0f12] p-4">
                     <p className="text-xs uppercase tracking-[0.22em] text-zinc-500">
                       Workshop
@@ -1459,16 +1472,16 @@ export default function DashboardPage() {
                       {car.eveningProgress}% complete
                     </p>
                   </div>
-                </div>
 
-                <div className="mt-4 rounded-2xl border border-zinc-800 bg-[#0d0f12] p-4">
-                  <p className="text-xs uppercase tracking-[0.22em] text-zinc-500">
-                    Current Clutch
-                  </p>
+                  <div className="rounded-2xl border border-zinc-800 bg-[#0d0f12] p-4">
+                    <p className="text-xs uppercase tracking-[0.22em] text-zinc-500">
+                      Clutch
+                    </p>
 
-                  <p className="mt-2 text-sm font-semibold text-zinc-100">
-                    {fittedClutch ? clutchDisplayName(fittedClutch) : "No clutch fitted"}
-                  </p>
+                    <p className="mt-2 text-sm font-semibold leading-6 text-zinc-100">
+                      {fittedClutch ? clutchDisplayName(fittedClutch) : "No clutch fitted"}
+                    </p>
+                  </div>
                 </div>
 
                 <button
