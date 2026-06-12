@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
+import { getCurrentUserEmail } from "@/lib/authHelpers";
 import { hasPermission, isReadOnlyUser } from "@/lib/userAccess";
 import LogoutButton from "@/app/components/LogoutButton";
 
@@ -220,13 +221,7 @@ export default function ChiefJobListEditorPage() {
     message: string;
     changeSummary: string;
   }) {
-    const { data: userData, error: userError } = await supabase.auth.getUser();
-
-    if (userError) {
-      throw new Error(`User check failed: ${userError.message}`);
-    }
-
-    const email = userData.user?.email?.trim().toLowerCase() ?? "unknown";
+    const email = (await getCurrentUserEmail()) ?? "unknown";
 
     const { error } = await supabase.from("job_list_notifications").insert({
       car_id: carId,
@@ -310,16 +305,17 @@ export default function ChiefJobListEditorPage() {
     setMessage("");
     setErrorMessage("");
 
-    const { data, error } = await supabase.auth.getUser();
+    const email = await getCurrentUserEmail();
 
-    if (error || !data.user?.email) {
+    if (!email) {
       router.replace("/login");
       return;
     }
 
-    const email = data.user.email.trim().toLowerCase();
-
-    if (!hasPermission(email, "dashboard:view") || !hasPermission(email, "job_lists:view")) {
+    if (
+      !hasPermission(email, "dashboard:view") ||
+      !hasPermission(email, "job_lists:view")
+    ) {
       router.replace("/dashboard");
       return;
     }
@@ -348,10 +344,10 @@ export default function ChiefJobListEditorPage() {
     setErrorMessage("");
     setSavingReleaseInfo(true);
 
-    const { data: userData, error: userError } = await supabase.auth.getUser();
+    const email = await getCurrentUserEmail();
 
-    if (userError) {
-      setErrorMessage(`User check failed: ${userError.message}`);
+    if (!email) {
+      setErrorMessage("Your login session could not be confirmed. Please refresh or log in again.");
       setSavingReleaseInfo(false);
       return false;
     }
@@ -362,7 +358,7 @@ export default function ChiefJobListEditorPage() {
         after_event: afterEvent.trim() || null,
         job_date: jobDate || null,
         completion_date: completionDate || null,
-        released_by: userData.user?.email ?? null,
+        released_by: email,
         released_at: new Date().toISOString(),
         status: releaseInfo?.status === "published" ? "published" : "draft",
         version_number: releaseInfo?.version_number ?? 0,
@@ -390,10 +386,10 @@ export default function ChiefJobListEditorPage() {
   async function markDraft(customMessage?: string) {
     if (blockReadOnlyAction()) return false;
 
-    const { data: userData, error: userError } = await supabase.auth.getUser();
+    const email = await getCurrentUserEmail();
 
-    if (userError) {
-      setErrorMessage(`User check failed: ${userError.message}`);
+    if (!email) {
+      setErrorMessage("Your login session could not be confirmed. Please refresh or log in again.");
       return false;
     }
 
@@ -403,7 +399,7 @@ export default function ChiefJobListEditorPage() {
         after_event: afterEvent.trim() || null,
         job_date: jobDate || null,
         completion_date: completionDate || null,
-        released_by: userData.user?.email ?? null,
+        released_by: email,
         released_at: new Date().toISOString(),
         status: "draft",
         version_number: releaseInfo?.version_number ?? 0,
@@ -463,10 +459,10 @@ export default function ChiefJobListEditorPage() {
 
     setPublishingJobList(true);
 
-    const { data: userData, error: userError } = await supabase.auth.getUser();
+    const userEmail = await getCurrentUserEmail();
 
-    if (userError) {
-      setErrorMessage(`User check failed: ${userError.message}`);
+    if (!userEmail) {
+      setErrorMessage("Your login session could not be confirmed. Please refresh or log in again.");
       setPublishingJobList(false);
       return;
     }
@@ -474,7 +470,7 @@ export default function ChiefJobListEditorPage() {
     const currentVersion = releaseInfo?.version_number ?? 0;
     const nextVersion = currentVersion + 1;
     const now = new Date().toISOString();
-    const email = userData.user?.email ?? null;
+    const email = userEmail;
 
     const { error } = await supabase.from("job_list_releases").upsert(
       {
@@ -674,6 +670,8 @@ export default function ChiefJobListEditorPage() {
   }
 
   async function updateJobText(job: JobRow, text: string) {
+    if (blockReadOnlyAction()) return;
+
     if (job.section === "personal") {
       setErrorMessage("Personal jobs are mechanic-controlled and cannot be edited here.");
       return;
@@ -746,10 +744,10 @@ export default function ChiefJobListEditorPage() {
 
     setAddingStandardJob(true);
 
-    const { data: userData, error: userError } = await supabase.auth.getUser();
+    const userEmail = await getCurrentUserEmail();
 
-    if (userError) {
-      setErrorMessage(`User check failed: ${userError.message}`);
+    if (!userEmail) {
+      setErrorMessage("Your login session could not be confirmed. Please refresh or log in again.");
       setAddingStandardJob(false);
       return;
     }
@@ -771,7 +769,7 @@ export default function ChiefJobListEditorPage() {
       section: "standard" as const,
       done: false,
       notes: null,
-      updated_by: userData.user?.email ?? null,
+      updated_by: userEmail,
       updated_at: now,
     };
 
@@ -807,10 +805,10 @@ export default function ChiefJobListEditorPage() {
 
     setAddingSpecialJob(true);
 
-    const { data: userData, error: userError } = await supabase.auth.getUser();
+    const userEmail = await getCurrentUserEmail();
 
-    if (userError) {
-      setErrorMessage(`User check failed: ${userError.message}`);
+    if (!userEmail) {
+      setErrorMessage("Your login session could not be confirmed. Please refresh or log in again.");
       setAddingSpecialJob(false);
       return;
     }
@@ -832,7 +830,7 @@ export default function ChiefJobListEditorPage() {
       section: "special" as const,
       done: false,
       notes: null,
-      updated_by: userData.user?.email ?? null,
+      updated_by: userEmail,
       updated_at: now,
     };
 
@@ -1104,6 +1102,12 @@ export default function ChiefJobListEditorPage() {
         </div>
       )}
 
+      {readOnly && (
+        <div className="mb-6 rounded-2xl border border-amber-800 bg-amber-950/25 p-4 text-sm text-amber-200">
+          Guest mode is view-only. You can inspect the workshop job list, release details, notes and progress, but cannot edit, publish, clear or remove anything.
+        </div>
+      )}
+
       {pendingChanges.length > 0 && (
         <div className="mb-6 rounded-2xl border border-blue-900/70 bg-blue-950/20 p-4 text-sm text-blue-200">
           <p className="font-semibold">Pending notification changes:</p>
@@ -1258,6 +1262,7 @@ export default function ChiefJobListEditorPage() {
               value={afterEvent}
               onChange={(event) => setAfterEvent(event.target.value)}
               placeholder="Example: After Silverstone"
+              disabled={readOnly}
               className="mt-2 w-full rounded-xl border border-zinc-700 bg-[#0d0f12] px-4 py-3 text-sm text-zinc-100 outline-none focus:border-red-500"
             />
           </label>
@@ -1271,6 +1276,7 @@ export default function ChiefJobListEditorPage() {
               type="date"
               value={jobDate}
               onChange={(event) => setJobDate(event.target.value)}
+              disabled={readOnly}
               className="mt-2 w-full rounded-xl border border-zinc-700 bg-[#0d0f12] px-4 py-3 text-sm text-zinc-100 outline-none focus:border-red-500"
             />
           </label>
@@ -1284,6 +1290,7 @@ export default function ChiefJobListEditorPage() {
               type="date"
               value={completionDate}
               onChange={(event) => setCompletionDate(event.target.value)}
+              disabled={readOnly}
               className="mt-2 w-full rounded-xl border border-zinc-700 bg-[#0d0f12] px-4 py-3 text-sm text-zinc-100 outline-none focus:border-red-500"
             />
           </label>
@@ -1302,7 +1309,7 @@ export default function ChiefJobListEditorPage() {
           <button
             type="button"
             onClick={publishJobList}
-            disabled={publishingJobList || jobs.length === 0}
+            disabled={readOnly || publishingJobList || jobs.length === 0}
             className="rounded-xl bg-green-700 px-5 py-3 text-sm font-semibold text-white hover:bg-green-600 disabled:cursor-not-allowed disabled:opacity-50"
           >
             {publishingJobList
@@ -1341,6 +1348,7 @@ export default function ChiefJobListEditorPage() {
             <select
               value={selectedTemplateId}
               onChange={(event) => setSelectedTemplateId(event.target.value)}
+              disabled={readOnly}
               className="min-w-[280px] flex-1 rounded-xl border border-zinc-700 bg-[#0d0f12] px-4 py-3 text-sm outline-none focus:border-red-500"
             >
               {templates.length === 0 ? (
@@ -1357,7 +1365,7 @@ export default function ChiefJobListEditorPage() {
             <button
               type="button"
               onClick={updateFromTemplate}
-              disabled={updatingTemplate || templates.length === 0}
+              disabled={readOnly || updatingTemplate || templates.length === 0}
               className="rounded-xl bg-red-700 px-5 py-3 text-sm font-semibold text-white hover:bg-red-600 disabled:cursor-not-allowed disabled:opacity-50"
             >
               {updatingTemplate ? "Updating..." : "Update From Template"}
@@ -1366,7 +1374,7 @@ export default function ChiefJobListEditorPage() {
             <button
               type="button"
               onClick={clearStandardJobs}
-              disabled={clearingStandardJobs || standardJobs.length === 0}
+              disabled={readOnly || clearingStandardJobs || standardJobs.length === 0}
               className="rounded-xl border border-zinc-700 px-5 py-3 text-sm font-semibold text-zinc-300 hover:border-red-500 hover:text-red-300 disabled:cursor-not-allowed disabled:opacity-50"
             >
               {clearingStandardJobs ? "Clearing..." : "Clear Standard Jobs"}
@@ -1401,6 +1409,7 @@ export default function ChiefJobListEditorPage() {
               <input
                 value={newStandardJob}
                 onChange={(event) => setNewStandardJob(event.target.value)}
+                disabled={readOnly}
                 onKeyDown={(event) => {
                   if (event.key === "Enter" && !addingStandardJob) {
                     addStandardJob();
@@ -1441,6 +1450,7 @@ export default function ChiefJobListEditorPage() {
             <input
               value={newSpecialJob}
               onChange={(event) => setNewSpecialJob(event.target.value)}
+              disabled={readOnly}
               onKeyDown={(event) => {
                 if (event.key === "Enter" && !addingSpecialJob) {
                   addSpecialJob();
@@ -1604,6 +1614,7 @@ export default function ChiefJobListEditorPage() {
                         onChange={(event) =>
                           updateJobText(job, event.target.value)
                         }
+                        disabled={readOnly}
                         className={`w-full rounded-lg border border-transparent bg-transparent px-2 py-2 text-sm outline-none focus:border-zinc-700 focus:bg-[#14181d] ${
                           job.done ? "text-zinc-500" : "text-zinc-100"
                         }`}
@@ -1612,7 +1623,7 @@ export default function ChiefJobListEditorPage() {
                       <button
                         type="button"
                         onClick={() => removeJob(job)}
-                        disabled={removing}
+                        disabled={readOnly || removing}
                         className="rounded-lg border border-zinc-700 px-3 py-2 text-xs text-zinc-400 hover:border-red-500 hover:text-red-300 disabled:cursor-not-allowed disabled:opacity-50"
                       >
                         {removing ? "Removing..." : "Remove"}
@@ -1681,6 +1692,7 @@ export default function ChiefJobListEditorPage() {
                         onChange={(event) =>
                           updateJobText(job, event.target.value)
                         }
+                        disabled={readOnly}
                         className={`w-full rounded-lg border border-transparent bg-transparent px-2 py-2 text-sm outline-none focus:border-red-900/70 focus:bg-[#14181d] ${
                           job.done ? "text-zinc-500" : "text-red-100"
                         }`}
@@ -1689,7 +1701,7 @@ export default function ChiefJobListEditorPage() {
                       <button
                         type="button"
                         onClick={() => removeJob(job)}
-                        disabled={removing}
+                        disabled={readOnly || removing}
                         className="rounded-lg border border-red-900/60 px-3 py-2 text-xs text-zinc-400 hover:border-red-500 hover:text-red-300 disabled:cursor-not-allowed disabled:opacity-50"
                       >
                         {removing ? "Removing..." : "Remove"}
