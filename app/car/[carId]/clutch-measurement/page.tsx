@@ -444,30 +444,55 @@ export default function ClutchMeasurementPage() {
     setRows((data ?? []) as ClutchMeasurementRecord[]);
   }
 
-  async function loadLatestShimForSerial(serial: string) {
+  async function loadLatestClutchDefaultsForSerial(serial: string) {
     const cleanSerial = serial.trim();
 
     if (!cleanSerial) {
       setCurrentShimInstalled("");
+      setOriginalStackHeight("");
       return;
     }
 
     const { data, error } = await supabase
       .from("clutch_measurements")
-      .select("current_shim_installed, created_at")
+      .select("current_shim_installed, original_stack_height, created_at")
       .eq("serial_no", cleanSerial)
-      .not("current_shim_installed", "is", null)
-      .neq("current_shim_installed", "")
       .order("created_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
+      .limit(20);
 
     if (error) {
       setMessage(error.message);
       return;
     }
 
-    setCurrentShimInstalled(data?.current_shim_installed ?? "");
+    const records = data ?? [];
+
+    const latestShimRecord = records.find(
+      (record) =>
+        record.current_shim_installed !== null &&
+        record.current_shim_installed !== undefined &&
+        String(record.current_shim_installed).trim() !== ""
+    );
+
+    const latestOriginalStackRecord = records.find(
+      (record) =>
+        record.original_stack_height !== null &&
+        record.original_stack_height !== undefined &&
+        Number.isFinite(Number(record.original_stack_height))
+    );
+
+    setCurrentShimInstalled(
+      latestShimRecord?.current_shim_installed
+        ? String(latestShimRecord.current_shim_installed)
+        : ""
+    );
+
+    setOriginalStackHeight(
+      latestOriginalStackRecord?.original_stack_height !== null &&
+        latestOriginalStackRecord?.original_stack_height !== undefined
+        ? fmt(Number(latestOriginalStackRecord.original_stack_height), 3)
+        : ""
+    );
   }
 
   async function loadCarAndClutches() {
@@ -514,7 +539,7 @@ export default function ClutchMeasurementPage() {
     if (defaultClutch) {
       setSelectedClutchId(String(defaultClutch.id));
       setSerialNo(defaultClutch.serial_no || "");
-      await loadLatestShimForSerial(defaultClutch.serial_no || "");
+      await loadLatestClutchDefaultsForSerial(defaultClutch.serial_no || "");
     } else {
       setSelectedClutchId("");
       setSerialNo("");
@@ -535,12 +560,13 @@ export default function ClutchMeasurementPage() {
     if (!selectedClutch) {
       setSerialNo("");
       setCurrentShimInstalled("");
+      setOriginalStackHeight("");
       return;
     }
 
     const nextSerial = selectedClutch.serial_no || "";
     setSerialNo(nextSerial);
-    void loadLatestShimForSerial(nextSerial);
+    void loadLatestClutchDefaultsForSerial(nextSerial);
   }, [selectedClutch?.id]);
 
   function updateDrivenPlate(index: number, key: keyof PlateRow, value: string) {
@@ -563,11 +589,12 @@ export default function ClutchMeasurementPage() {
     if (!clutch) {
       setSerialNo("");
       setCurrentShimInstalled("");
+      setOriginalStackHeight("");
       return;
     }
 
     setSerialNo(clutch.serial_no || "");
-    await loadLatestShimForSerial(clutch.serial_no || "");
+    await loadLatestClutchDefaultsForSerial(clutch.serial_no || "");
   }
 
   function resetForm() {
@@ -580,7 +607,6 @@ export default function ClutchMeasurementPage() {
     setMeasurementDate(todayString());
     setDrivenPlates(EMPTY_DRIVEN_PLATES);
     setIntermediatePlates(EMPTY_INTERMEDIATE_PLATES);
-    setOriginalStackHeight("");
     setNotes("");
   }
 
@@ -740,8 +766,9 @@ export default function ClutchMeasurementPage() {
             </h1>
             <p className="mt-3 max-w-3xl text-sm text-zinc-400">
               Fill out the clutch sheet, generate the PDF, and store the measured stack
-              height. Present stack height is calculated automatically from the sum of
-              every driven and intermediate plate Mean value.
+              height. Original stack height is auto-filled from the latest saved
+              measurement for the selected clutch serial, while present stack height is
+              calculated from the plate Mean values.
             </p>
           </div>
 
@@ -847,6 +874,9 @@ export default function ClutchMeasurementPage() {
                         ? clutchAllocationLabel(selectedClutch, carId)
                         : "Choose a clutch before saving."}
                     </p>
+                    <p className="mt-2 text-xs text-zinc-400">
+                      Original stack: {originalStackHeight ? `${originalStackHeight} mm` : "not recorded yet"}
+                    </p>
                   </div>
                 </div>
 
@@ -923,7 +953,7 @@ export default function ClutchMeasurementPage() {
                 </h3>
 
                 <div className="mt-4 grid gap-4 md:grid-cols-3">
-                  <Field label="Original">
+                  <Field label="Original Stack Height">
                     <input
                       value={originalStackHeight}
                       onChange={(e) => setOriginalStackHeight(e.target.value)}
@@ -931,6 +961,10 @@ export default function ClutchMeasurementPage() {
                       placeholder="mm"
                       inputMode="decimal"
                     />
+                    <p className="mt-1 text-xs text-zinc-500">
+                      Auto-filled from the latest saved record for this clutch serial.
+                      Enter it manually only for a new clutch or if the baseline value needs correcting.
+                    </p>
                   </Field>
 
                   <Field label="Present">
