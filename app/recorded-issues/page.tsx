@@ -111,6 +111,27 @@ function normaliseSearch(value: string) {
   return value.trim().toLowerCase();
 }
 
+function initialsFromEmail(value: string | null | undefined) {
+  if (!value) return "";
+
+  const localPart = value.trim().split("@")[0];
+
+  const nameParts = localPart
+    .split(/[.\-_\s]+/)
+    .map((part) => part.replace(/[^a-zA-Z]/g, ""))
+    .filter(Boolean);
+
+  if (nameParts.length >= 2) {
+    return `${nameParts[0][0]}${nameParts[1][0]}`.toUpperCase();
+  }
+
+  if (nameParts.length === 1) {
+    return nameParts[0].slice(0, 2).toUpperCase();
+  }
+
+  return "";
+}
+
 function normaliseSeverity(value: string | null | undefined): IssueSeverity {
   if (value === "Low" || value === "Medium" || value === "High") {
     return value;
@@ -666,10 +687,10 @@ export default function RecordedIssuesPage() {
         niceDate(issue.report_date),
         normaliseSeverity(issue.severity),
         issue.affected_subsystem || "",
-        issue.created_by || issue.updated_by || "",
+        initialsFromEmail(issue.created_by || issue.updated_by),
         issue.recorded_issue || "",
         issue.recorded_solution?.trim() || "Solution Pending",
-        issue.updated_by || issue.solution_approved_by || "",
+        initialsFromEmail(issue.updated_by || issue.solution_approved_by || issue.created_by),
         solutionStatus(issue),
       ]);
 
