@@ -1,240 +1,361 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
 import { supabase } from "@/lib/supabase";
-import {
-  getAssignedCar,
-  getUserRole,
-  hasPermission,
-} from "@/lib/userAccess";
+import { hasPermission } from "@/lib/userAccess";
 import LogoutButton from "@/app/components/LogoutButton";
 
-type PostEventForm = {
-  chassis: string;
-  driver: string;
-  engine_no: string;
-  hours_remaining: string;
-  gearbox_no: string;
-  fuel_drained_kg: string;
-  front_ride_height: string;
-  rear_ride_height: string;
-  diff_break_off: string;
-  diff_dynamic: string;
-  notes: string;
+type JobRow = {
+  id?: string;
+  car_id: number;
+  job_id: number;
+  job_text: string;
+  section: "standard" | "special";
+  done: boolean;
+  notes: string | null;
+  updated_by: string | null;
+  updated_at: string | null;
 };
 
-const EMPTY_FORM: PostEventForm = {
-  chassis: "",
-  driver: "",
-  engine_no: "",
-  hours_remaining: "",
-  gearbox_no: "",
-  fuel_drained_kg: "",
-  front_ride_height: "",
-  rear_ride_height: "",
-  diff_break_off: "",
-  diff_dynamic: "",
-  notes: "",
+type JobRelease = {
+  car_id: number;
+  after_event: string | null;
+  job_date: string | null;
+  released_by: string | null;
+  released_at: string | null;
 };
 
-async function generatePostEventPdf({
-  carId,
-  form,
-  userEmail,
-}: {
-  carId: number;
-  form: PostEventForm;
-  userEmail: string;
-}) {
-  const pdfDoc = await PDFDocument.create();
+type PostEventSheet = {
+  id: string;
+  car_id: number;
+  track_name: string | null;
+  chassis: string | null;
+  driver: string | null;
+  engine_no: string | null;
+  hours_remaining: string | null;
+  gearbox_no: string | null;
+  fuel_drained_kg: string | null;
+  front_ride_height: string | null;
+  rear_ride_height: string | null;
+  diff_break_off: string | null;
+  diff_dynamic: string | null;
+  notes: string | null;
+  created_by: string | null;
+  created_at: string | null;
+  pdf_path: string | null;
+  pdf_filename: string | null;
+};
 
-  const page = pdfDoc.addPage([595.28, 841.89]);
-  const { width, height } = page.getSize();
+type GenericRecord = Record<string, unknown>;
 
-  const regularFont = await pdfDoc.embedFont(StandardFonts.Helvetica);
-  const boldFont = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
+type ClutchRecord = GenericRecord & {
+  id?: string | number;
+  car_id?: number;
+  created_at?: string | null;
+  created_by?: string | null;
+  updated_at?: string | null;
+  updated_by?: string | null;
+  submitted_by?: string | null;
+  pdf_path?: string | null;
+  pdf_url?: string | null;
+  driven_plates?: unknown;
+  intermediate_plates?: unknown;
+};
 
-  const red = rgb(0.72, 0.11, 0.11);
-  const dark = rgb(0.08, 0.09, 0.1);
-  const grey = rgb(0.35, 0.35, 0.35);
+type PlateRow = {
+  no?: string | number;
+  a?: string | number;
+  b?: string | number;
+  c?: string | number;
+};
 
-  let y = height - 60;
+const CLUTCH_PDF_BUCKET = "clutch-measurement-pdfs";
+const POST_EVENT_PDF_BUCKET = "post-event-sheets";
 
-  function drawText(
-    text: string,
-    x: number,
-    yPos: number,
-    size = 11,
-    font = regularFont,
-    colour = dark,
-  ) {
-    page.drawText(text || "-", {
-      x,
-      y: yPos,
-      size,
-      font,
-      color: colour,
-    });
-  }
+function niceDate(value: string | null | undefined) {
+  if (!value) return "No date";
 
-  function drawField(label: string, value: string, x: number, yPos: number) {
-    drawText(label.toUpperCase(), x, yPos, 8, boldFont, grey);
+  const date = new Date(value);
 
-    page.drawRectangle({
-      x,
-      y: yPos - 34,
-      width: 245,
-      height: 26,
-      borderColor: rgb(0.75, 0.75, 0.75),
-      borderWidth: 1,
-    });
+  if (Number.isNaN(date.getTime())) return value;
 
-    drawText(value || "-", x + 8, yPos - 26, 11, regularFont, dark);
-  }
-
-  page.drawRectangle({
-    x: 0,
-    y: height - 90,
-    width,
-    height: 90,
-    color: rgb(0.06, 0.07, 0.08),
-  });
-
-  drawText("RODIN MOTORSPORT", 40, height - 35, 10, boldFont, red);
-  drawText(
-    `Car ${carId} Post-Event Sheet`,
-    40,
-    height - 62,
-    24,
-    boldFont,
-    rgb(1, 1, 1),
-  );
-
-  drawText(
-    `Generated: ${new Date().toLocaleString("en-GB")}`,
-    40,
-    height - 82,
-    9,
-    regularFont,
-    rgb(0.75, 0.75, 0.75),
-  );
-
-  y -= 120;
-
-  drawField("Chassis", form.chassis, 40, y);
-  drawField("Driver", form.driver, 310, y);
-
-  y -= 70;
-
-  drawField("Engine No.", form.engine_no, 40, y);
-  drawField("Hours Remaining", form.hours_remaining, 310, y);
-
-  y -= 70;
-
-  drawField("Gearbox No.", form.gearbox_no, 40, y);
-  drawField("Fuel Drained KG", form.fuel_drained_kg, 310, y);
-
-  y -= 70;
-
-  drawField("Front Ride Height", form.front_ride_height, 40, y);
-  drawField("Rear Ride Height", form.rear_ride_height, 310, y);
-
-  y -= 70;
-
-  drawField("Diff Break-Off", form.diff_break_off, 40, y);
-  drawField("Diff Dynamic", form.diff_dynamic, 310, y);
-
-  y -= 90;
-
-  drawText("NOTES", 40, y, 9, boldFont, grey);
-
-  page.drawRectangle({
-    x: 40,
-    y: y - 150,
-    width: 515,
-    height: 135,
-    borderColor: rgb(0.75, 0.75, 0.75),
-    borderWidth: 1,
-  });
-
-  const notes = form.notes || "-";
-  const maxCharsPerLine = 85;
-  const noteLines = notes.match(new RegExp(`.{1,${maxCharsPerLine}}`, "g")) ?? [
-    "-",
-  ];
-
-  let noteY = y - 35;
-
-  noteLines.slice(0, 7).forEach((line) => {
-    drawText(line, 52, noteY, 10, regularFont, dark);
-    noteY -= 16;
-  });
-
-  y -= 200;
-
-  drawText("Created By", 40, y, 9, boldFont, grey);
-  drawText(userEmail || "Unknown", 40, y - 18, 10, regularFont, dark);
-
-  drawText("Car ID", 310, y, 9, boldFont, grey);
-  drawText(String(carId), 310, y - 18, 10, regularFont, dark);
-
-  page.drawLine({
-    start: { x: 40, y: 70 },
-    end: { x: 555, y: 70 },
-    thickness: 1,
-    color: rgb(0.8, 0.8, 0.8),
-  });
-
-  drawText(
-    "Post-event sheet generated by Rodin Motorsport Mechanics Hub",
-    40,
-    50,
-    8,
-    regularFont,
-    grey,
-  );
-
-  return pdfDoc.save();
+  return date.toLocaleDateString("en-GB");
 }
 
-export default function PostEventSheetPage() {
+function niceDateTime(value: string | null | undefined) {
+  if (!value) return "No timestamp";
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) return value;
+
+  return date.toLocaleString("en-GB");
+}
+
+function cleanValue(value: unknown) {
+  if (value === null || value === undefined || value === "") return "—";
+
+  if (typeof value === "boolean") {
+    return value ? "Yes" : "No";
+  }
+
+  if (typeof value === "number") {
+    return String(value);
+  }
+
+  if (typeof value === "string") {
+    return value.trim() || "—";
+  }
+
+  return JSON.stringify(value);
+}
+
+function formatLabel(key: string) {
+  return key
+    .replaceAll("_", " ")
+    .replaceAll("-", " ")
+    .replace(/\b\w/g, (char) => char.toUpperCase());
+}
+
+function getRecordValue(record: GenericRecord, keys: string[]) {
+  for (const key of keys) {
+    const value = record[key];
+
+    if (value !== null && value !== undefined && value !== "") {
+      return value;
+    }
+  }
+
+  return null;
+}
+
+function dateFromUnknown(value: unknown) {
+  if (!value || typeof value !== "string") return "No date";
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) return value;
+
+  return date.toLocaleDateString("en-GB");
+}
+
+function dateTimeFromUnknown(value: unknown) {
+  if (!value || typeof value !== "string") return "No timestamp";
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) return value;
+
+  return date.toLocaleString("en-GB");
+}
+
+function parsePlateRows(value: unknown): PlateRow[] {
+  if (!value) return [];
+
+  if (Array.isArray(value)) {
+    return value as PlateRow[];
+  }
+
+  if (typeof value === "string") {
+    try {
+      const parsed = JSON.parse(value);
+
+      if (Array.isArray(parsed)) {
+        return parsed as PlateRow[];
+      }
+
+      return [];
+    } catch {
+      return [];
+    }
+  }
+
+  return [];
+}
+
+function plateNumber(value: unknown) {
+  const numberValue = Number(value);
+  return Number.isNaN(numberValue) ? null : numberValue;
+}
+
+function plateMean(row: PlateRow) {
+  const values = [plateNumber(row.a), plateNumber(row.b), plateNumber(row.c)]
+    .filter((value): value is number => value !== null);
+
+  if (values.length === 0) return "—";
+
+  const total = values.reduce((sum, value) => sum + value, 0);
+  return (total / values.length).toFixed(3);
+}
+
+function shouldHideFromClutchSummary(key: string) {
+  return [
+    "id",
+    "car_id",
+    "created_at",
+    "created_by",
+    "updated_at",
+    "updated_by",
+    "submitted_by",
+    "pdf_path",
+    "pdf_url",
+    "driven_plates",
+    "intermediate_plates",
+  ].includes(key);
+}
+
+function DetailField({
+  label,
+  value,
+}: {
+  label: string;
+  value: unknown;
+}) {
+  return (
+    <div className="rounded-2xl border border-zinc-800 bg-[#0d0f12] p-4">
+      <p className="text-xs font-semibold uppercase tracking-[0.22em] text-zinc-500">
+        {label}
+      </p>
+
+      <p className="mt-3 break-words text-lg font-semibold text-zinc-100">
+        {cleanValue(value)}
+      </p>
+    </div>
+  );
+}
+
+function PlateTable({
+  title,
+  value,
+}: {
+  title: string;
+  value: unknown;
+}) {
+  const rows = parsePlateRows(value);
+
+  return (
+    <div className="rounded-3xl border border-zinc-800 bg-[#0d0f12] p-5">
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+        <p className="text-xs font-semibold uppercase tracking-[0.3em] text-red-400">
+          {title}
+        </p>
+
+        <div className="rounded-xl border border-zinc-700 bg-black px-3 py-2 text-xs font-semibold text-zinc-300">
+          {rows.length} plate{rows.length === 1 ? "" : "s"}
+        </div>
+      </div>
+
+      {rows.length === 0 ? (
+        <div className="rounded-2xl border border-dashed border-zinc-700 bg-[#111418] p-5 text-sm text-zinc-500">
+          No plate data saved.
+        </div>
+      ) : (
+        <div className="overflow-hidden rounded-2xl border border-zinc-800">
+          <table className="w-full border-collapse text-sm">
+            <thead className="bg-[#14181d] text-xs uppercase tracking-[0.18em] text-zinc-500">
+              <tr>
+                <th className="border-b border-zinc-800 px-4 py-3 text-left">
+                  Plate
+                </th>
+
+                <th className="border-b border-zinc-800 px-4 py-3 text-left">
+                  A
+                </th>
+
+                <th className="border-b border-zinc-800 px-4 py-3 text-left">
+                  B
+                </th>
+
+                <th className="border-b border-zinc-800 px-4 py-3 text-left">
+                  C
+                </th>
+
+                <th className="border-b border-zinc-800 px-4 py-3 text-left">
+                  Mean
+                </th>
+              </tr>
+            </thead>
+
+            <tbody>
+              {rows.map((row, index) => (
+                <tr
+                  key={index}
+                  className="border-b border-zinc-800 last:border-b-0"
+                >
+                  <td className="px-4 py-3 font-semibold text-zinc-100">
+                    {cleanValue(row.no ?? index + 1)}
+                  </td>
+
+                  <td className="px-4 py-3 text-zinc-300">
+                    {cleanValue(row.a)}
+                  </td>
+
+                  <td className="px-4 py-3 text-zinc-300">
+                    {cleanValue(row.b)}
+                  </td>
+
+                  <td className="px-4 py-3 text-zinc-300">
+                    {cleanValue(row.c)}
+                  </td>
+
+                  <td className="px-4 py-3 font-semibold text-red-200">
+                    {plateMean(row)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+export default function ChiefCarViewerPage() {
   const params = useParams();
   const router = useRouter();
 
   const carId = Number(params.carId);
 
-  const [form, setForm] = useState<PostEventForm>(EMPTY_FORM);
-  const [userEmail, setUserEmail] = useState("");
-  const [saving, setSaving] = useState(false);
-  const [loadingLatest, setLoadingLatest] = useState(true);
-  const [canEditPostEvent, setCanEditPostEvent] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [jobs, setJobs] = useState<JobRow[]>([]);
+  const [releaseInfo, setReleaseInfo] = useState<JobRelease | null>(null);
+  const [clutchRows, setClutchRows] = useState<ClutchRecord[]>([]);
+  const [postEventRows, setPostEventRows] = useState<PostEventSheet[]>([]);
 
-  const [message, setMessage] = useState("");
+  const [selectedSheet, setSelectedSheet] = useState<PostEventSheet | null>(
+    null,
+  );
+
+  const [selectedClutchRecord, setSelectedClutchRecord] =
+    useState<ClutchRecord | null>(null);
+
+  const [dateFilter, setDateFilter] = useState("");
+  const [trackFilter, setTrackFilter] = useState("all");
+
+  const [clutchDateFilter, setClutchDateFilter] = useState("");
+  const [clutchSearchFilter, setClutchSearchFilter] = useState("");
+  const [openingPdfKey, setOpeningPdfKey] = useState<string | null>(null);
+
+  const [openingPostEventPdfId, setOpeningPostEventPdfId] = useState<
+    string | null
+  >(null);
+
+  const [deletingPostEventId, setDeletingPostEventId] = useState<string | null>(
+    null,
+  );
+
   const [errorMessage, setErrorMessage] = useState("");
-
-  const completionPercent = useMemo(() => {
-    const requiredFields = [
-      form.chassis,
-      form.driver,
-      form.engine_no,
-      form.hours_remaining,
-      form.gearbox_no,
-      form.fuel_drained_kg,
-      form.front_ride_height,
-      form.rear_ride_height,
-      form.diff_break_off,
-      form.diff_dynamic,
-    ];
-
-    const filled = requiredFields.filter((value) => value.trim()).length;
-    return Math.round((filled / requiredFields.length) * 100);
-  }, [form]);
+  const [message, setMessage] = useState("");
+  const [clearingNoteKey, setClearingNoteKey] = useState<string | null>(null);
+  const [canEditJobNotes, setCanEditJobNotes] = useState(false);
+  const [canDeletePostEvent, setCanDeletePostEvent] = useState(false);
 
   async function checkAccess() {
     if (!Number.isFinite(carId)) {
-      router.replace("/login");
+      router.replace("/dashboard");
       return null;
     }
 
@@ -246,226 +367,384 @@ export default function PostEventSheetPage() {
     }
 
     const email = userData.user.email.trim().toLowerCase();
-    const role = getUserRole(email);
-    const assignedCar = getAssignedCar(email);
 
-    if (role === "number2_mechanic") {
-      router.replace("/team-jobs");
+    const allowed =
+      hasPermission(email, "dashboard:view") && hasPermission(email, "cars:view");
+
+    if (!allowed) {
+      router.replace("/dashboard");
       return null;
     }
 
-    if (!hasPermission(email, "post_event:view")) {
-      router.replace("/login");
-      return null;
-    }
-
-    if (role === "number1_mechanic") {
-      if (!assignedCar) {
-        router.replace("/login");
-        return null;
-      }
-
-      if (Number(assignedCar) !== carId) {
-        router.replace(`/car/${assignedCar}/post-event`);
-        return null;
-      }
-    }
-
-    setCanEditPostEvent(hasPermission(email, "post_event:edit"));
-    setUserEmail(email);
+    setCanEditJobNotes(hasPermission(email, "job_lists:edit"));
+    setCanDeletePostEvent(hasPermission(email, "post_event:edit"));
 
     return email;
   }
 
   useEffect(() => {
-    async function init() {
-      if (!carId) return;
-
-      setLoadingLatest(true);
-      setErrorMessage("");
-
+    async function loadViewer() {
       const email = await checkAccess();
 
       if (!email) {
         return;
       }
 
-      const { data, error } = await supabase
+      setLoading(true);
+      setMessage("");
+      setErrorMessage("");
+
+      const { data: releaseData, error: releaseError } = await supabase
+        .from("job_list_releases")
+        .select("*")
+        .eq("car_id", carId)
+        .maybeSingle();
+
+      if (releaseError) {
+        setErrorMessage(`Release details failed: ${releaseError.message}`);
+      } else {
+        setReleaseInfo((releaseData as JobRelease) ?? null);
+      }
+
+      const { data: jobData, error: jobError } = await supabase
+        .from("job_progress")
+        .select("*")
+        .eq("car_id", carId)
+        .order("section", { ascending: false })
+        .order("job_id", { ascending: true });
+
+      if (jobError) {
+        setErrorMessage(`Jobs failed: ${jobError.message}`);
+      } else {
+        setJobs((jobData ?? []) as JobRow[]);
+      }
+
+      const clutch = await supabase
+        .from("clutch_measurements")
+        .select("*")
+        .eq("car_id", carId)
+        .order("created_at", { ascending: false });
+
+      if (clutch.error) {
+        setErrorMessage(`Clutch measurements failed: ${clutch.error.message}`);
+      } else {
+        setClutchRows((clutch.data ?? []) as ClutchRecord[]);
+      }
+
+      const postEvent = await supabase
         .from("post_event_sheets")
         .select("*")
         .eq("car_id", carId)
-        .order("created_at", { ascending: false })
-        .limit(1)
-        .maybeSingle();
+        .order("created_at", { ascending: false });
 
-      if (error) {
-        setErrorMessage(error.message);
-        setLoadingLatest(false);
-        return;
+      if (postEvent.error) {
+        setErrorMessage(
+          `Post-event sheets failed: ${postEvent.error.message}`,
+        );
+      } else {
+        setPostEventRows((postEvent.data ?? []) as PostEventSheet[]);
       }
 
-      if (data) {
-        setForm({
-          chassis: String(data.chassis ?? ""),
-          driver: String(data.driver ?? ""),
-          engine_no: String(data.engine_no ?? ""),
-          hours_remaining: String(data.hours_remaining ?? ""),
-          gearbox_no: String(data.gearbox_no ?? ""),
-          fuel_drained_kg: String(data.fuel_drained_kg ?? ""),
-          front_ride_height: String(data.front_ride_height ?? ""),
-          rear_ride_height: String(data.rear_ride_height ?? ""),
-          diff_break_off: String(data.diff_break_off ?? ""),
-          diff_dynamic: String(data.diff_dynamic ?? ""),
-          notes: String(data.notes ?? ""),
-        });
-      }
-
-      setLoadingLatest(false);
+      setLoading(false);
     }
 
-    init();
+    if (carId) {
+      loadViewer();
+    }
 
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [carId]);
+  }, [carId, router]);
 
-  function updateField(field: keyof PostEventForm, value: string) {
-    setForm((current) => ({
-      ...current,
-      [field]: value,
-    }));
-  }
+  async function openClutchPdf(record: ClutchRecord, key: string) {
+    setMessage("");
+    setErrorMessage("");
+    setOpeningPdfKey(key);
 
-  async function saveSheet() {
-    if (!canEditPostEvent) {
-      setErrorMessage("You do not have permission to save post-event sheets.");
+    if (record.pdf_url && typeof record.pdf_url === "string") {
+      window.open(record.pdf_url, "_blank", "noopener,noreferrer");
+      setOpeningPdfKey(null);
       return;
     }
 
-    setSaving(true);
-    setMessage("");
-    setErrorMessage("");
+    if (record.pdf_path && typeof record.pdf_path === "string") {
+      const { data, error } = await supabase.storage
+        .from(CLUTCH_PDF_BUCKET)
+        .createSignedUrl(record.pdf_path, 60 * 10);
 
-    try {
-      const email = await checkAccess();
+      if (error || !data?.signedUrl) {
+        setErrorMessage(
+          error?.message ||
+            "Could not open the clutch measurement PDF. Check the storage bucket and saved PDF path.",
+        );
 
-      if (!email) {
-        setSaving(false);
+        setOpeningPdfKey(null);
         return;
       }
 
-      const pdfBytes = await generatePostEventPdf({
-        carId,
-        form,
-        userEmail: email,
-      });
-
-      const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
-
-      const pdfFilename = `car-${carId}-post-event-${timestamp}.pdf`;
-      const pdfPath = `car-${carId}/${pdfFilename}`;
-
-      const { error: uploadError } = await supabase.storage
-        .from("post-event-sheets")
-        .upload(pdfPath, pdfBytes, {
-          contentType: "application/pdf",
-          upsert: false,
-        });
-
-      if (uploadError) {
-        throw new Error(uploadError.message);
-      }
-
-      const { error: insertError } = await supabase
-        .from("post_event_sheets")
-        .insert({
-          car_id: carId,
-          chassis: form.chassis.trim(),
-          driver: form.driver.trim(),
-          engine_no: form.engine_no.trim(),
-          hours_remaining: form.hours_remaining.trim(),
-          gearbox_no: form.gearbox_no.trim(),
-          fuel_drained_kg: form.fuel_drained_kg.trim(),
-          front_ride_height: form.front_ride_height.trim(),
-          rear_ride_height: form.rear_ride_height.trim(),
-          diff_break_off: form.diff_break_off.trim(),
-          diff_dynamic: form.diff_dynamic.trim(),
-          notes: form.notes.trim(),
-          created_by: email || null,
-          created_at: new Date().toISOString(),
-          pdf_path: pdfPath,
-          pdf_filename: pdfFilename,
-        });
-
-      if (insertError) {
-        throw new Error(insertError.message);
-      }
-
-      setMessage("Post-event sheet saved as a PDF successfully.");
-    } catch (error) {
-      setErrorMessage(
-        error instanceof Error
-          ? error.message
-          : "Failed to save post-event PDF.",
-      );
+      window.open(data.signedUrl, "_blank", "noopener,noreferrer");
+      setOpeningPdfKey(null);
+      return;
     }
 
-    setSaving(false);
+    setErrorMessage("No PDF is linked to this clutch measurement record yet.");
+    setOpeningPdfKey(null);
   }
 
-  function clearForm() {
-    if (!canEditPostEvent) {
-      setErrorMessage("You do not have permission to clear this form.");
+  async function openPostEventPdf(sheet: PostEventSheet) {
+    setMessage("");
+    setErrorMessage("");
+    setOpeningPostEventPdfId(sheet.id);
+
+    if (!sheet.pdf_path) {
+      setErrorMessage(
+        "No PDF is linked to this post-event sheet. The record exists, but pdf_path is empty.",
+      );
+      setOpeningPostEventPdfId(null);
+      return;
+    }
+
+    const { data, error } = await supabase.storage
+      .from(POST_EVENT_PDF_BUCKET)
+      .createSignedUrl(sheet.pdf_path, 60 * 10);
+
+    if (error || !data?.signedUrl) {
+      setErrorMessage(
+        error?.message ||
+          "Could not open the post-event PDF. Check the storage bucket and saved PDF path.",
+      );
+
+      setOpeningPostEventPdfId(null);
+      return;
+    }
+
+    window.open(data.signedUrl, "_blank", "noopener,noreferrer");
+    setOpeningPostEventPdfId(null);
+  }
+
+  async function deletePostEventSheet(sheet: PostEventSheet) {
+    if (!canDeletePostEvent) {
+      setErrorMessage("You do not have permission to delete post-event sheets.");
       return;
     }
 
     const confirmed = window.confirm(
-      "Clear the current post-event sheet on screen? This will not delete saved records.",
+      `Delete this post-event sheet?\n\nCar ${sheet.car_id}\nSaved: ${niceDateTime(
+        sheet.created_at,
+      )}\n\nThis will delete the database record and its linked PDF if one exists.`,
     );
 
     if (!confirmed) return;
 
-    setForm(EMPTY_FORM);
     setMessage("");
     setErrorMessage("");
+    setDeletingPostEventId(sheet.id);
+
+    if (sheet.pdf_path) {
+      const { error: storageError } = await supabase.storage
+        .from(POST_EVENT_PDF_BUCKET)
+        .remove([sheet.pdf_path]);
+
+      if (storageError) {
+        setErrorMessage(`PDF delete failed: ${storageError.message}`);
+        setDeletingPostEventId(null);
+        return;
+      }
+    }
+
+    const { error } = await supabase
+      .from("post_event_sheets")
+      .delete()
+      .eq("id", sheet.id);
+
+    if (error) {
+      setErrorMessage(`Post-event sheet delete failed: ${error.message}`);
+      setDeletingPostEventId(null);
+      return;
+    }
+
+    setPostEventRows((current) =>
+      current.filter((item) => item.id !== sheet.id),
+    );
+
+    if (selectedSheet?.id === sheet.id) {
+      setSelectedSheet(null);
+    }
+
+    setMessage("Post-event sheet deleted.");
+    setDeletingPostEventId(null);
   }
 
-  if (loadingLatest) {
+  async function clearJobNote(job: JobRow) {
+    if (!canEditJobNotes) {
+      setErrorMessage("You do not have permission to clear mechanic notes.");
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `Clear this mechanic note?\n\nTask:\n${job.job_text}`,
+    );
+
+    if (!confirmed) return;
+
+    const key = `${job.section}-${job.job_id}`;
+    const now = new Date().toISOString();
+
+    setClearingNoteKey(key);
+    setMessage("");
+    setErrorMessage("");
+
+    const email = await checkAccess();
+
+    if (!email) {
+      setClearingNoteKey(null);
+      return;
+    }
+
+    const { error } = await supabase
+      .from("job_progress")
+      .update({
+        notes: null,
+        updated_by: email,
+        updated_at: now,
+      })
+      .eq("car_id", job.car_id)
+      .eq("job_id", job.job_id)
+      .eq("section", job.section);
+
+    if (error) {
+      setErrorMessage(`Failed to clear note: ${error.message}`);
+      setClearingNoteKey(null);
+      return;
+    }
+
+    setJobs((current) =>
+      current.map((item) =>
+        item.car_id === job.car_id &&
+        item.job_id === job.job_id &&
+        item.section === job.section
+          ? {
+              ...item,
+              notes: null,
+              updated_by: email,
+              updated_at: now,
+            }
+          : item,
+      ),
+    );
+
+    setMessage("Mechanic note cleared.");
+    setClearingNoteKey(null);
+  }
+
+  const completedJobs = jobs.filter((job) => job.done).length;
+  const totalJobs = jobs.length;
+  const progress = totalJobs ? Math.round((completedJobs / totalJobs) * 100) : 0;
+
+  const outstandingJobs = useMemo(
+    () => jobs.filter((job) => !job.done),
+    [jobs],
+  );
+
+  const completedJobRows = useMemo(
+    () => jobs.filter((job) => job.done),
+    [jobs],
+  );
+
+  const mechanicJobNotes = useMemo(() => {
+    return jobs
+      .filter((job) => job.notes && job.notes.trim().length > 0)
+      .sort((a, b) => {
+        const aTime = a.updated_at ? new Date(a.updated_at).getTime() : 0;
+        const bTime = b.updated_at ? new Date(b.updated_at).getTime() : 0;
+        return bTime - aTime;
+      });
+  }, [jobs]);
+
+  const trackOptions = useMemo(() => {
+    const tracks = postEventRows
+      .map((sheet) => sheet.track_name?.trim())
+      .filter((track): track is string => Boolean(track));
+
+    return Array.from(new Set(tracks)).sort((a, b) => a.localeCompare(b));
+  }, [postEventRows]);
+
+  const filteredPostEventRows = useMemo(() => {
+    return postEventRows.filter((sheet) => {
+      const sheetDate = sheet.created_at ? sheet.created_at.slice(0, 10) : "";
+
+      const matchesDate = dateFilter ? sheetDate === dateFilter : true;
+
+      const matchesTrack =
+        trackFilter === "all"
+          ? true
+          : (sheet.track_name || "").trim() === trackFilter;
+
+      return matchesDate && matchesTrack;
+    });
+  }, [postEventRows, dateFilter, trackFilter]);
+
+  const filteredClutchRows = useMemo(() => {
+    return clutchRows.filter((record) => {
+      const createdAt = getRecordValue(record, ["created_at"]);
+      const recordDate =
+        typeof createdAt === "string" ? createdAt.slice(0, 10) : "";
+
+      const matchesDate = clutchDateFilter
+        ? recordDate === clutchDateFilter
+        : true;
+
+      const searchableText = Object.values(record)
+        .map((value) => cleanValue(value))
+        .join(" ")
+        .toLowerCase();
+
+      const matchesSearch = clutchSearchFilter.trim()
+        ? searchableText.includes(clutchSearchFilter.trim().toLowerCase())
+        : true;
+
+      return matchesDate && matchesSearch;
+    });
+  }, [clutchRows, clutchDateFilter, clutchSearchFilter]);
+
+  if (loading) {
     return (
-      <main className="min-h-screen bg-[#0d0f12] p-6 text-zinc-100">
-        <div className="rounded-3xl border border-zinc-800 bg-[#14181d] p-6">
-          Loading post-event sheet...
-        </div>
+      <main className="flex min-h-screen items-center justify-center bg-[#0d0f12] text-zinc-400">
+        Loading Car {carId} viewer...
       </main>
     );
   }
 
   return (
     <main className="min-h-screen bg-[#0d0f12] p-6 text-zinc-100">
-      <header className="mb-8 flex flex-wrap items-start justify-between gap-4 rounded-3xl border border-zinc-800 bg-[#14181d] p-6 shadow-xl">
+      <div className="mb-8 flex flex-wrap items-start justify-between gap-4">
         <div>
-          <p className="text-xs uppercase tracking-[0.35em] text-red-400">
-            Rodin Motorsport
+          <p className="text-xs uppercase tracking-[0.3em] text-red-400">
+            Car Viewer
           </p>
 
-          <h1 className="mt-3 text-4xl font-semibold tracking-tight">
-            Car {carId} Post-Event Sheet
+          <h1 className="mt-3 text-4xl font-semibold">
+            Car {carId} Profile
           </h1>
 
           <p className="mt-3 max-w-3xl text-sm text-zinc-400">
-            Record the key post-event details for chassis, engine, gearbox, fuel
-            drained, ride heights and diff checks.
+            Read-only overview of current job progress, clutch measurements,
+            mechanic notes and post-event records.
           </p>
-
-          {!canEditPostEvent && (
-            <p className="mt-4 rounded-xl border border-yellow-800 bg-yellow-950/30 px-4 py-3 text-sm text-yellow-200">
-              Your login can view this sheet, but cannot save or edit
-              post-event records.
-            </p>
-          )}
         </div>
 
-        <LogoutButton />
-      </header>
+        <div className="flex flex-wrap gap-3">
+          {canEditJobNotes && (
+            <Link
+              href={`/dashboard/car/${carId}/job-list`}
+              className="rounded-xl bg-red-700 px-5 py-3 text-sm font-semibold hover:bg-red-600"
+            >
+              Edit Job List
+            </Link>
+          )}
+
+          <LogoutButton />
+        </div>
+      </div>
 
       {message && (
         <div className="mb-6 rounded-2xl border border-green-800 bg-green-950/20 p-4 text-sm text-green-300">
@@ -479,274 +758,849 @@ export default function PostEventSheetPage() {
         </div>
       )}
 
-      <section className="mb-6 grid gap-6 lg:grid-cols-[1fr_320px]">
-        <div className="rounded-3xl border border-zinc-800 bg-[#14181d] p-6 shadow-xl">
-          <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
-            <div>
-              <h2 className="text-2xl font-semibold">Event Details</h2>
-
-              <p className="mt-1 text-sm text-zinc-500">
-                Main post-event identity and running details.
-              </p>
-            </div>
-
-            <div className="rounded-2xl border border-zinc-700 bg-[#0d0f12] px-5 py-3 text-right">
-              <p className="text-xs uppercase tracking-[0.25em] text-zinc-500">
-                Complete
-              </p>
-
-              <p className="text-2xl font-semibold text-red-400">
-                {completionPercent}%
-              </p>
-            </div>
-          </div>
-
-          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
-            <InputCard
-              label="Chassis"
-              value={form.chassis}
-              placeholder="#022"
-              disabled={!canEditPostEvent}
-              onChange={(value) => updateField("chassis", value)}
-            />
-
-            <InputCard
-              label="Driver"
-              value={form.driver}
-              placeholder="M. Rehm"
-              disabled={!canEditPostEvent}
-              onChange={(value) => updateField("driver", value)}
-            />
-
-            <InputCard
-              label="Engine No."
-              value={form.engine_no}
-              placeholder="Engine number"
-              disabled={!canEditPostEvent}
-              onChange={(value) => updateField("engine_no", value)}
-            />
-
-            <InputCard
-              label="Hours Remaining"
-              value={form.hours_remaining}
-              placeholder="0.0"
-              disabled={!canEditPostEvent}
-              onChange={(value) => updateField("hours_remaining", value)}
-            />
-
-            <InputCard
-              label="Gearbox No."
-              value={form.gearbox_no}
-              placeholder="Gearbox number"
-              disabled={!canEditPostEvent}
-              onChange={(value) => updateField("gearbox_no", value)}
-            />
-          </div>
-        </div>
-
-        <div className="rounded-3xl border border-red-900/40 bg-[#181315] p-6 shadow-xl">
-          <p className="text-xs uppercase tracking-[0.3em] text-red-300">
-            Sheet Status
-          </p>
-
-          <div className="mt-6 h-3 overflow-hidden rounded-full bg-red-950/50">
-            <div
-              className="h-full rounded-full bg-red-600 transition-all"
-              style={{ width: `${completionPercent}%` }}
-            />
-          </div>
-
-          <p className="mt-4 text-sm text-zinc-400">
-            Fill in the fields, then save the sheet. Each save creates a new
-            timestamped post-event record.
-          </p>
-
-          <div className="mt-6 rounded-2xl border border-red-900/50 bg-[#0d0f12] p-4 text-sm text-zinc-400">
-            <p>
-              Car:{" "}
-              <span className="font-semibold text-zinc-100">Car {carId}</span>
+      <section className="mb-6 rounded-3xl border border-zinc-800 bg-[#14181d] p-6 shadow-xl">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.3em] text-red-400">
+              Released Job List
             </p>
 
-            <p className="mt-1">
-              User:{" "}
-              <span className="font-semibold text-zinc-100">
-                {userEmail || "Unknown"}
+            <h2 className="mt-3 text-3xl font-semibold text-zinc-100">
+              {releaseInfo?.after_event || "No event name set"}
+            </h2>
+
+            <div className="mt-3 flex flex-wrap gap-4 text-sm text-zinc-400">
+              <span>
+                Date:{" "}
+                <span className="font-semibold text-zinc-100">
+                  {releaseInfo?.job_date
+                    ? new Date(releaseInfo.job_date).toLocaleDateString("en-GB")
+                    : "No date set"}
+                </span>
               </span>
-            </p>
+
+              {releaseInfo?.released_at && (
+                <span>
+                  Released:{" "}
+                  <span className="font-semibold text-zinc-100">
+                    {new Date(releaseInfo.released_at).toLocaleString("en-GB")}
+                  </span>
+                </span>
+              )}
+
+              {releaseInfo?.released_by && (
+                <span>
+                  By:{" "}
+                  <span className="font-semibold text-zinc-100">
+                    {releaseInfo.released_by}
+                  </span>
+                </span>
+              )}
+            </div>
           </div>
+
+          {canEditJobNotes && (
+            <Link
+              href={`/dashboard/car/${carId}/job-list`}
+              className="rounded-xl border border-zinc-700 px-4 py-2 text-sm font-semibold text-zinc-200 hover:border-red-500 hover:text-red-300"
+            >
+              Change Details
+            </Link>
+          )}
         </div>
       </section>
 
       <section className="mb-6 grid gap-6 lg:grid-cols-3">
         <div className="rounded-3xl border border-zinc-800 bg-[#14181d] p-6 shadow-xl">
-          <div className="mb-5">
-            <p className="text-xs uppercase tracking-[0.3em] text-red-400">
-              Fuel
-            </p>
+          <h2 className="text-2xl font-semibold">Job Progress</h2>
 
-            <h2 className="mt-2 text-2xl font-semibold">Fuel Drained</h2>
+          <p className="mt-2 text-sm text-zinc-500">
+            {completedJobs} of {totalJobs} jobs complete.
+          </p>
+
+          <div className="mt-6 text-6xl font-bold text-red-400">
+            {progress}%
           </div>
 
-          <div className="rounded-2xl border border-zinc-800 bg-[#0d0f12] p-5">
-            <label className="block text-sm font-semibold text-zinc-300">
-              Fuel Drained
-            </label>
-
-            <div className="mt-3 flex items-end gap-3">
-              <input
-                value={form.fuel_drained_kg}
-                onChange={(event) =>
-                  updateField("fuel_drained_kg", event.target.value)
-                }
-                disabled={!canEditPostEvent}
-                placeholder="0.00"
-                inputMode="decimal"
-                className="w-full rounded-xl border border-zinc-700 bg-[#111418] px-4 py-4 text-3xl font-semibold text-zinc-100 outline-none transition focus:border-red-500 disabled:cursor-not-allowed disabled:opacity-50"
-              />
-
-              <span className="pb-4 text-sm font-semibold uppercase tracking-widest text-zinc-500">
-                KG
-              </span>
-            </div>
+          <div className="mt-5 h-3 overflow-hidden rounded-full bg-zinc-800">
+            <div
+              className="h-full rounded-full bg-red-700"
+              style={{ width: `${progress}%` }}
+            />
           </div>
         </div>
 
         <div className="rounded-3xl border border-zinc-800 bg-[#14181d] p-6 shadow-xl lg:col-span-2">
-          <div className="mb-5">
-            <p className="text-xs uppercase tracking-[0.3em] text-red-400">
-              Platform
-            </p>
+          <h2 className="text-2xl font-semibold">Outstanding Jobs</h2>
 
-            <h2 className="mt-2 text-2xl font-semibold">Ride Heights</h2>
-          </div>
+          <div className="mt-4 max-h-[420px] space-y-2 overflow-y-auto pr-2">
+            {outstandingJobs.length === 0 ? (
+              <p className="rounded-xl border border-green-800 bg-green-950/20 p-4 text-sm text-green-300">
+                No outstanding jobs.
+              </p>
+            ) : (
+              outstandingJobs.map((job) => (
+                <div
+                  key={`${job.section}-${job.job_id}`}
+                  className="rounded-xl border border-zinc-800 bg-[#0d0f12] p-4 text-sm"
+                >
+                  <div className="text-zinc-100">{job.job_text}</div>
 
-          <div className="grid gap-4 md:grid-cols-2">
-            <InputCard
-              label="Front Ride Height"
-              value={form.front_ride_height}
-              placeholder="Front RH"
-              disabled={!canEditPostEvent}
-              onChange={(value) => updateField("front_ride_height", value)}
-            />
+                  <div className="mt-1 flex flex-wrap gap-3 text-xs uppercase tracking-widest text-zinc-500">
+                    <span>{job.section}</span>
 
-            <InputCard
-              label="Rear Ride Height"
-              value={form.rear_ride_height}
-              placeholder="Rear RH"
-              disabled={!canEditPostEvent}
-              onChange={(value) => updateField("rear_ride_height", value)}
-            />
+                    {job.notes?.trim() && (
+                      <span className="text-red-300">Has Note</span>
+                    )}
+                  </div>
+                </div>
+              ))
+            )}
           </div>
         </div>
       </section>
 
       <section className="mb-6 rounded-3xl border border-zinc-800 bg-[#14181d] p-6 shadow-xl">
-        <div className="mb-5">
-          <p className="text-xs uppercase tracking-[0.3em] text-red-400">
-            Differential
-          </p>
+        <h2 className="text-2xl font-semibold">Completed Jobs</h2>
 
-          <h2 className="mt-2 text-2xl font-semibold">Diff Checks</h2>
-        </div>
+        <div className="mt-4 max-h-[320px] space-y-2 overflow-y-auto pr-2">
+          {completedJobRows.length === 0 ? (
+            <p className="text-sm text-zinc-500">No jobs completed yet.</p>
+          ) : (
+            completedJobRows.map((job) => (
+              <div
+                key={`${job.section}-${job.job_id}`}
+                className="rounded-xl border border-green-900/50 bg-green-950/10 p-4 text-sm"
+              >
+                <div className="text-zinc-300 line-through">
+                  {job.job_text}
+                </div>
 
-        <div className="grid gap-4 md:grid-cols-2">
-          <InputCard
-            label="Diff Break-Off"
-            value={form.diff_break_off}
-            placeholder="Value / comment"
-            disabled={!canEditPostEvent}
-            onChange={(value) => updateField("diff_break_off", value)}
-          />
+                <div className="mt-1 flex flex-wrap gap-3 text-xs text-zinc-500">
+                  <span>Updated by {job.updated_by ?? "unknown"}</span>
 
-          <InputCard
-            label="Diff Dynamic"
-            value={form.diff_dynamic}
-            placeholder="Value / comment"
-            disabled={!canEditPostEvent}
-            onChange={(value) => updateField("diff_dynamic", value)}
-          />
+                  <span>
+                    {job.updated_at
+                      ? new Date(job.updated_at).toLocaleString("en-GB")
+                      : ""}
+                  </span>
+
+                  {job.notes?.trim() && (
+                    <span className="font-semibold text-red-300">
+                      Has Note
+                    </span>
+                  )}
+                </div>
+              </div>
+            ))
+          )}
         </div>
       </section>
 
-      <section className="mb-6 rounded-3xl border border-zinc-800 bg-[#14181d] p-6 shadow-xl">
-        <h2 className="text-2xl font-semibold">Notes</h2>
+      <section className="grid gap-6 lg:grid-cols-2">
+        <div className="rounded-3xl border border-zinc-800 bg-[#14181d] p-6 shadow-xl">
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div>
+              <h2 className="text-2xl font-semibold">
+                Previous Clutch Measurements
+              </h2>
 
-        <p className="mt-1 text-sm text-zinc-500">
-          Add any extra comments, damage notes, mechanic observations or
-          follow-up actions.
-        </p>
+              <p className="mt-1 text-sm text-zinc-500">
+                Click a clutch record to open the full measurement data.
+              </p>
+            </div>
 
-        <textarea
-          value={form.notes}
-          onChange={(event) => updateField("notes", event.target.value)}
-          disabled={!canEditPostEvent}
-          placeholder="Type post-event notes here..."
-          rows={6}
-          className="mt-5 w-full resize-none rounded-2xl border border-zinc-700 bg-[#0d0f12] px-4 py-4 text-sm text-zinc-100 outline-none transition focus:border-red-500 disabled:cursor-not-allowed disabled:opacity-50"
-        />
+            <div className="rounded-2xl border border-zinc-700 bg-[#0d0f12] px-4 py-3 text-sm font-semibold text-red-300">
+              {filteredClutchRows.length} / {clutchRows.length}
+            </div>
+          </div>
+
+          <div className="mt-5 grid gap-3 md:grid-cols-2">
+            <label className="block">
+              <span className="text-xs font-semibold uppercase tracking-[0.22em] text-zinc-500">
+                Filter Date
+              </span>
+
+              <input
+                type="date"
+                value={clutchDateFilter}
+                onChange={(event) => setClutchDateFilter(event.target.value)}
+                className="mt-2 w-full rounded-xl border border-zinc-700 bg-[#0d0f12] px-4 py-3 text-sm text-zinc-100 outline-none focus:border-red-500"
+              />
+            </label>
+
+            <label className="block">
+              <span className="text-xs font-semibold uppercase tracking-[0.22em] text-zinc-500">
+                Search
+              </span>
+
+              <input
+                value={clutchSearchFilter}
+                onChange={(event) => setClutchSearchFilter(event.target.value)}
+                placeholder="Search clutch no, serial no, user..."
+                className="mt-2 w-full rounded-xl border border-zinc-700 bg-[#0d0f12] px-4 py-3 text-sm text-zinc-100 outline-none focus:border-red-500"
+              />
+            </label>
+          </div>
+
+          {(clutchDateFilter || clutchSearchFilter) && (
+            <button
+              type="button"
+              onClick={() => {
+                setClutchDateFilter("");
+                setClutchSearchFilter("");
+              }}
+              className="mt-3 rounded-xl border border-zinc-700 px-4 py-2 text-xs font-semibold text-zinc-300 hover:border-red-500 hover:text-red-300"
+            >
+              Clear Filters
+            </button>
+          )}
+
+          <div className="mt-5 max-h-[520px] space-y-3 overflow-y-auto pr-2">
+            {filteredClutchRows.length === 0 ? (
+              <div className="rounded-2xl border border-dashed border-zinc-700 bg-[#0d0f12] p-6 text-sm text-zinc-500">
+                No clutch measurement records found.
+              </div>
+            ) : (
+              filteredClutchRows.map((record, index) => {
+                const createdAt = getRecordValue(record, ["created_at"]);
+                const createdBy = getRecordValue(record, [
+                  "created_by",
+                  "updated_by",
+                  "submitted_by",
+                ]);
+
+                const carName = getRecordValue(record, ["car_name"]);
+                const serialNo = getRecordValue(record, ["serial_no"]);
+                const clutchNo = getRecordValue(record, ["clutch_no"]);
+                const measurementDate = getRecordValue(record, [
+                  "measurement_date",
+                ]);
+                const distanceKm = getRecordValue(record, ["distance_km"]);
+                const pdfKey = `viewer-clutch-${String(record.id ?? index)}`;
+
+                return (
+                  <div
+                    key={String(record.id ?? index)}
+                    className="rounded-2xl border border-zinc-800 bg-[#0d0f12] p-4 transition hover:border-red-500/70 hover:bg-[#15191f]"
+                  >
+                    <button
+                      type="button"
+                      onClick={() => setSelectedClutchRecord(record)}
+                      className="w-full text-left"
+                    >
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div>
+                          <p className="text-xs font-semibold uppercase tracking-[0.22em] text-red-400">
+                            Clutch Measurement
+                          </p>
+
+                          <h3 className="mt-2 text-xl font-semibold text-zinc-100">
+                            {cleanValue(carName) !== "—"
+                              ? `Car ${cleanValue(carName)}`
+                              : `Record ${index + 1}`}
+                          </h3>
+
+                          <p className="mt-1 text-sm text-zinc-400">
+                            Submitted by:{" "}
+                            <span className="font-semibold text-zinc-200">
+                              {cleanValue(createdBy)}
+                            </span>
+                          </p>
+                        </div>
+
+                        <div className="rounded-xl border border-zinc-700 bg-[#111418] px-3 py-2 text-right">
+                          <p className="text-xs text-zinc-500">Saved</p>
+
+                          <p className="text-sm font-semibold text-zinc-200">
+                            {dateFromUnknown(createdAt)}
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="mt-4 grid gap-2 text-sm text-zinc-400 sm:grid-cols-3">
+                        <p>
+                          Serial:{" "}
+                          <span className="font-semibold text-zinc-200">
+                            {cleanValue(serialNo)}
+                          </span>
+                        </p>
+
+                        <p>
+                          Clutch:{" "}
+                          <span className="font-semibold text-zinc-200">
+                            {cleanValue(clutchNo)}
+                          </span>
+                        </p>
+
+                        <p>
+                          Distance:{" "}
+                          <span className="font-semibold text-zinc-200">
+                            {cleanValue(distanceKm)} km
+                          </span>
+                        </p>
+
+                        <p>
+                          Measured:{" "}
+                          <span className="font-semibold text-zinc-200">
+                            {cleanValue(measurementDate)}
+                          </span>
+                        </p>
+
+                        <p>
+                          PDF:{" "}
+                          <span
+                            className={`font-semibold ${
+                              record.pdf_path || record.pdf_url
+                                ? "text-green-300"
+                                : "text-zinc-500"
+                            }`}
+                          >
+                            {record.pdf_path || record.pdf_url
+                              ? "Linked"
+                              : "Not linked"}
+                          </span>
+                        </p>
+                      </div>
+                    </button>
+
+                    <div className="mt-4 flex flex-wrap justify-end gap-3 border-t border-zinc-800 pt-4">
+                      <button
+                        type="button"
+                        onClick={() => setSelectedClutchRecord(record)}
+                        className="rounded-xl border border-zinc-700 px-4 py-2 text-xs font-semibold text-zinc-300 hover:border-red-500 hover:text-red-300"
+                      >
+                        View Data
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => openClutchPdf(record, pdfKey)}
+                        disabled={openingPdfKey === pdfKey}
+                        className="rounded-xl border border-red-900/60 bg-red-950/30 px-4 py-2 text-xs font-semibold text-red-200 hover:border-red-500 hover:bg-red-950/50 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        {openingPdfKey === pdfKey ? "Opening..." : "Open PDF"}
+                      </button>
+                    </div>
+                  </div>
+                );
+              })
+            )}
+          </div>
+        </div>
+
+        <div className="rounded-3xl border border-zinc-800 bg-[#14181d] p-6 shadow-xl">
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div>
+              <h2 className="text-2xl font-semibold">
+                Previous Post Event Sheets
+              </h2>
+
+              <p className="mt-1 text-sm text-zinc-500">
+                View details, open linked PDFs, or delete old post-event sheets.
+              </p>
+            </div>
+
+            <div className="rounded-2xl border border-zinc-700 bg-[#0d0f12] px-4 py-3 text-sm font-semibold text-red-300">
+              {filteredPostEventRows.length} / {postEventRows.length}
+            </div>
+          </div>
+
+          <div className="mt-5 grid gap-3 md:grid-cols-2">
+            <label className="block">
+              <span className="text-xs font-semibold uppercase tracking-[0.22em] text-zinc-500">
+                Filter Date
+              </span>
+
+              <input
+                type="date"
+                value={dateFilter}
+                onChange={(event) => setDateFilter(event.target.value)}
+                className="mt-2 w-full rounded-xl border border-zinc-700 bg-[#0d0f12] px-4 py-3 text-sm text-zinc-100 outline-none focus:border-red-500"
+              />
+            </label>
+
+            <label className="block">
+              <span className="text-xs font-semibold uppercase tracking-[0.22em] text-zinc-500">
+                Filter Track
+              </span>
+
+              <select
+                value={trackFilter}
+                onChange={(event) => setTrackFilter(event.target.value)}
+                className="mt-2 w-full rounded-xl border border-zinc-700 bg-[#0d0f12] px-4 py-3 text-sm text-zinc-100 outline-none focus:border-red-500"
+              >
+                <option value="all">All tracks</option>
+
+                {trackOptions.map((track) => (
+                  <option key={track} value={track}>
+                    {track}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+
+          {(dateFilter || trackFilter !== "all") && (
+            <button
+              type="button"
+              onClick={() => {
+                setDateFilter("");
+                setTrackFilter("all");
+              }}
+              className="mt-3 rounded-xl border border-zinc-700 px-4 py-2 text-xs font-semibold text-zinc-300 hover:border-red-500 hover:text-red-300"
+            >
+              Clear Filters
+            </button>
+          )}
+
+          <div className="mt-5 max-h-[520px] space-y-3 overflow-y-auto pr-2">
+            {filteredPostEventRows.length === 0 ? (
+              <div className="rounded-2xl border border-dashed border-zinc-700 bg-[#0d0f12] p-6 text-sm text-zinc-500">
+                No post-event sheets found for this filter.
+              </div>
+            ) : (
+              filteredPostEventRows.map((sheet) => {
+                const isOpening = openingPostEventPdfId === sheet.id;
+                const isDeleting = deletingPostEventId === sheet.id;
+
+                return (
+                  <div
+                    key={sheet.id}
+                    className="rounded-2xl border border-zinc-800 bg-[#0d0f12] p-4 transition hover:border-red-500/70 hover:bg-[#15191f]"
+                  >
+                    <button
+                      type="button"
+                      onClick={() => setSelectedSheet(sheet)}
+                      className="w-full text-left"
+                    >
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div>
+                          <p className="text-xs font-semibold uppercase tracking-[0.22em] text-red-400">
+                            {sheet.track_name || "Unknown Track"}
+                          </p>
+
+                          <h3 className="mt-2 text-xl font-semibold text-zinc-100">
+                            {sheet.chassis
+                              ? `Chassis ${sheet.chassis}`
+                              : `Car ${sheet.car_id}`}
+                          </h3>
+
+                          <p className="mt-1 text-sm text-zinc-400">
+                            Driver:{" "}
+                            <span className="font-semibold text-zinc-200">
+                              {cleanValue(sheet.driver)}
+                            </span>
+                          </p>
+                        </div>
+
+                        <div className="rounded-xl border border-zinc-700 bg-[#111418] px-3 py-2 text-right">
+                          <p className="text-xs text-zinc-500">Saved</p>
+
+                          <p className="text-sm font-semibold text-zinc-200">
+                            {niceDate(sheet.created_at)}
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="mt-4 grid gap-2 text-sm text-zinc-400 sm:grid-cols-3">
+                        <p>
+                          Engine:{" "}
+                          <span className="font-semibold text-zinc-200">
+                            {cleanValue(sheet.engine_no)}
+                          </span>
+                        </p>
+
+                        <p>
+                          Gbox:{" "}
+                          <span className="font-semibold text-zinc-200">
+                            {cleanValue(sheet.gearbox_no)}
+                          </span>
+                        </p>
+
+                        <p>
+                          Fuel:{" "}
+                          <span className="font-semibold text-zinc-200">
+                            {cleanValue(sheet.fuel_drained_kg)} kg
+                          </span>
+                        </p>
+
+                        <p>
+                          PDF:{" "}
+                          <span
+                            className={`font-semibold ${
+                              sheet.pdf_path ? "text-green-300" : "text-zinc-500"
+                            }`}
+                          >
+                            {sheet.pdf_path ? "Linked" : "Not linked"}
+                          </span>
+                        </p>
+                      </div>
+                    </button>
+
+                    <div className="mt-4 flex flex-wrap justify-end gap-3 border-t border-zinc-800 pt-4">
+                      <button
+                        type="button"
+                        onClick={() => setSelectedSheet(sheet)}
+                        className="rounded-xl border border-zinc-700 px-4 py-2 text-xs font-semibold text-zinc-300 hover:border-red-500 hover:text-red-300"
+                      >
+                        View Details
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => openPostEventPdf(sheet)}
+                        disabled={isOpening || !sheet.pdf_path}
+                        className="rounded-xl border border-red-900/60 bg-red-950/30 px-4 py-2 text-xs font-semibold text-red-200 hover:border-red-500 hover:bg-red-950/50 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        {isOpening ? "Opening..." : "Open PDF"}
+                      </button>
+
+                      {canDeletePostEvent && (
+                        <button
+                          type="button"
+                          onClick={() => deletePostEventSheet(sheet)}
+                          disabled={isDeleting}
+                          className="rounded-xl border border-red-800 bg-red-950/40 px-4 py-2 text-xs font-semibold text-red-300 hover:border-red-500 hover:bg-red-950/60 disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          {isDeleting ? "Deleting..." : "Delete"}
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                );
+              })
+            )}
+          </div>
+        </div>
       </section>
 
-      <section className="rounded-3xl border border-zinc-800 bg-[#14181d] p-6 shadow-xl">
-        <div className="flex flex-wrap items-center justify-between gap-4">
+      <section className="mt-6 rounded-3xl border border-red-900/50 bg-[#181315] p-6 shadow-xl">
+        <div className="mb-5 flex flex-wrap items-start justify-between gap-4">
           <div>
-            <h2 className="text-2xl font-semibold">Save Sheet</h2>
+            <p className="text-xs font-semibold uppercase tracking-[0.3em] text-red-400">
+              Mechanic Feedback
+            </p>
 
-            <p className="mt-1 text-sm text-zinc-500">
-              Saves this as a new post-event sheet record for Car {carId}.
+            <h2 className="mt-2 text-2xl font-semibold text-red-100">
+              Job Notes
+            </h2>
+
+            <p className="mt-1 text-sm text-zinc-400">
+              Notes added by mechanics against specific tasks.
             </p>
           </div>
 
-          <div className="flex flex-wrap gap-3">
-            <button
-              type="button"
-              onClick={clearForm}
-              disabled={!canEditPostEvent}
-              className="rounded-xl border border-zinc-700 px-5 py-3 text-sm font-semibold text-zinc-300 hover:border-red-500 hover:text-red-300 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              Clear Form
-            </button>
-
-            <button
-              type="button"
-              onClick={saveSheet}
-              disabled={saving || !canEditPostEvent}
-              className="rounded-xl bg-red-700 px-6 py-3 text-sm font-semibold text-white hover:bg-red-600 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {saving ? "Saving..." : "Save Post-Event Sheet"}
-            </button>
+          <div className="rounded-2xl border border-red-900/50 bg-[#0d0f12] px-4 py-3 text-sm font-semibold text-red-300">
+            {mechanicJobNotes.length} notes
           </div>
         </div>
+
+        {mechanicJobNotes.length === 0 ? (
+          <div className="rounded-2xl border border-dashed border-red-900/50 bg-[#0d0f12] p-6 text-sm text-zinc-500">
+            No mechanic notes added yet.
+          </div>
+        ) : (
+          <div className="max-h-[520px] space-y-3 overflow-y-auto pr-2">
+            {mechanicJobNotes.map((job) => {
+              const noteKey = `${job.section}-${job.job_id}`;
+              const isClearing = clearingNoteKey === noteKey;
+
+              return (
+                <div
+                  key={noteKey}
+                  className="rounded-2xl border border-red-900/40 bg-[#0d0f12] p-4"
+                >
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <p className="text-xs font-semibold uppercase tracking-[0.22em] text-red-400">
+                        {job.section} job #{job.job_id}
+                      </p>
+
+                      <h3 className="mt-2 text-base font-semibold text-zinc-100">
+                        {job.job_text}
+                      </h3>
+                    </div>
+
+                    <div className="rounded-xl border border-zinc-800 bg-[#111418] px-3 py-2 text-xs text-zinc-400">
+                      {job.updated_at
+                        ? new Date(job.updated_at).toLocaleString("en-GB")
+                        : "No timestamp"}
+                    </div>
+                  </div>
+
+                  <div className="mt-4 rounded-xl border border-zinc-800 bg-[#14181d] p-4 text-sm leading-6 text-zinc-200">
+                    {job.notes}
+                  </div>
+
+                  <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
+                    <p className="text-xs text-zinc-500">
+                      Added by {job.updated_by || "unknown"}
+                    </p>
+
+                    <button
+                      type="button"
+                      onClick={() => clearJobNote(job)}
+                      disabled={isClearing || !canEditJobNotes}
+                      className="rounded-lg border border-red-900/70 px-4 py-2 text-xs font-semibold text-red-300 transition hover:border-red-500 hover:bg-red-950/40 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      {isClearing ? "Clearing..." : "Clear Note"}
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
       </section>
+
+      {selectedClutchRecord && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4">
+          <div className="max-h-[90vh] w-full max-w-6xl overflow-y-auto rounded-3xl border border-zinc-800 bg-[#14181d] p-6 shadow-2xl">
+            <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.3em] text-red-400">
+                  Clutch Measurement
+                </p>
+
+                <h2 className="mt-3 text-4xl font-semibold text-zinc-100">
+                  Car {carId}
+                </h2>
+
+                <p className="mt-2 text-sm text-zinc-400">
+                  Saved{" "}
+                  <span className="font-semibold text-zinc-200">
+                    {dateTimeFromUnknown(
+                      getRecordValue(selectedClutchRecord, ["created_at"]),
+                    )}
+                  </span>{" "}
+                  by{" "}
+                  <span className="font-semibold text-zinc-200">
+                    {cleanValue(
+                      getRecordValue(selectedClutchRecord, [
+                        "created_by",
+                        "updated_by",
+                        "submitted_by",
+                      ]),
+                    )}
+                  </span>
+                </p>
+              </div>
+
+              <div className="flex flex-wrap gap-3">
+                <button
+                  type="button"
+                  onClick={() =>
+                    openClutchPdf(selectedClutchRecord, "clutch-modal")
+                  }
+                  disabled={openingPdfKey === "clutch-modal"}
+                  className="rounded-xl border border-red-900/60 bg-red-950/30 px-5 py-3 text-sm font-semibold text-red-200 transition hover:border-red-500 hover:bg-red-950/50 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {openingPdfKey === "clutch-modal" ? "Opening..." : "Open PDF"}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setSelectedClutchRecord(null)}
+                  className="rounded-xl border border-zinc-700 px-5 py-3 text-sm font-semibold text-zinc-200 hover:border-red-500 hover:text-red-300"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+
+            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
+              <DetailField
+                label="Car Name"
+                value={getRecordValue(selectedClutchRecord, ["car_name"])}
+              />
+
+              <DetailField
+                label="Serial No"
+                value={getRecordValue(selectedClutchRecord, ["serial_no"])}
+              />
+
+              <DetailField
+                label="Clutch No"
+                value={getRecordValue(selectedClutchRecord, ["clutch_no"])}
+              />
+
+              <DetailField
+                label="Measurement Date"
+                value={getRecordValue(selectedClutchRecord, [
+                  "measurement_date",
+                ])}
+              />
+
+              <DetailField
+                label="Distance KM"
+                value={getRecordValue(selectedClutchRecord, ["distance_km"])}
+              />
+            </div>
+
+            <div className="mt-6 grid gap-6 xl:grid-cols-2">
+              <PlateTable
+                title="Driven Plates"
+                value={selectedClutchRecord.driven_plates}
+              />
+
+              <PlateTable
+                title="Intermediate Plates"
+                value={selectedClutchRecord.intermediate_plates}
+              />
+            </div>
+
+            <div className="mt-6 rounded-3xl border border-zinc-800 bg-[#0d0f12] p-5">
+              <p className="mb-4 text-xs font-semibold uppercase tracking-[0.3em] text-red-400">
+                Measurement Summary
+              </p>
+
+              <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                {Object.entries(selectedClutchRecord)
+                  .filter(([key]) => !shouldHideFromClutchSummary(key))
+                  .map(([key, value]) => (
+                    <DetailField
+                      key={key}
+                      label={formatLabel(key)}
+                      value={value}
+                    />
+                  ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {selectedSheet && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4">
+          <div className="max-h-[90vh] w-full max-w-5xl overflow-y-auto rounded-3xl border border-zinc-800 bg-[#14181d] p-6 shadow-2xl">
+            <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.3em] text-red-400">
+                  Post Event Sheet
+                </p>
+
+                <h2 className="mt-3 text-4xl font-semibold text-zinc-100">
+                  {selectedSheet.track_name || "Unknown Track"}
+                </h2>
+
+                <p className="mt-2 text-sm text-zinc-400">
+                  Saved {niceDateTime(selectedSheet.created_at)} by{" "}
+                  <span className="font-semibold text-zinc-200">
+                    {selectedSheet.created_by || "unknown"}
+                  </span>
+                </p>
+              </div>
+
+              <div className="flex flex-wrap gap-3">
+                <button
+                  type="button"
+                  onClick={() => openPostEventPdf(selectedSheet)}
+                  disabled={
+                    openingPostEventPdfId === selectedSheet.id ||
+                    !selectedSheet.pdf_path
+                  }
+                  className="rounded-xl border border-red-900/60 bg-red-950/30 px-5 py-3 text-sm font-semibold text-red-200 transition hover:border-red-500 hover:bg-red-950/50 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {openingPostEventPdfId === selectedSheet.id
+                    ? "Opening..."
+                    : "Open PDF"}
+                </button>
+
+                {canDeletePostEvent && (
+                  <button
+                    type="button"
+                    onClick={() => deletePostEventSheet(selectedSheet)}
+                    disabled={deletingPostEventId === selectedSheet.id}
+                    className="rounded-xl border border-red-800 bg-red-950/40 px-5 py-3 text-sm font-semibold text-red-300 transition hover:border-red-500 hover:bg-red-950/60 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {deletingPostEventId === selectedSheet.id
+                      ? "Deleting..."
+                      : "Delete"}
+                  </button>
+                )}
+
+                <button
+                  type="button"
+                  onClick={() => setSelectedSheet(null)}
+                  className="rounded-xl border border-zinc-700 px-5 py-3 text-sm font-semibold text-zinc-200 hover:border-red-500 hover:text-red-300"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+
+            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
+              <DetailField label="Chassis" value={selectedSheet.chassis} />
+
+              <DetailField label="Driver" value={selectedSheet.driver} />
+
+              <DetailField
+                label="Engine No."
+                value={selectedSheet.engine_no}
+              />
+
+              <DetailField
+                label="Hours Remaining"
+                value={selectedSheet.hours_remaining}
+              />
+
+              <DetailField
+                label="Gearbox No."
+                value={selectedSheet.gearbox_no}
+              />
+            </div>
+
+            <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+              <DetailField
+                label="Fuel Drained"
+                value={
+                  selectedSheet.fuel_drained_kg
+                    ? `${selectedSheet.fuel_drained_kg} kg`
+                    : null
+                }
+              />
+
+              <DetailField
+                label="Front Ride Height"
+                value={selectedSheet.front_ride_height}
+              />
+
+              <DetailField
+                label="Rear Ride Height"
+                value={selectedSheet.rear_ride_height}
+              />
+
+              <DetailField
+                label="PDF"
+                value={selectedSheet.pdf_path ? "Linked" : "Not linked"}
+              />
+            </div>
+
+            <div className="mt-6 grid gap-4 md:grid-cols-2">
+              <DetailField
+                label="Diff Break-Off"
+                value={selectedSheet.diff_break_off}
+              />
+
+              <DetailField
+                label="Diff Dynamic"
+                value={selectedSheet.diff_dynamic}
+              />
+            </div>
+
+            <div className="mt-6 rounded-2xl border border-zinc-800 bg-[#0d0f12] p-5">
+              <p className="text-xs font-semibold uppercase tracking-[0.22em] text-zinc-500">
+                Notes
+              </p>
+
+              <p className="mt-3 whitespace-pre-wrap text-sm leading-6 text-zinc-200">
+                {selectedSheet.notes?.trim() || "No notes added."}
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
     </main>
-  );
-}
-
-function InputCard({
-  label,
-  value,
-  placeholder,
-  disabled,
-  onChange,
-}: {
-  label: string;
-  value: string;
-  placeholder: string;
-  disabled?: boolean;
-  onChange: (value: string) => void;
-}) {
-  return (
-    <label className="block rounded-2xl border border-zinc-800 bg-[#0d0f12] p-4">
-      <span className="text-xs font-semibold uppercase tracking-[0.22em] text-zinc-500">
-        {label}
-      </span>
-
-      <input
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-        placeholder={placeholder}
-        disabled={disabled}
-        className="mt-3 w-full border-none bg-transparent text-lg font-semibold text-zinc-100 outline-none placeholder:text-zinc-700 disabled:cursor-not-allowed disabled:opacity-50"
-      />
-    </label>
   );
 }
