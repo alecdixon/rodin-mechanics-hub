@@ -18,6 +18,8 @@ type PostEventForm = {
   hours_remaining: string;
   gearbox_no: string;
   fuel_drained_kg: string;
+  front_ride_height: string;
+  rear_ride_height: string;
   diff_break_off: string;
   diff_dynamic: string;
   notes: string;
@@ -30,6 +32,8 @@ const EMPTY_FORM: PostEventForm = {
   hours_remaining: "",
   gearbox_no: "",
   fuel_drained_kg: "",
+  front_ride_height: "",
+  rear_ride_height: "",
   diff_break_off: "",
   diff_dynamic: "",
   notes: "",
@@ -134,18 +138,23 @@ async function generatePostEventPdf({
 
   y -= 70;
 
+  drawField("Front Ride Height", form.front_ride_height, 40, y);
+  drawField("Rear Ride Height", form.rear_ride_height, 310, y);
+
+  y -= 70;
+
   drawField("Diff Break-Off", form.diff_break_off, 40, y);
   drawField("Diff Dynamic", form.diff_dynamic, 310, y);
 
-  y -= 90;
+  y -= 80;
 
   drawText("NOTES", 40, y, 9, boldFont, grey);
 
   page.drawRectangle({
     x: 40,
-    y: y - 180,
+    y: y - 145,
     width: 515,
-    height: 165,
+    height: 130,
     borderColor: rgb(0.75, 0.75, 0.75),
     borderWidth: 1,
   });
@@ -158,12 +167,12 @@ async function generatePostEventPdf({
 
   let noteY = y - 35;
 
-  noteLines.slice(0, 9).forEach((line) => {
+  noteLines.slice(0, 7).forEach((line) => {
     drawText(line, 52, noteY, 10, regularFont, dark);
     noteY -= 16;
   });
 
-  y -= 230;
+  y -= 190;
 
   drawText("Created By", 40, y, 9, boldFont, grey);
   drawText(userEmail || "Unknown", 40, y - 18, 10, regularFont, dark);
@@ -213,6 +222,8 @@ export default function PostEventSheetPage() {
       form.hours_remaining,
       form.gearbox_no,
       form.fuel_drained_kg,
+      form.front_ride_height,
+      form.rear_ride_height,
       form.diff_break_off,
       form.diff_dynamic,
     ];
@@ -301,6 +312,8 @@ export default function PostEventSheetPage() {
           hours_remaining: String(data.hours_remaining ?? ""),
           gearbox_no: String(data.gearbox_no ?? ""),
           fuel_drained_kg: String(data.fuel_drained_kg ?? ""),
+          front_ride_height: String(data.front_ride_height ?? ""),
+          rear_ride_height: String(data.rear_ride_height ?? ""),
           diff_break_off: String(data.diff_break_off ?? ""),
           diff_dynamic: String(data.diff_dynamic ?? ""),
           notes: String(data.notes ?? ""),
@@ -372,6 +385,8 @@ export default function PostEventSheetPage() {
           hours_remaining: form.hours_remaining.trim(),
           gearbox_no: form.gearbox_no.trim(),
           fuel_drained_kg: form.fuel_drained_kg.trim(),
+          front_ride_height: form.front_ride_height.trim(),
+          rear_ride_height: form.rear_ride_height.trim(),
           diff_break_off: form.diff_break_off.trim(),
           diff_dynamic: form.diff_dynamic.trim(),
           notes: form.notes.trim(),
@@ -438,7 +453,7 @@ export default function PostEventSheetPage() {
 
           <p className="mt-3 max-w-3xl text-sm text-zinc-400">
             Record the key post-event details for chassis, engine, gearbox, fuel
-            drained and diff checks.
+            drained, ride heights and diff checks.
           </p>
 
           {!canEditPostEvent && (
@@ -599,29 +614,57 @@ export default function PostEventSheetPage() {
         <div className="rounded-3xl border border-zinc-800 bg-[#14181d] p-6 shadow-xl lg:col-span-2">
           <div className="mb-5">
             <p className="text-xs uppercase tracking-[0.3em] text-red-400">
-              Differential
+              Platform
             </p>
 
-            <h2 className="mt-2 text-2xl font-semibold">Diff Checks</h2>
+            <h2 className="mt-2 text-2xl font-semibold">Ride Heights</h2>
           </div>
 
           <div className="grid gap-4 md:grid-cols-2">
             <InputCard
-              label="Diff Break-Off"
-              value={form.diff_break_off}
-              placeholder="Value / comment"
+              label="Front Ride Height"
+              value={form.front_ride_height}
+              placeholder="Front ride height"
               disabled={!canEditPostEvent}
-              onChange={(value) => updateField("diff_break_off", value)}
+              onChange={(value) => updateField("front_ride_height", value)}
             />
 
             <InputCard
-              label="Diff Dynamic"
-              value={form.diff_dynamic}
-              placeholder="Value / comment"
+              label="Rear Ride Height"
+              value={form.rear_ride_height}
+              placeholder="Rear ride height"
               disabled={!canEditPostEvent}
-              onChange={(value) => updateField("diff_dynamic", value)}
+              onChange={(value) => updateField("rear_ride_height", value)}
             />
           </div>
+        </div>
+      </section>
+
+      <section className="mb-6 rounded-3xl border border-zinc-800 bg-[#14181d] p-6 shadow-xl">
+        <div className="mb-5">
+          <p className="text-xs uppercase tracking-[0.3em] text-red-400">
+            Differential
+          </p>
+
+          <h2 className="mt-2 text-2xl font-semibold">Diff Checks</h2>
+        </div>
+
+        <div className="grid gap-4 md:grid-cols-2">
+          <InputCard
+            label="Diff Break-Off"
+            value={form.diff_break_off}
+            placeholder="Value / comment"
+            disabled={!canEditPostEvent}
+            onChange={(value) => updateField("diff_break_off", value)}
+          />
+
+          <InputCard
+            label="Diff Dynamic"
+            value={form.diff_dynamic}
+            placeholder="Value / comment"
+            disabled={!canEditPostEvent}
+            onChange={(value) => updateField("diff_dynamic", value)}
+          />
         </div>
       </section>
 
