@@ -17,7 +17,7 @@ import {
 } from "@/lib/userAccess";
 
 type IssueCategory = "Car 1" | "Car 2" | "Car 3" | "Truck" | "General";
-type IssueSeverity = "Low" | "Medium" | "High";
+type IssueSeverity = "1 Safety" | "2 Car Stopper" | "3 Performance" | "4 Other";
 
 type RecordedIssue = {
   id: string;
@@ -45,7 +45,12 @@ const ISSUE_CATEGORIES: IssueCategory[] = [
   "General",
 ];
 
-const ISSUE_SEVERITIES: IssueSeverity[] = ["Low", "Medium", "High"];
+const ISSUE_SEVERITIES: IssueSeverity[] = [
+  "1 Safety",
+  "2 Car Stopper",
+  "3 Performance",
+  "4 Other",
+];
 
 const DEFAULT_SUBSYSTEMS = [
   "Aero",
@@ -133,19 +138,34 @@ function initialsFromEmail(value: string | null | undefined) {
 }
 
 function normaliseSeverity(value: string | null | undefined): IssueSeverity {
-  if (value === "Low" || value === "Medium" || value === "High") {
+  if (
+    value === "1 Safety" ||
+    value === "2 Car Stopper" ||
+    value === "3 Performance" ||
+    value === "4 Other"
+  ) {
     return value;
   }
 
-  return "Medium";
+  // Compatibility for older records created before the severity scale changed.
+  if (value === "High") return "2 Car Stopper";
+  if (value === "Medium") return "3 Performance";
+  if (value === "Low") return "4 Other";
+
+  return "4 Other";
+}
+
+function severityCode(value: string | null | undefined) {
+  return normaliseSeverity(value).slice(0, 1);
 }
 
 function severityRank(value: string | null | undefined) {
   const severity = normaliseSeverity(value);
 
-  if (severity === "High") return 0;
-  if (severity === "Medium") return 1;
-  return 2;
+  if (severity === "1 Safety") return 0;
+  if (severity === "2 Car Stopper") return 1;
+  if (severity === "3 Performance") return 2;
+  return 3;
 }
 
 function backHref(role: UserRole, assignedCar: number | null) {
@@ -199,15 +219,19 @@ function categoryClass(category: string) {
 function severityClass(severityValue: string | null | undefined) {
   const severity = normaliseSeverity(severityValue);
 
-  if (severity === "High") {
-    return "border-red-700 bg-red-950/50 text-red-200";
+  if (severity === "1 Safety") {
+    return "border-red-700 bg-red-950/60 text-red-100";
   }
 
-  if (severity === "Medium") {
-    return "border-yellow-700 bg-yellow-950/40 text-yellow-200";
+  if (severity === "2 Car Stopper") {
+    return "border-orange-700 bg-orange-950/50 text-orange-100";
   }
 
-  return "border-green-700 bg-green-950/30 text-green-200";
+  if (severity === "3 Performance") {
+    return "border-blue-700 bg-blue-950/40 text-blue-100";
+  }
+
+  return "border-zinc-700 bg-zinc-900 text-zinc-300";
 }
 
 function hasSolution(issue: RecordedIssue) {
@@ -238,9 +262,10 @@ async function loadExcelTemplateWorkbook() {
     const workbook = XLSX.utils.book_new();
     const worksheet = XLSX.utils.aoa_to_sheet([
       [null, null, "Severity", "Description", "F2 Issues List", null, null, null, null],
-      [null, null, "Low", "Low priority / non-critical", null, null, null, null, null],
-      [null, null, "Medium", "Needs action but not car-stopping", null, null, null, null, null],
-      [null, null, "High", "Safety / car-stopping / urgent", null, null, null, null, null],
+      [null, null, "1", "Safety", null, null, null, null, null],
+      [null, null, "2", "Car Stopper", null, null, null, null, null],
+      [null, null, "3", "Performance", null, null, null, null, null],
+      [null, null, "4", "Other", null, null, null, null, null],
       [null, null, null, null, null, null, null, null, null],
       ["Event", "Day", "Severity", "Topic", "Raised by", "Description", "Action / Solution", "Action leader", "Status"],
     ]);
@@ -276,7 +301,7 @@ export default function RecordedIssuesPage() {
   const [reportDate, setReportDate] = useState(todayIsoDate());
   const [circuit, setCircuit] = useState("");
   const [issueCategory, setIssueCategory] = useState<IssueCategory>("General");
-  const [severity, setSeverity] = useState<IssueSeverity>("Medium");
+  const [severity, setSeverity] = useState<IssueSeverity>("4 Other");
   const [affectedSubsystem, setAffectedSubsystem] = useState("");
   const [recordedIssue, setRecordedIssue] = useState("");
   const [recordedSolution, setRecordedSolution] = useState("");
@@ -334,6 +359,7 @@ export default function RecordedIssuesPage() {
         issue.circuit,
         issue.issue_category,
         normaliseSeverity(issue.severity),
+        severityCode(issue.severity),
         issue.affected_subsystem,
         issue.recorded_issue,
         issue.recorded_solution,
@@ -447,7 +473,7 @@ export default function RecordedIssuesPage() {
     setReportDate(todayIsoDate());
     setCircuit("");
     setIssueCategory("General");
-    setSeverity("Medium");
+    setSeverity("4 Other");
     setAffectedSubsystem("");
     setRecordedIssue("");
     setRecordedSolution("");
@@ -685,7 +711,7 @@ export default function RecordedIssuesPage() {
       const exportRows = sortedIssues.map((issue) => [
         issue.circuit || "",
         niceDate(issue.report_date),
-        normaliseSeverity(issue.severity),
+        severityCode(issue.severity),
         issue.affected_subsystem || "",
         initialsFromEmail(issue.created_by || issue.updated_by),
         issue.recorded_issue || "",
@@ -1103,9 +1129,11 @@ export default function RecordedIssuesPage() {
                     className={`rounded-2xl border p-5 transition ${
                       issue.solution_approved
                         ? "border-green-700 bg-green-950/20"
-                        : issueSeverity === "High"
-                          ? "border-red-900 bg-red-950/20"
-                          : "border-zinc-800 bg-[#0d0f12]"
+                        : issueSeverity === "1 Safety"
+                          ? "border-red-900 bg-red-950/25"
+                          : issueSeverity === "2 Car Stopper"
+                            ? "border-orange-900 bg-orange-950/20"
+                            : "border-zinc-800 bg-[#0d0f12]"
                     }`}
                   >
                     <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
@@ -1124,7 +1152,7 @@ export default function RecordedIssuesPage() {
                               issue.severity,
                             )}`}
                           >
-                            {issueSeverity} Severity
+                            {issueSeverity}
                           </span>
 
                           <span className="rounded-full border border-red-900 bg-red-950/40 px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-red-200">
