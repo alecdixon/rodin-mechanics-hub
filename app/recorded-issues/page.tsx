@@ -3,6 +3,7 @@
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import * as XLSX from "xlsx";
 import LogoutButton from "@/app/components/LogoutButton";
 import { supabase } from "@/lib/supabase";
 import {
@@ -16,12 +17,14 @@ import {
 } from "@/lib/userAccess";
 
 type IssueCategory = "Car 1" | "Car 2" | "Car 3" | "Truck" | "General";
+type IssueSeverity = "Low" | "Medium" | "High";
 
 type RecordedIssue = {
   id: string;
   report_date: string;
   circuit: string;
   issue_category: IssueCategory | string;
+  severity: IssueSeverity | string | null;
   affected_subsystem: string;
   recorded_issue: string;
   recorded_solution: string | null;
@@ -42,6 +45,8 @@ const ISSUE_CATEGORIES: IssueCategory[] = [
   "General",
 ];
 
+const ISSUE_SEVERITIES: IssueSeverity[] = ["Low", "Medium", "High"];
+
 const DEFAULT_SUBSYSTEMS = [
   "Aero",
   "Brakes",
@@ -59,6 +64,10 @@ const DEFAULT_SUBSYSTEMS = [
   "Suspension",
   "Tyres",
 ];
+
+const EXCEL_TEMPLATE_PATH = "/templates/TEAM_Rodin_Faults_List_2026.xlsx";
+const EXCEL_SHEET_NAME = "MainSheet";
+const EXCEL_FIRST_DATA_ROW = 7;
 
 function todayIsoDate() {
   return new Date().toISOString().slice(0, 10);
@@ -100,6 +109,22 @@ function niceDateTime(value: string | null | undefined) {
 
 function normaliseSearch(value: string) {
   return value.trim().toLowerCase();
+}
+
+function normaliseSeverity(value: string | null | undefined): IssueSeverity {
+  if (value === "Low" || value === "Medium" || value === "High") {
+    return value;
+  }
+
+  return "Medium";
+}
+
+function severityRank(value: string | null | undefined) {
+  const severity = normaliseSeverity(value);
+
+  if (severity === "High") return 0;
+  if (severity === "Medium") return 1;
+  return 2;
 }
 
 function backHref(role: UserRole, assignedCar: number | null) {
@@ -150,8 +175,62 @@ function categoryClass(category: string) {
   return "border-zinc-700 bg-zinc-900 text-zinc-300";
 }
 
+function severityClass(severityValue: string | null | undefined) {
+  const severity = normaliseSeverity(severityValue);
+
+  if (severity === "High") {
+    return "border-red-700 bg-red-950/50 text-red-200";
+  }
+
+  if (severity === "Medium") {
+    return "border-yellow-700 bg-yellow-950/40 text-yellow-200";
+  }
+
+  return "border-green-700 bg-green-950/30 text-green-200";
+}
+
 function hasSolution(issue: RecordedIssue) {
   return Boolean(issue.recorded_solution?.trim());
+}
+
+function solutionStatus(issue: RecordedIssue) {
+  if (issue.solution_approved) return "Approved";
+  if (hasSolution(issue)) return "Solution Added";
+  return "Solution Pending";
+}
+
+async function loadExcelTemplateWorkbook() {
+  try {
+    const response = await fetch(EXCEL_TEMPLATE_PATH, { cache: "no-store" });
+
+    if (!response.ok) {
+      throw new Error(`Template fetch failed: ${response.status}`);
+    }
+
+    const buffer = await response.arrayBuffer();
+    return XLSX.read(buffer, {
+      type: "array",
+      cellStyles: true,
+      cellDates: true,
+    });
+  } catch {
+    const workbook = XLSX.utils.book_new();
+    const worksheet = XLSX.utils.aoa_to_sheet([
+      [null, null, "Severity", "Description", "F2 Issues List", null, null, null, null],
+      [null, null, "Low", "Low priority / non-critical", null, null, null, null, null],
+      [null, null, "Medium", "Needs action but not car-stopping", null, null, null, null, null],
+      [null, null, "High", "Safety / car-stopping / urgent", null, null, null, null, null],
+      [null, null, null, null, null, null, null, null, null],
+      ["Event", "Day", "Severity", "Topic", "Raised by", "Description", "Action / Solution", "Action leader", "Status"],
+    ]);
+
+    XLSX.utils.book_append_sheet(workbook, worksheet, EXCEL_SHEET_NAME);
+    return workbook;
+  }
+}
+
+function fileSafeDateTime() {
+  return new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-");
 }
 
 export default function RecordedIssuesPage() {
@@ -159,6 +238,7 @@ export default function RecordedIssuesPage() {
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [exportingExcel, setExportingExcel] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [approvingId, setApprovingId] = useState<string | null>(null);
@@ -175,11 +255,15 @@ export default function RecordedIssuesPage() {
   const [reportDate, setReportDate] = useState(todayIsoDate());
   const [circuit, setCircuit] = useState("");
   const [issueCategory, setIssueCategory] = useState<IssueCategory>("General");
+  const [severity, setSeverity] = useState<IssueSeverity>("Medium");
   const [affectedSubsystem, setAffectedSubsystem] = useState("");
   const [recordedIssue, setRecordedIssue] = useState("");
   const [recordedSolution, setRecordedSolution] = useState("");
   const [searchText, setSearchText] = useState("");
   const [categoryFilter, setCategoryFilter] = useState<"All" | IssueCategory>(
+    "All",
+  );
+  const [severityFilter, setSeverityFilter] = useState<"All" | IssueSeverity>(
     "All",
   );
 
@@ -215,12 +299,20 @@ export default function RecordedIssuesPage() {
         return false;
       }
 
+      if (
+        severityFilter !== "All" &&
+        normaliseSeverity(issue.severity) !== severityFilter
+      ) {
+        return false;
+      }
+
       if (!query) return true;
 
       const combined = [
         issue.report_date,
         issue.circuit,
         issue.issue_category,
+        normaliseSeverity(issue.severity),
         issue.affected_subsystem,
         issue.recorded_issue,
         issue.recorded_solution,
@@ -235,13 +327,16 @@ export default function RecordedIssuesPage() {
 
       return combined.includes(query);
     });
-  }, [categoryFilter, issues, searchText]);
+  }, [categoryFilter, issues, searchText, severityFilter]);
 
   const sortedIssues = useMemo(() => {
     return [...filteredIssues].sort((a, b) => {
       if (a.solution_approved !== b.solution_approved) {
         return a.solution_approved ? 1 : -1;
       }
+
+      const severityCompare = severityRank(a.severity) - severityRank(b.severity);
+      if (severityCompare !== 0) return severityCompare;
 
       const dateCompare = b.report_date.localeCompare(a.report_date);
       if (dateCompare !== 0) return dateCompare;
@@ -331,6 +426,7 @@ export default function RecordedIssuesPage() {
     setReportDate(todayIsoDate());
     setCircuit("");
     setIssueCategory("General");
+    setSeverity("Medium");
     setAffectedSubsystem("");
     setRecordedIssue("");
     setRecordedSolution("");
@@ -355,6 +451,7 @@ export default function RecordedIssuesPage() {
         ? (issue.issue_category as IssueCategory)
         : "General",
     );
+    setSeverity(normaliseSeverity(issue.severity));
     setAffectedSubsystem(issue.affected_subsystem || "");
     setRecordedIssue(issue.recorded_issue || "");
     setRecordedSolution(issue.recorded_solution || "");
@@ -379,6 +476,7 @@ export default function RecordedIssuesPage() {
       report_date: reportDate,
       circuit: circuit.trim(),
       issue_category: issueCategory,
+      severity,
       affected_subsystem: affectedSubsystem.trim(),
       recorded_issue: recordedIssue.trim(),
       recorded_solution: cleanSolution || null,
@@ -390,11 +488,12 @@ export default function RecordedIssuesPage() {
       !cleanPayload.report_date ||
       !cleanPayload.circuit ||
       !cleanPayload.issue_category ||
+      !cleanPayload.severity ||
       !cleanPayload.affected_subsystem ||
       !cleanPayload.recorded_issue
     ) {
       setErrorMessage(
-        "Please fill out date, circuit, issue category, subsystem and recorded issue. The solution can be left blank if it is still pending.",
+        "Please fill out date, circuit, issue category, severity, subsystem and recorded issue. The solution can be left blank if it is still pending.",
       );
       return;
     }
@@ -547,6 +646,69 @@ export default function RecordedIssuesPage() {
     await loadIssues();
   }
 
+  async function exportIssuesToExcel() {
+    if (sortedIssues.length === 0) {
+      setMessage("");
+      setErrorMessage("There are no recorded issues to export with the current filters.");
+      return;
+    }
+
+    setExportingExcel(true);
+    setMessage("");
+    setErrorMessage("");
+
+    try {
+      const workbook = await loadExcelTemplateWorkbook();
+      const worksheet = workbook.Sheets[EXCEL_SHEET_NAME] ?? workbook.Sheets[workbook.SheetNames[0]];
+
+      const exportRows = sortedIssues.map((issue) => [
+        issue.circuit || "",
+        niceDate(issue.report_date),
+        normaliseSeverity(issue.severity),
+        issue.affected_subsystem || "",
+        issue.created_by || issue.updated_by || "",
+        issue.recorded_issue || "",
+        issue.recorded_solution?.trim() || "Solution Pending",
+        issue.updated_by || issue.solution_approved_by || "",
+        solutionStatus(issue),
+      ]);
+
+      XLSX.utils.sheet_add_aoa(worksheet, exportRows, {
+        origin: `A${EXCEL_FIRST_DATA_ROW}`,
+      });
+
+      const endRow = Math.max(EXCEL_FIRST_DATA_ROW + exportRows.length - 1, 6);
+      worksheet["!ref"] = XLSX.utils.encode_range({
+        s: { r: 0, c: 0 },
+        e: { r: endRow - 1, c: 8 },
+      });
+
+      worksheet["!cols"] = [
+        { wch: 18 },
+        { wch: 14 },
+        { wch: 12 },
+        { wch: 24 },
+        { wch: 28 },
+        { wch: 55 },
+        { wch: 55 },
+        { wch: 28 },
+        { wch: 18 },
+      ];
+
+      const fileName = `Rodin_Recorded_Issues_${fileSafeDateTime()}.xlsx`;
+      XLSX.writeFile(workbook, fileName, { bookType: "xlsx" });
+      setMessage(`Excel export generated: ${fileName}`);
+    } catch (error) {
+      setErrorMessage(
+        error instanceof Error
+          ? error.message
+          : "Failed to generate Excel export.",
+      );
+    }
+
+    setExportingExcel(false);
+  }
+
   if (loading) {
     return (
       <main className="flex min-h-screen items-center justify-center bg-[#0d0f12] text-zinc-400">
@@ -569,9 +731,9 @@ export default function RecordedIssuesPage() {
             </h1>
 
             <p className="mt-2 max-w-3xl text-sm leading-6 text-zinc-400">
-              Log faults, fixes and repeat issues by date, circuit, category and
-              subsystem. Solutions can be added later, and the chief mechanic can
-              approve a solution once it is confirmed.
+              Log faults, fixes and repeat issues by date, circuit, category,
+              severity and subsystem. Solutions can be added later, and the chief
+              mechanic can approve a solution once it is confirmed.
             </p>
 
             {readOnly && (
@@ -583,6 +745,15 @@ export default function RecordedIssuesPage() {
           </div>
 
           <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={exportIssuesToExcel}
+              disabled={exportingExcel || sortedIssues.length === 0}
+              className="rounded-xl bg-emerald-700 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-600 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {exportingExcel ? "Generating..." : "Export Excel"}
+            </button>
+
             <Link
               href={backHref(userRole, assignedCar)}
               className="rounded-xl border border-zinc-700 px-4 py-2 text-sm font-semibold text-zinc-200 hover:border-red-500 hover:text-red-200"
@@ -695,6 +866,26 @@ export default function RecordedIssuesPage() {
 
                 <div>
                   <label className="mb-2 block text-xs font-semibold uppercase tracking-[0.18em] text-zinc-500">
+                    Severity
+                  </label>
+                  <select
+                    value={severity}
+                    onChange={(event) =>
+                      setSeverity(event.target.value as IssueSeverity)
+                    }
+                    className="w-full rounded-xl border border-zinc-700 bg-[#0d0f12] px-4 py-3 text-zinc-100 outline-none focus:border-red-500"
+                    required
+                  >
+                    {ISSUE_SEVERITIES.map((severityOption) => (
+                      <option key={severityOption} value={severityOption}>
+                        {severityOption}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="mb-2 block text-xs font-semibold uppercase tracking-[0.18em] text-zinc-500">
                     Affected Subsystem
                   </label>
                   <input
@@ -772,6 +963,15 @@ export default function RecordedIssuesPage() {
                 but cannot add new issues, edit existing entries, approve
                 solutions, or delete records.
               </p>
+
+              <button
+                type="button"
+                onClick={exportIssuesToExcel}
+                disabled={exportingExcel || sortedIssues.length === 0}
+                className="mt-5 w-full rounded-xl bg-emerald-700 px-4 py-3 font-semibold text-white transition hover:bg-emerald-600 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {exportingExcel ? "Generating Excel..." : "Export Excel"}
+              </button>
             </aside>
           )}
 
@@ -784,7 +984,7 @@ export default function RecordedIssuesPage() {
                 </p>
               </div>
 
-              <div className="grid w-full gap-3 md:max-w-2xl md:grid-cols-[180px_1fr]">
+              <div className="grid w-full gap-3 md:max-w-3xl md:grid-cols-[160px_160px_1fr]">
                 <label>
                   <span className="mb-2 block text-xs font-semibold uppercase tracking-[0.18em] text-zinc-500">
                     Category
@@ -807,17 +1007,62 @@ export default function RecordedIssuesPage() {
 
                 <label>
                   <span className="mb-2 block text-xs font-semibold uppercase tracking-[0.18em] text-zinc-500">
+                    Severity
+                  </span>
+                  <select
+                    value={severityFilter}
+                    onChange={(event) =>
+                      setSeverityFilter(event.target.value as "All" | IssueSeverity)
+                    }
+                    className="w-full rounded-xl border border-zinc-700 bg-[#0d0f12] px-4 py-3 text-zinc-100 outline-none focus:border-red-500"
+                  >
+                    <option value="All">All</option>
+                    {ISSUE_SEVERITIES.map((severityOption) => (
+                      <option key={severityOption} value={severityOption}>
+                        {severityOption}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
+                <label>
+                  <span className="mb-2 block text-xs font-semibold uppercase tracking-[0.18em] text-zinc-500">
                     Search
                   </span>
                   <input
                     type="search"
                     value={searchText}
                     onChange={(event) => setSearchText(event.target.value)}
-                    placeholder="Search category, subsystem, issue, solution, circuit..."
+                    placeholder="Search category, severity, subsystem, issue, solution, circuit..."
                     className="w-full rounded-xl border border-zinc-700 bg-[#0d0f12] px-4 py-3 text-zinc-100 outline-none focus:border-red-500"
                   />
                 </label>
               </div>
+            </div>
+
+            <div className="mt-4 flex flex-wrap gap-3">
+              <button
+                type="button"
+                onClick={exportIssuesToExcel}
+                disabled={exportingExcel || sortedIssues.length === 0}
+                className="rounded-xl border border-emerald-800 bg-emerald-950/40 px-4 py-2 text-sm font-semibold text-emerald-200 hover:border-emerald-500 hover:bg-emerald-950/60 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {exportingExcel ? "Generating Excel..." : "Export Filtered Excel"}
+              </button>
+
+              {(categoryFilter !== "All" || severityFilter !== "All" || searchText) && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setCategoryFilter("All");
+                    setSeverityFilter("All");
+                    setSearchText("");
+                  }}
+                  className="rounded-xl border border-zinc-700 px-4 py-2 text-sm font-semibold text-zinc-300 hover:border-red-500 hover:text-red-200"
+                >
+                  Clear Filters
+                </button>
+              )}
             </div>
 
             <div className="mt-6 space-y-4">
@@ -829,6 +1074,7 @@ export default function RecordedIssuesPage() {
 
               {sortedIssues.map((issue) => {
                 const solutionExists = hasSolution(issue);
+                const issueSeverity = normaliseSeverity(issue.severity);
 
                 return (
                   <article
@@ -836,7 +1082,9 @@ export default function RecordedIssuesPage() {
                     className={`rounded-2xl border p-5 transition ${
                       issue.solution_approved
                         ? "border-green-700 bg-green-950/20"
-                        : "border-zinc-800 bg-[#0d0f12]"
+                        : issueSeverity === "High"
+                          ? "border-red-900 bg-red-950/20"
+                          : "border-zinc-800 bg-[#0d0f12]"
                     }`}
                   >
                     <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
@@ -848,6 +1096,14 @@ export default function RecordedIssuesPage() {
                             )}`}
                           >
                             {issue.issue_category || "General"}
+                          </span>
+
+                          <span
+                            className={`rounded-full border px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] ${severityClass(
+                              issue.severity,
+                            )}`}
+                          >
+                            {issueSeverity} Severity
                           </span>
 
                           <span className="rounded-full border border-red-900 bg-red-950/40 px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-red-200">
