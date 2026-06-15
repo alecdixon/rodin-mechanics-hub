@@ -37,11 +37,15 @@ type PostEventSheet = {
   hours_remaining: string | null;
   gearbox_no: string | null;
   fuel_drained_kg: string | null;
+  front_ride_height: string | null;
+  rear_ride_height: string | null;
   diff_break_off: string | null;
   diff_dynamic: string | null;
   notes: string | null;
   created_by: string | null;
   created_at: string | null;
+  pdf_path: string | null;
+  pdf_filename: string | null;
 };
 
 type GenericRecord = Record<string, unknown>;
@@ -68,6 +72,7 @@ type PlateRow = {
 };
 
 const CLUTCH_PDF_BUCKET = "clutch-measurement-pdfs";
+const POST_EVENT_PDF_BUCKET = "post-event-sheets";
 
 function niceDate(value: string | null | undefined) {
   if (!value) return "No date";
@@ -333,6 +338,9 @@ export default function ChiefCarViewerPage() {
   const [clutchDateFilter, setClutchDateFilter] = useState("");
   const [clutchSearchFilter, setClutchSearchFilter] = useState("");
   const [openingPdfKey, setOpeningPdfKey] = useState<string | null>(null);
+  const [openingPostEventPdfId, setOpeningPostEventPdfId] = useState<
+    string | null
+  >(null);
 
   const [errorMessage, setErrorMessage] = useState("");
   const [message, setMessage] = useState("");
@@ -473,6 +481,37 @@ export default function ChiefCarViewerPage() {
 
     setErrorMessage("No PDF is linked to this clutch measurement record yet.");
     setOpeningPdfKey(null);
+  }
+
+  async function openPostEventPdf(sheet: PostEventSheet) {
+    setMessage("");
+    setErrorMessage("");
+    setOpeningPostEventPdfId(sheet.id);
+
+    if (!sheet.pdf_path) {
+      setErrorMessage(
+        "No PDF is linked to this post-event sheet. The database record exists, but pdf_path is empty.",
+      );
+      setOpeningPostEventPdfId(null);
+      return;
+    }
+
+    const { data, error } = await supabase.storage
+      .from(POST_EVENT_PDF_BUCKET)
+      .createSignedUrl(sheet.pdf_path, 60 * 10);
+
+    if (error || !data?.signedUrl) {
+      setErrorMessage(
+        error?.message ||
+          "Could not open the post-event PDF. Check the storage bucket and saved PDF path.",
+      );
+
+      setOpeningPostEventPdfId(null);
+      return;
+    }
+
+    window.open(data.signedUrl, "_blank", "noopener,noreferrer");
+    setOpeningPostEventPdfId(null);
   }
 
   async function clearJobNote(job: JobRow) {
@@ -1061,66 +1100,104 @@ export default function ChiefCarViewerPage() {
                 No post-event sheets found for this filter.
               </div>
             ) : (
-              filteredPostEventRows.map((sheet) => (
-                <button
-                  key={sheet.id}
-                  type="button"
-                  onClick={() => setSelectedSheet(sheet)}
-                  className="w-full rounded-2xl border border-zinc-800 bg-[#0d0f12] p-4 text-left transition hover:border-red-500/70 hover:bg-[#15191f]"
-                >
-                  <div className="flex flex-wrap items-start justify-between gap-3">
-                    <div>
-                      <p className="text-xs font-semibold uppercase tracking-[0.22em] text-red-400">
-                        {sheet.track_name || "Unknown Track"}
-                      </p>
+              filteredPostEventRows.map((sheet) => {
+                const isOpening = openingPostEventPdfId === sheet.id;
 
-                      <h3 className="mt-2 text-xl font-semibold text-zinc-100">
-                        {sheet.chassis
-                          ? `Chassis ${sheet.chassis}`
-                          : `Car ${sheet.car_id}`}
-                      </h3>
+                return (
+                  <div
+                    key={sheet.id}
+                    className="rounded-2xl border border-zinc-800 bg-[#0d0f12] p-4 transition hover:border-red-500/70 hover:bg-[#15191f]"
+                  >
+                    <button
+                      type="button"
+                      onClick={() => setSelectedSheet(sheet)}
+                      className="w-full text-left"
+                    >
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div>
+                          <p className="text-xs font-semibold uppercase tracking-[0.22em] text-red-400">
+                            {sheet.track_name || "Unknown Track"}
+                          </p>
 
-                      <p className="mt-1 text-sm text-zinc-400">
-                        Driver:{" "}
-                        <span className="font-semibold text-zinc-200">
-                          {cleanValue(sheet.driver)}
-                        </span>
-                      </p>
-                    </div>
+                          <h3 className="mt-2 text-xl font-semibold text-zinc-100">
+                            {sheet.chassis
+                              ? `Chassis ${sheet.chassis}`
+                              : `Car ${sheet.car_id}`}
+                          </h3>
 
-                    <div className="rounded-xl border border-zinc-700 bg-[#111418] px-3 py-2 text-right">
-                      <p className="text-xs text-zinc-500">Saved</p>
+                          <p className="mt-1 text-sm text-zinc-400">
+                            Driver:{" "}
+                            <span className="font-semibold text-zinc-200">
+                              {cleanValue(sheet.driver)}
+                            </span>
+                          </p>
+                        </div>
 
-                      <p className="text-sm font-semibold text-zinc-200">
-                        {niceDate(sheet.created_at)}
-                      </p>
+                        <div className="rounded-xl border border-zinc-700 bg-[#111418] px-3 py-2 text-right">
+                          <p className="text-xs text-zinc-500">Saved</p>
+
+                          <p className="text-sm font-semibold text-zinc-200">
+                            {niceDate(sheet.created_at)}
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="mt-4 grid gap-2 text-sm text-zinc-400 sm:grid-cols-4">
+                        <p>
+                          Engine:{" "}
+                          <span className="font-semibold text-zinc-200">
+                            {cleanValue(sheet.engine_no)}
+                          </span>
+                        </p>
+
+                        <p>
+                          Gbox:{" "}
+                          <span className="font-semibold text-zinc-200">
+                            {cleanValue(sheet.gearbox_no)}
+                          </span>
+                        </p>
+
+                        <p>
+                          Fuel:{" "}
+                          <span className="font-semibold text-zinc-200">
+                            {cleanValue(sheet.fuel_drained_kg)} kg
+                          </span>
+                        </p>
+
+                        <p>
+                          PDF:{" "}
+                          <span
+                            className={`font-semibold ${
+                              sheet.pdf_path ? "text-green-300" : "text-zinc-500"
+                            }`}
+                          >
+                            {sheet.pdf_path ? "Linked" : "Not linked"}
+                          </span>
+                        </p>
+                      </div>
+                    </button>
+
+                    <div className="mt-4 flex flex-wrap justify-end gap-3 border-t border-zinc-800 pt-4">
+                      <button
+                        type="button"
+                        onClick={() => setSelectedSheet(sheet)}
+                        className="rounded-xl border border-zinc-700 px-4 py-2 text-xs font-semibold text-zinc-300 hover:border-red-500 hover:text-red-300"
+                      >
+                        View Details
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => openPostEventPdf(sheet)}
+                        disabled={isOpening || !sheet.pdf_path}
+                        className="rounded-xl border border-red-900/60 bg-red-950/30 px-4 py-2 text-xs font-semibold text-red-200 hover:border-red-500 hover:bg-red-950/50 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        {isOpening ? "Opening..." : "Open PDF"}
+                      </button>
                     </div>
                   </div>
-
-                  <div className="mt-4 grid gap-2 text-sm text-zinc-400 sm:grid-cols-3">
-                    <p>
-                      Engine:{" "}
-                      <span className="font-semibold text-zinc-200">
-                        {cleanValue(sheet.engine_no)}
-                      </span>
-                    </p>
-
-                    <p>
-                      Gbox:{" "}
-                      <span className="font-semibold text-zinc-200">
-                        {cleanValue(sheet.gearbox_no)}
-                      </span>
-                    </p>
-
-                    <p>
-                      Fuel:{" "}
-                      <span className="font-semibold text-zinc-200">
-                        {cleanValue(sheet.fuel_drained_kg)} kg
-                      </span>
-                    </p>
-                  </div>
-                </button>
-              ))
+                );
+              })
             )}
           </div>
         </div>
@@ -1343,13 +1420,29 @@ export default function ChiefCarViewerPage() {
                 </p>
               </div>
 
-              <button
-                type="button"
-                onClick={() => setSelectedSheet(null)}
-                className="rounded-xl border border-zinc-700 px-5 py-3 text-sm font-semibold text-zinc-200 hover:border-red-500 hover:text-red-300"
-              >
-                Close
-              </button>
+              <div className="flex flex-wrap gap-3">
+                <button
+                  type="button"
+                  onClick={() => openPostEventPdf(selectedSheet)}
+                  disabled={
+                    openingPostEventPdfId === selectedSheet.id ||
+                    !selectedSheet.pdf_path
+                  }
+                  className="rounded-xl border border-red-900/60 bg-red-950/30 px-5 py-3 text-sm font-semibold text-red-200 transition hover:border-red-500 hover:bg-red-950/50 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {openingPostEventPdfId === selectedSheet.id
+                    ? "Opening..."
+                    : "Open PDF"}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setSelectedSheet(null)}
+                  className="rounded-xl border border-zinc-700 px-5 py-3 text-sm font-semibold text-zinc-200 hover:border-red-500 hover:text-red-300"
+                >
+                  Close
+                </button>
+              </div>
             </div>
 
             <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
@@ -1373,7 +1466,7 @@ export default function ChiefCarViewerPage() {
               />
             </div>
 
-            <div className="mt-6 grid gap-4 md:grid-cols-3">
+            <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
               <DetailField
                 label="Fuel Drained"
                 value={
@@ -1383,6 +1476,23 @@ export default function ChiefCarViewerPage() {
                 }
               />
 
+              <DetailField
+                label="Front Ride Height"
+                value={selectedSheet.front_ride_height}
+              />
+
+              <DetailField
+                label="Rear Ride Height"
+                value={selectedSheet.rear_ride_height}
+              />
+
+              <DetailField
+                label="PDF"
+                value={selectedSheet.pdf_path ? "Linked" : "Not linked"}
+              />
+            </div>
+
+            <div className="mt-6 grid gap-4 md:grid-cols-2">
               <DetailField
                 label="Diff Break-Off"
                 value={selectedSheet.diff_break_off}
