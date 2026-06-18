@@ -1,8 +1,14 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type PointerEvent,
+} from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import LogoutButton from "@/app/components/LogoutButton";
 import { getCurrentUserEmail } from "@/lib/authHelpers";
 import { supabase } from "@/lib/supabase";
@@ -10,7 +16,6 @@ import {
   canEditLegality,
   getAssignedCar,
   getUserRole,
-  hasPermission,
   isReadOnlyUser,
   type UserRole,
 } from "@/lib/userAccess";
@@ -25,12 +30,35 @@ type DashboardCar = {
 
 type LegalityStatus = "legal" | "illegal";
 
+type LegalitySide = "LH" | "RH" | "Centre";
+
 type LegalityPoint = {
   key: string;
   label: string;
   shortLabel: string;
-  side: "LH" | "RH" | "Centre";
+  side: LegalitySide;
   position: string;
+  x: number;
+  y: number;
+  sort_order: number;
+  active: boolean;
+};
+
+type LegalityLayoutPointRecord = {
+  id: string;
+  point_key: string;
+  label: string;
+  short_label: string;
+  side: LegalitySide;
+  position: string | null;
+  x_percent: number | string | null;
+  y_percent: number | string | null;
+  sort_order: number | null;
+  active: boolean | null;
+  created_by: string | null;
+  created_at: string | null;
+  updated_by: string | null;
+  updated_at: string | null;
 };
 
 type LegalityItemState = {
@@ -41,9 +69,13 @@ type LegalityItemState = {
 type LegalityCheckRecord = {
   id: string;
   car_id: number;
-  chassis_number: string;
+  chassis_number: string | null;
   driver: string;
+  circuit: string | null;
+  engineer_name: string | null;
+  engineer_email: string | null;
   check_date: string;
+  sent_to_engineer_at: string | null;
   created_by: string | null;
   created_at: string | null;
   updated_by: string | null;
@@ -65,6 +97,21 @@ type LegalityCheckItemRecord = {
 
 type LegalityCheckWithItems = LegalityCheckRecord & {
   items: LegalityCheckItemRecord[];
+};
+
+type CarEngineerAllocation = {
+  carId: number;
+  engineerName: string;
+  engineerEmail: string;
+};
+
+type PdfItemPayload = {
+  item_key: string;
+  item_name: string;
+  item_side: string;
+  item_position: string;
+  status: LegalityStatus;
+  illegal_note: string | null;
 };
 
 const DEFAULT_CAR_COLOUR = "#b91c1c";
@@ -93,13 +140,51 @@ const DEFAULT_CARS: DashboardCar[] = [
   },
 ];
 
-const LEGALITY_POINTS: LegalityPoint[] = [
+const CAR_ENGINEER_ALLOCATIONS: CarEngineerAllocation[] = [
+  {
+    carId: 1,
+    engineerName:
+      process.env.NEXT_PUBLIC_DRAIN_OUT_ENGINEER_NAME_CAR_1 || "Engineer Car 1",
+    engineerEmail: process.env.NEXT_PUBLIC_DRAIN_OUT_ENGINEER_EMAIL_CAR_1 || "",
+  },
+  {
+    carId: 2,
+    engineerName:
+      process.env.NEXT_PUBLIC_DRAIN_OUT_ENGINEER_NAME_CAR_2 || "Engineer Car 2",
+    engineerEmail: process.env.NEXT_PUBLIC_DRAIN_OUT_ENGINEER_EMAIL_CAR_2 || "",
+  },
+  {
+    carId: 3,
+    engineerName:
+      process.env.NEXT_PUBLIC_DRAIN_OUT_ENGINEER_NAME_CAR_3 || "Engineer Car 3",
+    engineerEmail: process.env.NEXT_PUBLIC_DRAIN_OUT_ENGINEER_EMAIL_CAR_3 || "",
+  },
+];
+
+const CIRCUIT_OPTIONS = [
+  "Oulton Park",
+  "Silverstone",
+  "Spa-Francorchamps",
+  "Monza",
+  "Hungaroring",
+  "Zandvoort",
+  "Brands Hatch",
+  "Snetterton",
+  "Donington Park",
+  "Other",
+] as const;
+
+const DEFAULT_LEGALITY_POINTS: LegalityPoint[] = [
   {
     key: "fw_lh",
     label: "FW LH",
     shortLabel: "FW",
     side: "LH",
     position: "Front wing main plane / endplate area",
+    x: 13,
+    y: 18,
+    sort_order: 10,
+    active: true,
   },
   {
     key: "fwep_lh",
@@ -107,6 +192,10 @@ const LEGALITY_POINTS: LegalityPoint[] = [
     shortLabel: "FWEP",
     side: "LH",
     position: "Front wing endplate",
+    x: 13,
+    y: 26,
+    sort_order: 20,
+    active: true,
   },
   {
     key: "front_lh",
@@ -114,6 +203,10 @@ const LEGALITY_POINTS: LegalityPoint[] = [
     shortLabel: "FRONT",
     side: "LH",
     position: "Front floor / splitter legality point",
+    x: 13,
+    y: 43,
+    sort_order: 30,
+    active: true,
   },
   {
     key: "mid_lh",
@@ -121,6 +214,10 @@ const LEGALITY_POINTS: LegalityPoint[] = [
     shortLabel: "MID",
     side: "LH",
     position: "Mid floor legality point",
+    x: 13,
+    y: 58,
+    sort_order: 40,
+    active: true,
   },
   {
     key: "rear_lh",
@@ -128,6 +225,10 @@ const LEGALITY_POINTS: LegalityPoint[] = [
     shortLabel: "REAR",
     side: "LH",
     position: "Rear floor legality point",
+    x: 13,
+    y: 74,
+    sort_order: 50,
+    active: true,
   },
   {
     key: "diffuser_lh",
@@ -135,6 +236,10 @@ const LEGALITY_POINTS: LegalityPoint[] = [
     shortLabel: "DIFFUSER",
     side: "LH",
     position: "Diffuser legality point",
+    x: 14,
+    y: 85,
+    sort_order: 60,
+    active: true,
   },
   {
     key: "fw_rh",
@@ -142,6 +247,10 @@ const LEGALITY_POINTS: LegalityPoint[] = [
     shortLabel: "FW",
     side: "RH",
     position: "Front wing main plane / endplate area",
+    x: 87,
+    y: 18,
+    sort_order: 70,
+    active: true,
   },
   {
     key: "fwep_rh",
@@ -149,6 +258,10 @@ const LEGALITY_POINTS: LegalityPoint[] = [
     shortLabel: "FWEP",
     side: "RH",
     position: "Front wing endplate",
+    x: 87,
+    y: 26,
+    sort_order: 80,
+    active: true,
   },
   {
     key: "front_rh",
@@ -156,6 +269,10 @@ const LEGALITY_POINTS: LegalityPoint[] = [
     shortLabel: "FRONT",
     side: "RH",
     position: "Front floor / splitter legality point",
+    x: 87,
+    y: 43,
+    sort_order: 90,
+    active: true,
   },
   {
     key: "mid_rh",
@@ -163,6 +280,10 @@ const LEGALITY_POINTS: LegalityPoint[] = [
     shortLabel: "MID",
     side: "RH",
     position: "Mid floor legality point",
+    x: 87,
+    y: 58,
+    sort_order: 100,
+    active: true,
   },
   {
     key: "rear_rh",
@@ -170,6 +291,10 @@ const LEGALITY_POINTS: LegalityPoint[] = [
     shortLabel: "REAR",
     side: "RH",
     position: "Rear floor legality point",
+    x: 87,
+    y: 74,
+    sort_order: 110,
+    active: true,
   },
   {
     key: "diffuser_rh",
@@ -177,6 +302,10 @@ const LEGALITY_POINTS: LegalityPoint[] = [
     shortLabel: "DIFFUSER",
     side: "RH",
     position: "Diffuser legality point",
+    x: 86,
+    y: 85,
+    sort_order: 120,
+    active: true,
   },
   {
     key: "rw_gap",
@@ -184,29 +313,75 @@ const LEGALITY_POINTS: LegalityPoint[] = [
     shortLabel: "RW GAP",
     side: "Centre",
     position: "Rear wing gap measurement",
+    x: 50,
+    y: 95,
+    sort_order: 130,
+    active: true,
   },
 ];
-
-const LEFT_POINTS = LEGALITY_POINTS.filter((point) => point.side === "LH");
-const RIGHT_POINTS = LEGALITY_POINTS.filter((point) => point.side === "RH");
-const CENTRE_POINTS = LEGALITY_POINTS.filter((point) => point.side === "Centre");
 
 function todayIsoDate() {
   return new Date().toISOString().slice(0, 10);
 }
 
-function createDefaultItemState(): Record<string, LegalityItemState> {
-  return LEGALITY_POINTS.reduce<Record<string, LegalityItemState>>(
-    (state, point) => {
-      state[point.key] = {
-        status: "legal",
-        illegal_note: "",
-      };
+function clampPercent(value: number) {
+  if (!Number.isFinite(value)) return 50;
+  return Math.min(98, Math.max(2, Math.round(value * 10) / 10));
+}
 
-      return state;
-    },
-    {},
-  );
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number, fallback: T) {
+  return Promise.race<T>([
+    promise,
+    new Promise<T>((resolve) => {
+      window.setTimeout(() => resolve(fallback), timeoutMs);
+    }),
+  ]);
+}
+
+function normaliseLayoutPoint(
+  point: LegalityLayoutPointRecord,
+  fallbackIndex: number,
+): LegalityPoint {
+  return {
+    key: point.point_key,
+    label: point.label || point.point_key,
+    shortLabel: point.short_label || point.label || point.point_key,
+    side: point.side || "Centre",
+    position: point.position || "",
+    x: clampPercent(Number(point.x_percent ?? 50)),
+    y: clampPercent(Number(point.y_percent ?? 50)),
+    sort_order: point.sort_order ?? fallbackIndex + 1,
+    active: point.active ?? true,
+  };
+}
+
+function sortLayoutPoints(points: LegalityPoint[]) {
+  return [...points]
+    .filter((point) => point.active)
+    .sort((a, b) => a.sort_order - b.sort_order || a.label.localeCompare(b.label));
+}
+
+function slugFromLabel(label: string) {
+  const slug = label
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+
+  return slug || `point_${Date.now()}`;
+}
+
+function createDefaultItemState(
+  points: LegalityPoint[] = DEFAULT_LEGALITY_POINTS,
+): Record<string, LegalityItemState> {
+  return points.reduce<Record<string, LegalityItemState>>((state, point) => {
+    state[point.key] = {
+      status: "legal",
+      illegal_note: "",
+    };
+
+    return state;
+  }, {});
 }
 
 function niceDate(value: string | null | undefined) {
@@ -309,94 +484,146 @@ function getPointState(
   );
 }
 
-function TopDownRaceCar() {
+function getEngineerAllocationForCar(carId: number) {
   return (
-    <svg
-      viewBox="0 0 360 760"
-      role="img"
-      aria-label="Top-down race car legality layout"
-      className="h-full w-full"
+    CAR_ENGINEER_ALLOCATIONS.find((allocation) => allocation.carId === carId) ??
+    CAR_ENGINEER_ALLOCATIONS[0]
+  );
+}
+
+function formatSupabaseInList(values: string[]) {
+  return `(${values.map((value) => `"${value.replace(/"/g, "\\\"")}"`).join(",")})`;
+}
+
+function LegalityCarOverview({
+  points,
+  itemStates,
+  readOnly,
+  layoutEditMode,
+  selectedLayoutKey,
+  onSelectLayoutPoint,
+  onMoveLayoutPoint,
+  onTogglePointStatus,
+}: {
+  points: LegalityPoint[];
+  itemStates: Record<string, LegalityItemState>;
+  readOnly: boolean;
+  layoutEditMode: boolean;
+  selectedLayoutKey: string | null;
+  onSelectLayoutPoint: (key: string) => void;
+  onMoveLayoutPoint: (key: string, x: number, y: number) => void;
+  onTogglePointStatus: (key: string) => void;
+}) {
+  const canvasRef = useRef<HTMLDivElement>(null);
+
+  function movePointFromPointer(
+    key: string,
+    event: PointerEvent<HTMLButtonElement>,
+  ) {
+    if (!layoutEditMode || readOnly) return;
+
+    const rect = canvasRef.current?.getBoundingClientRect();
+    if (!rect) return;
+
+    const x = clampPercent(((event.clientX - rect.left) / rect.width) * 100);
+    const y = clampPercent(((event.clientY - rect.top) / rect.height) * 100);
+
+    onMoveLayoutPoint(key, x, y);
+  }
+
+  return (
+    <div
+      ref={canvasRef}
+      className="relative mx-auto aspect-[3/4] min-h-[620px] w-full max-w-[640px] overflow-hidden rounded-[2rem] border border-zinc-300 bg-white shadow-inner"
     >
-      <defs>
-        <filter id="softShadow" x="-20%" y="-20%" width="140%" height="140%">
-          <feDropShadow dx="0" dy="10" stdDeviation="10" floodOpacity="0.13" />
-        </filter>
-        <linearGradient id="carbonFade" x1="0" x2="1" y1="0" y2="1">
-          <stop offset="0%" stopColor="#ffffff" />
-          <stop offset="100%" stopColor="#e4e4e7" />
-        </linearGradient>
-      </defs>
+      <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(to_right,rgba(228,228,231,0.44)_1px,transparent_1px),linear-gradient(to_bottom,rgba(228,228,231,0.44)_1px,transparent_1px)] bg-[size:28px_28px]" />
+      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(239,68,68,0.08),transparent_58%)]" />
 
-      <rect x="94" y="28" width="172" height="698" fill="none" stroke="#d4d4d8" strokeWidth="2" />
-      <line x1="180" y1="34" x2="180" y2="724" stroke="#71717a" strokeDasharray="12 10" strokeWidth="2" />
+      <img
+        src="/legality-car-overview.png"
+        alt="Top-down formula car legality overview"
+        className="pointer-events-none absolute inset-[4%] h-[92%] w-[92%] object-contain opacity-95 [filter:contrast(1.08)_saturate(0.7)]"
+      />
 
-      <g filter="url(#softShadow)" fill="url(#carbonFade)" stroke="#27272a" strokeLinecap="round" strokeLinejoin="round">
-        <path
-          d="M105 92 C130 64 160 50 180 48 C200 50 230 64 255 92 L270 160 C236 143 204 134 180 132 C156 134 124 143 90 160 Z"
-          strokeWidth="2.5"
-        />
-        <path d="M112 105 L42 72 L28 155 L92 185" fill="none" strokeWidth="2.2" />
-        <path d="M248 105 L318 72 L332 155 L268 185" fill="none" strokeWidth="2.2" />
-        <path d="M56 86 L70 173" fill="none" strokeWidth="1.6" />
-        <path d="M304 86 L290 173" fill="none" strokeWidth="1.6" />
+      <div className="pointer-events-none absolute inset-x-[22%] top-[4%] h-[92%] border-x border-zinc-300/80" />
 
-        <path
-          d="M159 58 C170 25 190 25 201 58 L205 212 L196 278 L164 278 L155 212 Z"
-          strokeWidth="2.4"
-        />
-        <rect x="151" y="202" width="58" height="28" rx="5" fill="#f4f4f5" strokeWidth="2" />
-        <rect x="158" y="270" width="44" height="32" rx="7" fill="#f4f4f5" strokeWidth="2" />
+      {points.map((point) => {
+        const state = getPointState(itemStates, point.key);
+        const isIllegal = state.status === "illegal";
+        const isSelected = selectedLayoutKey === point.key;
+        const statusClasses = isIllegal
+          ? "border-red-500 bg-red-50 text-red-700 shadow-red-950/10"
+          : "border-green-500 bg-green-50 text-green-700 shadow-green-950/10";
+        const editClasses = isSelected
+          ? "ring-4 ring-red-500/30"
+          : "ring-0";
 
-        <rect x="27" y="232" width="70" height="88" rx="20" strokeWidth="2.3" />
-        <rect x="263" y="232" width="70" height="88" rx="20" strokeWidth="2.3" />
-        <line x1="35" y1="249" x2="88" y2="249" strokeWidth="1.3" />
-        <line x1="35" y1="302" x2="88" y2="302" strokeWidth="1.3" />
-        <line x1="272" y1="249" x2="325" y2="249" strokeWidth="1.3" />
-        <line x1="272" y1="302" x2="325" y2="302" strokeWidth="1.3" />
+        return (
+          <button
+            key={point.key}
+            type="button"
+            disabled={readOnly && !layoutEditMode}
+            onClick={() => {
+              if (layoutEditMode) {
+                onSelectLayoutPoint(point.key);
+                return;
+              }
 
-        <path d="M96 271 L150 236 M96 285 L155 294 M264 271 L210 236 M264 285 L205 294" fill="none" strokeWidth="2" />
-        <path d="M94 276 H266" fill="none" strokeWidth="2" />
+              if (!readOnly) {
+                onTogglePointStatus(point.key);
+              }
+            }}
+            onPointerDown={(event) => {
+              if (!layoutEditMode || readOnly) return;
+              event.currentTarget.setPointerCapture(event.pointerId);
+              onSelectLayoutPoint(point.key);
+              movePointFromPointer(point.key, event);
+            }}
+            onPointerMove={(event) => {
+              if (event.buttons !== 1) return;
+              movePointFromPointer(point.key, event);
+            }}
+            style={{
+              left: `${point.x}%`,
+              top: `${point.y}%`,
+            }}
+            className={`absolute z-10 -translate-x-1/2 -translate-y-1/2 rounded-xl border bg-white/95 px-2.5 py-2 text-left shadow-lg backdrop-blur-sm transition hover:scale-[1.03] ${
+              layoutEditMode && !readOnly ? "cursor-move border-red-500" : statusClasses
+            } ${editClasses}`}
+            title={
+              layoutEditMode
+                ? `Drag ${point.label} to reposition it`
+                : `${point.label} · ${state.status}`
+            }
+          >
+            <div className="flex items-center gap-2">
+              <span className="min-w-[56px] text-[10px] font-black uppercase tracking-[0.18em] text-zinc-950">
+                {point.shortLabel}
+              </span>
+              <span
+                className={`h-5 w-14 rounded border-2 ${
+                  isIllegal
+                    ? "border-red-600 bg-red-100"
+                    : "border-zinc-950 bg-white"
+                }`}
+              />
+            </div>
+            {layoutEditMode && (
+              <div className="mt-1 text-[9px] font-semibold uppercase tracking-[0.16em] text-red-600">
+                X {point.x.toFixed(1)} · Y {point.y.toFixed(1)}
+              </div>
+            )}
+          </button>
+        );
+      })}
 
-        <path
-          d="M134 318 C146 280 214 280 226 318 L246 505 C231 574 212 624 180 664 C148 624 129 574 114 505 Z"
-          strokeWidth="2.4"
-        />
-        <path d="M143 332 C155 314 205 314 217 332 L225 452 C212 500 196 532 180 553 C164 532 148 500 135 452 Z" fill="#ffffff" strokeWidth="1.6" />
-        <path d="M154 384 C161 350 199 350 206 384 C207 423 199 452 180 473 C161 452 153 423 154 384 Z" fill="#e5e7eb" strokeWidth="1.6" />
-        <path d="M158 383 C165 360 195 360 202 383 C199 404 193 421 180 436 C167 421 161 404 158 383 Z" fill="#f8fafc" strokeWidth="1.2" />
-        <path d="M127 370 H88 L82 470 L112 512" fill="none" strokeWidth="1.8" />
-        <path d="M233 370 H272 L278 470 L248 512" fill="none" strokeWidth="1.8" />
-        <path d="M129 505 L77 594 M231 505 L283 594" fill="none" strokeWidth="2" />
-
-        <rect x="31" y="590" width="74" height="100" rx="20" strokeWidth="2.3" />
-        <rect x="255" y="590" width="74" height="100" rx="20" strokeWidth="2.3" />
-        <line x1="39" y1="611" x2="96" y2="611" strokeWidth="1.3" />
-        <line x1="39" y1="670" x2="96" y2="670" strokeWidth="1.3" />
-        <line x1="264" y1="611" x2="321" y2="611" strokeWidth="1.3" />
-        <line x1="264" y1="670" x2="321" y2="670" strokeWidth="1.3" />
-        <path d="M105 633 H255" fill="none" strokeWidth="2" />
-        <path d="M106 646 L147 614 M254 646 L213 614" fill="none" strokeWidth="2" />
-
-        <path d="M110 676 H250 L270 720 H90 Z" strokeWidth="2.3" />
-        <rect x="82" y="705" width="196" height="32" rx="3" strokeWidth="2.1" />
-        <path d="M119 705 V737 M241 705 V737" fill="none" strokeWidth="1.5" />
-      </g>
-
-      <g stroke="#a1a1aa" strokeWidth="1.5" strokeDasharray="7 7">
-        <line x1="94" y1="145" x2="45" y2="145" />
-        <line x1="266" y1="145" x2="315" y2="145" />
-        <line x1="94" y1="205" x2="45" y2="205" />
-        <line x1="266" y1="205" x2="315" y2="205" />
-        <line x1="94" y1="355" x2="45" y2="355" />
-        <line x1="266" y1="355" x2="315" y2="355" />
-        <line x1="94" y1="450" x2="45" y2="450" />
-        <line x1="266" y1="450" x2="315" y2="450" />
-        <line x1="94" y1="565" x2="45" y2="565" />
-        <line x1="266" y1="565" x2="315" y2="565" />
-        <line x1="94" y1="665" x2="45" y2="665" />
-        <line x1="266" y1="665" x2="315" y2="665" />
-      </g>
-    </svg>
+      {layoutEditMode && !readOnly && (
+        <div className="absolute bottom-4 left-4 right-4 rounded-2xl border border-red-200 bg-white/95 p-3 text-xs text-zinc-700 shadow-lg">
+          Drag boxes around the car, then use the layout editor above to rename,
+          change side/position, add or remove points.
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -509,10 +736,9 @@ function LegalityPointCard({
 }
 
 export default function LegalityPage() {
-  const router = useRouter();
-
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [sending, setSending] = useState(false);
   const [userEmail, setUserEmail] = useState<string | null>(null);
   const [userRole, setUserRole] = useState<UserRole>("unknown");
   const [assignedCar, setAssignedCar] = useState<number | null>(null);
@@ -521,10 +747,22 @@ export default function LegalityPage() {
   const [cars, setCars] = useState<DashboardCar[]>(DEFAULT_CARS);
   const [selectedCarId, setSelectedCarId] = useState(1);
   const [checkDate, setCheckDate] = useState(todayIsoDate());
-  const [chassisNumber, setChassisNumber] = useState("");
+  const [selectedCircuit, setSelectedCircuit] = useState<string>(CIRCUIT_OPTIONS[0]);
+  const [customCircuit, setCustomCircuit] = useState("");
   const [driver, setDriver] = useState(DEFAULT_CARS[0].name);
   const [activeCheckId, setActiveCheckId] = useState<string | null>(null);
-  const [itemStates, setItemStates] = useState(createDefaultItemState);
+  const [lastSentToEngineerAt, setLastSentToEngineerAt] = useState<string | null>(null);
+  const [layoutPoints, setLayoutPoints] = useState<LegalityPoint[]>(
+    DEFAULT_LEGALITY_POINTS,
+  );
+  const [layoutEditMode, setLayoutEditMode] = useState(false);
+  const [savingLayout, setSavingLayout] = useState(false);
+  const [selectedLayoutKey, setSelectedLayoutKey] = useState<string | null>(
+    DEFAULT_LEGALITY_POINTS[0]?.key ?? null,
+  );
+  const [itemStates, setItemStates] = useState(() =>
+    createDefaultItemState(DEFAULT_LEGALITY_POINTS),
+  );
 
   const [history, setHistory] = useState<LegalityCheckWithItems[]>([]);
   const [message, setMessage] = useState("");
@@ -534,15 +772,49 @@ export default function LegalityPage() {
     return cars.find((car) => car.id === selectedCarId) ?? cars[0] ?? null;
   }, [cars, selectedCarId]);
 
+  const activeLayoutPoints = useMemo(() => {
+    return sortLayoutPoints(layoutPoints);
+  }, [layoutPoints]);
+
+  const leftPoints = useMemo(() => {
+    return activeLayoutPoints.filter((point) => point.side === "LH");
+  }, [activeLayoutPoints]);
+
+  const rightPoints = useMemo(() => {
+    return activeLayoutPoints.filter((point) => point.side === "RH");
+  }, [activeLayoutPoints]);
+
+  const centrePoints = useMemo(() => {
+    return activeLayoutPoints.filter((point) => point.side === "Centre");
+  }, [activeLayoutPoints]);
+
+  const selectedLayoutPoint = useMemo(() => {
+    return (
+      activeLayoutPoints.find((point) => point.key === selectedLayoutKey) ??
+      activeLayoutPoints[0] ??
+      null
+    );
+  }, [activeLayoutPoints, selectedLayoutKey]);
+
+  const selectedEngineer = useMemo(() => {
+    return getEngineerAllocationForCar(selectedCarId);
+  }, [selectedCarId]);
+
+  const finalCircuit = useMemo(() => {
+    return selectedCircuit === "Other" ? customCircuit.trim() : selectedCircuit;
+  }, [customCircuit, selectedCircuit]);
+
+  const selectedCarHasEmail = Boolean(selectedEngineer.engineerEmail.trim());
+
   const dirtyStatus = useMemo(() => {
-    const illegalItems = LEGALITY_POINTS.filter(
+    const illegalItems = activeLayoutPoints.filter(
       (point) => getPointState(itemStates, point.key).status === "illegal",
     );
 
     if (illegalItems.length === 0) {
       return {
         illegalCount: 0,
-        label: `${LEGALITY_POINTS.length}/${LEGALITY_POINTS.length} legal`,
+        label: `${activeLayoutPoints.length}/${activeLayoutPoints.length} legal`,
         className: "border-green-700 bg-green-950/35 text-green-100",
       };
     }
@@ -550,22 +822,58 @@ export default function LegalityPage() {
     return {
       illegalCount: illegalItems.length,
       label: `${illegalItems.length} illegal · ${
-        LEGALITY_POINTS.length - illegalItems.length
+        activeLayoutPoints.length - illegalItems.length
       } legal`,
       className: "border-red-700 bg-red-950/50 text-red-100",
     };
-  }, [itemStates]);
+  }, [activeLayoutPoints, itemStates]);
 
-  const activeExistingCheckForCarDate = useMemo(() => {
+  const activeExistingCheckForCarDateCircuit = useMemo(() => {
     return history.find(
       (check) =>
         check.car_id === selectedCarId &&
         check.check_date === checkDate &&
+        (check.circuit || "") === finalCircuit &&
         check.id !== activeCheckId,
     );
-  }, [activeCheckId, checkDate, history, selectedCarId]);
+  }, [activeCheckId, checkDate, finalCircuit, history, selectedCarId]);
 
-  const loadCars = useCallback(async () => {
+  const loadLayout = useCallback(async (): Promise<LegalityPoint[]> => {
+    const { data, error } = await supabase
+      .from("legality_layout_points")
+      .select(
+        "id,point_key,label,short_label,side,position,x_percent,y_percent,sort_order,active,created_by,created_at,updated_by,updated_at",
+      )
+      .eq("active", true)
+      .order("sort_order", { ascending: true });
+
+    if (error || !data || data.length === 0) {
+      setLayoutPoints(DEFAULT_LEGALITY_POINTS);
+      setSelectedLayoutKey(DEFAULT_LEGALITY_POINTS[0]?.key ?? null);
+      setItemStates((current) => ({
+        ...createDefaultItemState(DEFAULT_LEGALITY_POINTS),
+        ...current,
+      }));
+      return DEFAULT_LEGALITY_POINTS;
+    }
+
+    const nextLayout = sortLayoutPoints(
+      (data as LegalityLayoutPointRecord[]).map((point, index) =>
+        normaliseLayoutPoint(point, index),
+      ),
+    );
+
+    setLayoutPoints(nextLayout);
+    setSelectedLayoutKey(nextLayout[0]?.key ?? null);
+    setItemStates((current) => ({
+      ...createDefaultItemState(nextLayout),
+      ...current,
+    }));
+
+    return nextLayout;
+  }, []);
+
+  const loadCars = useCallback(async (): Promise<DashboardCar[]> => {
     const { data, error } = await supabase
       .from("dashboard_cars")
       .select("id,name,colour,active,sort_order")
@@ -573,7 +881,9 @@ export default function LegalityPage() {
 
     if (error) {
       setCars(DEFAULT_CARS);
-      return;
+      setSelectedCarId(1);
+      setDriver(DEFAULT_CARS[0].name);
+      return DEFAULT_CARS;
     }
 
     const mergedCars = mergeCarsFromDashboard((data ?? []) as DashboardCar[]);
@@ -582,101 +892,132 @@ export default function LegalityPage() {
     setCars(mergedCars);
     setSelectedCarId(firstCar?.id ?? 1);
     setDriver(firstCar?.name ?? "");
+
+    return mergedCars;
   }, []);
 
-  const loadHistory = useCallback(async () => {
-    const { data: checkData, error: checkError } = await supabase
-      .from("legality_checks")
-      .select("*")
-      .order("check_date", { ascending: false })
-      .order("updated_at", { ascending: false })
-      .limit(80);
+  const loadHistory = useCallback(
+    async (pointsForSort: LegalityPoint[] = DEFAULT_LEGALITY_POINTS) => {
+      const { data: checkData, error: checkError } = await supabase
+        .from("legality_checks")
+        .select("*")
+        .order("check_date", { ascending: false })
+        .order("updated_at", { ascending: false })
+        .limit(80);
 
-    if (checkError) {
-      setErrorMessage(checkError.message);
-      return;
-    }
+      if (checkError) {
+        setHistory([]);
+        setErrorMessage((current) => current || checkError.message);
+        return;
+      }
 
-    const checks = (checkData ?? []) as LegalityCheckRecord[];
-    const checkIds = checks.map((check) => check.id);
+      const checks = (checkData ?? []) as LegalityCheckRecord[];
+      const checkIds = checks.map((check) => check.id);
 
-    if (checkIds.length === 0) {
-      setHistory([]);
-      return;
-    }
+      if (checkIds.length === 0) {
+        setHistory([]);
+        return;
+      }
 
-    const { data: itemData, error: itemError } = await supabase
-      .from("legality_check_items")
-      .select("*")
-      .in("legality_check_id", checkIds);
+      const { data: itemData, error: itemError } = await supabase
+        .from("legality_check_items")
+        .select("*")
+        .in("legality_check_id", checkIds);
 
-    if (itemError) {
-      setErrorMessage(itemError.message);
-      return;
-    }
+      if (itemError) {
+        setHistory(checks.map((check) => ({ ...check, items: [] })));
+        setErrorMessage((current) => current || itemError.message);
+        return;
+      }
 
-    const itemRows = (itemData ?? []) as LegalityCheckItemRecord[];
-    const itemsByCheckId = new Map<string, LegalityCheckItemRecord[]>();
+      const itemRows = (itemData ?? []) as LegalityCheckItemRecord[];
+      const itemsByCheckId = new Map<string, LegalityCheckItemRecord[]>();
 
-    itemRows.forEach((item) => {
-      const existing = itemsByCheckId.get(item.legality_check_id) ?? [];
-      existing.push(item);
-      itemsByCheckId.set(item.legality_check_id, existing);
-    });
+      itemRows.forEach((item) => {
+        const existing = itemsByCheckId.get(item.legality_check_id) ?? [];
+        existing.push(item);
+        itemsByCheckId.set(item.legality_check_id, existing);
+      });
 
-    const sortOrder = new Map(
-      LEGALITY_POINTS.map((point, index) => [point.key, index]),
-    );
+      const sortOrder = new Map(
+        sortLayoutPoints(pointsForSort).map((point, index) => [point.key, index]),
+      );
 
-    setHistory(
-      checks.map((check) => ({
-        ...check,
-        items: (itemsByCheckId.get(check.id) ?? []).sort(
-          (a, b) =>
-            (sortOrder.get(a.item_key) ?? 999) -
-            (sortOrder.get(b.item_key) ?? 999),
-        ),
-      })),
-    );
-  }, []);
+      setHistory(
+        checks.map((check) => ({
+          ...check,
+          items: (itemsByCheckId.get(check.id) ?? []).sort(
+            (a, b) =>
+              (sortOrder.get(a.item_key) ?? 999) -
+              (sortOrder.get(b.item_key) ?? 999),
+          ),
+        })),
+      );
+    },
+    [],
+  );
 
   useEffect(() => {
     let mounted = true;
 
-    async function checkAccess() {
-      const email = await getCurrentUserEmail();
+    async function initialiseLegalityPage() {
+      let layoutForHistory = DEFAULT_LEGALITY_POINTS;
 
-      if (!mounted) return;
+      try {
+        const email = await withTimeout(getCurrentUserEmail(), 1500, null);
+        const resolvedEmail = email || "guest@local";
+        const resolvedRole = getUserRole(resolvedEmail);
+        const resolvedAssignedCar = getAssignedCar(resolvedEmail);
 
-      if (!email) {
-        router.replace("/login");
-        return;
-      }
+        if (!mounted) return;
 
-      if (!hasPermission(email, "legality:view")) {
-        router.replace(backHref(getUserRole(email), getAssignedCar(email)));
-        return;
-      }
+        setUserEmail(resolvedEmail);
+        setUserRole(resolvedRole === "unknown" ? "guest" : resolvedRole);
+        setAssignedCar(resolvedAssignedCar);
+        setReadOnly(
+          isReadOnlyUser(resolvedEmail) || !canEditLegality(resolvedEmail),
+        );
 
-      setUserEmail(email);
-      setUserRole(getUserRole(email));
-      setAssignedCar(getAssignedCar(email));
-      setReadOnly(isReadOnlyUser(email) || !canEditLegality(email));
+        await withTimeout(loadCars(), 2500, DEFAULT_CARS);
+        layoutForHistory = await withTimeout(
+          loadLayout(),
+          2500,
+          DEFAULT_LEGALITY_POINTS,
+        );
+        await withTimeout(loadHistory(layoutForHistory), 3500, undefined);
+      } catch (error) {
+        console.error("Legality startup failed:", error);
 
-      await loadCars();
-      await loadHistory();
-
-      if (mounted) {
-        setLoading(false);
+        if (mounted) {
+          setUserEmail("guest@local");
+          setUserRole("guest");
+          setAssignedCar(null);
+          setReadOnly(true);
+          setCars(DEFAULT_CARS);
+          setSelectedCarId(1);
+          setDriver(DEFAULT_CARS[0].name);
+          setLayoutPoints(DEFAULT_LEGALITY_POINTS);
+          setItemStates(createDefaultItemState(DEFAULT_LEGALITY_POINTS));
+          setHistory([]);
+          setErrorMessage(
+            error instanceof Error
+              ? error.message
+              : "Legality page failed to initialise. Showing offline fallback layout.",
+          );
+        }
+      } finally {
+        if (mounted) {
+          setLoading(false);
+        }
       }
     }
 
-    checkAccess();
+    initialiseLegalityPage();
 
     return () => {
       mounted = false;
     };
-  }, [loadCars, loadHistory, router]);
+  }, [loadCars, loadHistory, loadLayout]);
 
   function updatePointStatus(key: string, status: LegalityStatus) {
     setItemStates((current) => ({
@@ -700,21 +1041,198 @@ export default function LegalityPage() {
     }));
   }
 
+  function togglePointStatus(key: string) {
+    const state = getPointState(itemStates, key);
+    updatePointStatus(key, state.status === "legal" ? "illegal" : "legal");
+  }
+
+  function updateLayoutPoint(key: string, patch: Partial<LegalityPoint>) {
+    setLayoutPoints((current) =>
+      sortLayoutPoints(
+        current.map((point) =>
+          point.key === key
+            ? {
+                ...point,
+                ...patch,
+                shortLabel:
+                  patch.label && !patch.shortLabel
+                    ? patch.label
+                    : patch.shortLabel ?? point.shortLabel,
+                x:
+                  typeof patch.x === "number"
+                    ? clampPercent(patch.x)
+                    : point.x,
+                y:
+                  typeof patch.y === "number"
+                    ? clampPercent(patch.y)
+                    : point.y,
+              }
+            : point,
+        ),
+      ),
+    );
+  }
+
+  function addLayoutPoint() {
+    const baseLabel = "NEW POINT";
+    const key = `${slugFromLabel(baseLabel)}_${Date.now().toString(36)}`;
+
+    const nextPoint: LegalityPoint = {
+      key,
+      label: baseLabel,
+      shortLabel: "NEW",
+      side: "Centre",
+      position: "New legality measurement point",
+      x: 50,
+      y: 50,
+      sort_order:
+        Math.max(0, ...layoutPoints.map((point) => point.sort_order)) + 10,
+      active: true,
+    };
+
+    setLayoutPoints((current) => sortLayoutPoints([...current, nextPoint]));
+    setSelectedLayoutKey(key);
+    setItemStates((current) => ({
+      ...current,
+      [key]: {
+        status: "legal",
+        illegal_note: "",
+      },
+    }));
+  }
+
+  function removeLayoutPoint(key: string) {
+    if (layoutPoints.length <= 1) {
+      setErrorMessage("At least one legality point must remain on the sheet.");
+      return;
+    }
+
+    const nextLayout = layoutPoints.filter((point) => point.key !== key);
+
+    setLayoutPoints(nextLayout);
+    setItemStates((current) => {
+      const nextState = { ...current };
+      delete nextState[key];
+      return nextState;
+    });
+    setSelectedLayoutKey((current) => {
+      if (current !== key) return current;
+      return nextLayout[0]?.key ?? null;
+    });
+  }
+
+  async function saveLayout() {
+    if (readOnly) {
+      setErrorMessage("Guest/read-only users cannot edit the legality layout.");
+      return;
+    }
+
+    setSavingLayout(true);
+    setMessage("");
+    setErrorMessage("");
+
+    try {
+      const cleanPoints = sortLayoutPoints(layoutPoints).map((point, index) => ({
+        ...point,
+        sort_order: (index + 1) * 10,
+        label: point.label.trim() || point.key,
+        shortLabel: point.shortLabel.trim() || point.label.trim() || point.key,
+        position: point.position.trim(),
+        x: clampPercent(point.x),
+        y: clampPercent(point.y),
+        active: true,
+      }));
+
+      const { error: upsertError } = await supabase
+        .from("legality_layout_points")
+        .upsert(
+          cleanPoints.map((point) => ({
+            point_key: point.key,
+            label: point.label,
+            short_label: point.shortLabel,
+            side: point.side,
+            position: point.position,
+            x_percent: point.x,
+            y_percent: point.y,
+            sort_order: point.sort_order,
+            active: true,
+            updated_by: userEmail,
+          })),
+          {
+            onConflict: "point_key",
+          },
+        );
+
+      if (upsertError) {
+        throw new Error(upsertError.message);
+      }
+
+      const activeKeys = cleanPoints.map((point) => point.key);
+
+      if (activeKeys.length > 0) {
+        const { error: deactivateError } = await supabase
+          .from("legality_layout_points")
+          .update({
+            active: false,
+            updated_by: userEmail,
+          })
+          .filter("point_key", "not.in", formatSupabaseInList(activeKeys));
+
+        if (deactivateError) {
+          throw new Error(deactivateError.message);
+        }
+      }
+
+      setLayoutPoints(cleanPoints);
+      setItemStates((current) => ({
+        ...createDefaultItemState(cleanPoints),
+        ...current,
+      }));
+      setLayoutEditMode(false);
+      setMessage("Legality layout saved. New sheets will use the updated measurement box positions.");
+      await loadHistory(cleanPoints);
+    } catch (error) {
+      setErrorMessage(
+        error instanceof Error
+          ? error.message
+          : "Failed to save legality layout.",
+      );
+    } finally {
+      setSavingLayout(false);
+    }
+  }
+
   function resetToNewSheet(carId = selectedCarId) {
     const car = cars.find((current) => current.id === carId) ?? cars[0] ?? null;
 
     setActiveCheckId(null);
     setSelectedCarId(car?.id ?? 1);
     setCheckDate(todayIsoDate());
-    setChassisNumber("");
+    setSelectedCircuit(CIRCUIT_OPTIONS[0]);
+    setCustomCircuit("");
     setDriver(car?.name ?? "");
-    setItemStates(createDefaultItemState());
+    setLastSentToEngineerAt(null);
+    setItemStates(createDefaultItemState(activeLayoutPoints));
     setMessage("");
     setErrorMessage("");
   }
 
+  function applyCircuitFromSavedValue(value: string | null | undefined) {
+    const cleanCircuit = value?.trim() || CIRCUIT_OPTIONS[0];
+    const knownCircuit = CIRCUIT_OPTIONS.find((option) => option === cleanCircuit);
+
+    if (knownCircuit) {
+      setSelectedCircuit(knownCircuit);
+      setCustomCircuit("");
+      return;
+    }
+
+    setSelectedCircuit("Other");
+    setCustomCircuit(cleanCircuit);
+  }
+
   function openCheck(check: LegalityCheckWithItems) {
-    const nextState = createDefaultItemState();
+    const nextState = createDefaultItemState(activeLayoutPoints);
 
     check.items.forEach((item) => {
       nextState[item.item_key] = {
@@ -726,15 +1244,15 @@ export default function LegalityPage() {
     setActiveCheckId(check.id);
     setSelectedCarId(check.car_id);
     setCheckDate(check.check_date);
-    setChassisNumber(check.chassis_number ?? "");
+    applyCircuitFromSavedValue(check.circuit);
     setDriver(check.driver ?? "");
+    setLastSentToEngineerAt(check.sent_to_engineer_at ?? null);
     setItemStates(nextState);
     setMessage(`Opened legality check for Car ${check.car_id} on ${niceDate(check.check_date)}.`);
     setErrorMessage("");
   }
 
   function validateSheet() {
-    const cleanChassis = chassisNumber.trim();
     const cleanDriver = driver.trim();
 
     if (!selectedCarId) {
@@ -745,15 +1263,19 @@ export default function LegalityPage() {
       return "Enter a check date.";
     }
 
-    if (!cleanChassis) {
-      return "Enter the chassis number.";
+    if (!finalCircuit) {
+      return "Select a circuit. Use Other if the circuit is not in the list.";
     }
 
     if (!cleanDriver) {
-      return "Enter the driver.";
+      return "Driver is missing. Select the car again or enter the driver manually.";
     }
 
-    const illegalWithoutNotes = LEGALITY_POINTS.filter((point) => {
+    if (!selectedCarHasEmail) {
+      return `No engineer email is configured for Car ${selectedCarId}. Add NEXT_PUBLIC_DRAIN_OUT_ENGINEER_EMAIL_CAR_${selectedCarId} in .env.local/Vercel.`;
+    }
+
+    const illegalWithoutNotes = activeLayoutPoints.filter((point) => {
       const state = getPointState(itemStates, point.key);
 
       return state.status === "illegal" && !state.illegal_note.trim();
@@ -768,10 +1290,84 @@ export default function LegalityPage() {
     return "";
   }
 
+  function createItemPayload(): PdfItemPayload[] {
+    return activeLayoutPoints.map((point) => {
+      const state = getPointState(itemStates, point.key);
+      const illegalNote = state.status === "illegal" ? state.illegal_note.trim() : null;
+
+      return {
+        item_key: point.key,
+        item_name: point.label,
+        item_side: point.side,
+        item_position: point.position,
+        status: state.status,
+        illegal_note: illegalNote,
+      };
+    });
+  }
+
+  async function sendLegalityPdf(checkId: string, items: PdfItemPayload[]) {
+    const carLabel = selectedCar ? carDisplayName(selectedCar) : `Car ${selectedCarId}`;
+
+    const notifyResponse = await fetch("/api/legality", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        check_id: checkId,
+        car_id: selectedCarId,
+        car_name: carLabel,
+        driver: driver.trim(),
+        circuit: finalCircuit,
+        check_date: checkDate,
+        engineer_name: selectedEngineer.engineerName,
+        engineer_email: selectedEngineer.engineerEmail,
+        created_by: userEmail,
+        items,
+      }),
+    });
+
+    if (!notifyResponse.ok) {
+      const body = await notifyResponse.json().catch(() => null);
+
+      const readableError = [
+        body?.error,
+        body?.likely_cause ? `Cause: ${body.likely_cause}` : null,
+        body?.fix ? `Fix: ${body.fix}` : null,
+        body?.technical_error ? `Technical: ${body.technical_error}` : null,
+      ]
+        .filter(Boolean)
+        .join("\n\n");
+
+      throw new Error(
+        readableError || "Legality check saved, but the PDF email failed.",
+      );
+    }
+
+    const sentAt = new Date().toISOString();
+
+    await supabase
+      .from("legality_checks")
+      .update({
+        sent_to_engineer_at: sentAt,
+        updated_by: userEmail,
+      })
+      .eq("id", checkId);
+
+    setLastSentToEngineerAt(sentAt);
+
+    return notifyResponse.json() as Promise<{
+      ok: boolean;
+      sent_to: string;
+      engineer_name: string;
+    }>;
+  }
+
   async function saveCheck() {
     if (readOnly) {
       setMessage("");
-      setErrorMessage("Guest/read-only users can view legality checks but cannot edit or save them.");
+      setErrorMessage("Guest/read-only users can view legality checks but cannot edit, save or email them.");
       return;
     }
 
@@ -787,98 +1383,148 @@ export default function LegalityPage() {
 
     setSaving(true);
 
-    const cleanChassis = chassisNumber.trim();
-    const cleanDriver = driver.trim();
-    const now = new Date().toISOString();
-    const existingCheckId = activeCheckId ?? activeExistingCheckForCarDate?.id ?? null;
+    try {
+      const cleanDriver = driver.trim();
+      const now = new Date().toISOString();
+      const existingCheckId = activeCheckId ?? activeExistingCheckForCarDateCircuit?.id ?? null;
 
-    let savedCheckId = existingCheckId;
+      let savedCheckId = existingCheckId;
 
-    if (existingCheckId) {
-      const { error } = await supabase
-        .from("legality_checks")
-        .update({
-          car_id: selectedCarId,
-          chassis_number: cleanChassis,
-          driver: cleanDriver,
-          check_date: checkDate,
-          updated_by: userEmail,
-          updated_at: now,
-        })
-        .eq("id", existingCheckId);
+      if (existingCheckId) {
+        const { error } = await supabase
+          .from("legality_checks")
+          .update({
+            car_id: selectedCarId,
+            chassis_number: "N/A",
+            driver: cleanDriver,
+            circuit: finalCircuit,
+            engineer_name: selectedEngineer.engineerName,
+            engineer_email: selectedEngineer.engineerEmail,
+            check_date: checkDate,
+            updated_by: userEmail,
+            updated_at: now,
+          })
+          .eq("id", existingCheckId);
 
-      if (error) {
-        setErrorMessage(error.message);
-        setSaving(false);
-        return;
+        if (error) {
+          throw new Error(error.message);
+        }
+      } else {
+        const { data, error } = await supabase
+          .from("legality_checks")
+          .insert({
+            car_id: selectedCarId,
+            chassis_number: "N/A",
+            driver: cleanDriver,
+            circuit: finalCircuit,
+            engineer_name: selectedEngineer.engineerName,
+            engineer_email: selectedEngineer.engineerEmail,
+            check_date: checkDate,
+            created_by: userEmail,
+            updated_by: userEmail,
+            updated_at: now,
+          })
+          .select("id")
+          .single();
+
+        if (error) {
+          throw new Error(error.message);
+        }
+
+        savedCheckId = data?.id ?? null;
       }
-    } else {
-      const { data, error } = await supabase
-        .from("legality_checks")
-        .insert({
-          car_id: selectedCarId,
-          chassis_number: cleanChassis,
-          driver: cleanDriver,
-          check_date: checkDate,
-          created_by: userEmail,
-          updated_by: userEmail,
-          updated_at: now,
-        })
-        .select("id")
-        .single();
 
-      if (error) {
-        setErrorMessage(error.message);
-        setSaving(false);
-        return;
+      if (!savedCheckId) {
+        throw new Error("The legality sheet was saved without returning an ID. Please reload and try again.");
       }
 
-      savedCheckId = data?.id ?? null;
-    }
+      const itemPayload = createItemPayload();
 
-    if (!savedCheckId) {
-      setErrorMessage("The legality sheet was saved without returning an ID. Please reload and try again.");
+      const { error: itemError } = await supabase
+        .from("legality_check_items")
+        .upsert(
+          itemPayload.map((item) => ({
+            legality_check_id: savedCheckId,
+            item_key: item.item_key,
+            item_name: item.item_name,
+            item_side: item.item_side,
+            item_position: item.item_position,
+            status: item.status,
+            illegal_note: item.illegal_note,
+            updated_at: now,
+          })),
+          {
+            onConflict: "legality_check_id,item_key",
+          },
+        );
+
+      if (itemError) {
+        throw new Error(itemError.message);
+      }
+
+      setActiveCheckId(savedCheckId);
+
+      try {
+        const notifyResult = await sendLegalityPdf(savedCheckId, itemPayload);
+        setMessage(
+          `${existingCheckId ? "Legality check updated" : "Legality check saved"}. PDF sent to ${notifyResult.sent_to}.`,
+        );
+      } catch (error) {
+        setErrorMessage(
+          error instanceof Error
+            ? `Legality check saved, but the engineer PDF was not sent.\n\n${error.message}`
+            : "Legality check saved, but the engineer PDF was not sent.",
+        );
+      }
+
+      await loadHistory(activeLayoutPoints);
+    } catch (error) {
+      setErrorMessage(
+        error instanceof Error
+          ? error.message
+          : "Failed to save legality check.",
+      );
+    } finally {
       setSaving(false);
+    }
+  }
+
+  async function resendCurrentPdf() {
+    if (readOnly) {
+      setErrorMessage("Guest/read-only users cannot send legality PDFs.");
       return;
     }
 
-    const itemPayload = LEGALITY_POINTS.map((point) => {
-      const state = getPointState(itemStates, point.key);
-      const illegalNote = state.status === "illegal" ? state.illegal_note.trim() : null;
-
-      return {
-        legality_check_id: savedCheckId,
-        item_key: point.key,
-        item_name: point.label,
-        item_side: point.side,
-        item_position: point.position,
-        status: state.status,
-        illegal_note: illegalNote,
-        updated_at: now,
-      };
-    });
-
-    const { error: itemError } = await supabase
-      .from("legality_check_items")
-      .upsert(itemPayload, {
-        onConflict: "legality_check_id,item_key",
-      });
-
-    if (itemError) {
-      setErrorMessage(itemError.message);
-      setSaving(false);
+    if (!activeCheckId) {
+      setErrorMessage("Save the legality check before sending the PDF.");
       return;
     }
 
-    setActiveCheckId(savedCheckId);
-    setMessage(
-      existingCheckId
-        ? "Legality check updated."
-        : "Legality check saved.",
-    );
+    const validationError = validateSheet();
 
-    await loadHistory();
-    setSaving(false);
+    setMessage("");
+    setErrorMessage("");
+
+    if (validationError) {
+      setErrorMessage(validationError);
+      return;
+    }
+
+    setSending(true);
+
+    try {
+      const notifyResult = await sendLegalityPdf(activeCheckId, createItemPayload());
+      setMessage(`Legality PDF sent to ${notifyResult.sent_to}.`);
+      await loadHistory(activeLayoutPoints);
+    } catch (error) {
+      setErrorMessage(
+        error instanceof Error
+          ? error.message
+          : "Failed to send legality PDF.",
+      );
+    } finally {
+      setSending(false);
+    }
   }
 
   if (loading) {
@@ -924,7 +1570,7 @@ export default function LegalityPage() {
               </h1>
 
               <p className="mt-3 max-w-3xl text-sm leading-6 text-zinc-400">
-                Select a car, complete the legality worksheet and record any illegal items with required notes.
+                Choose the car, circuit and date. The assigned engineer is selected automatically and receives a PDF copy when the sheet is saved.
               </p>
             </div>
 
@@ -943,23 +1589,23 @@ export default function LegalityPage() {
 
       {readOnly && (
         <div className="mb-6 rounded-2xl border border-amber-800 bg-amber-950/25 p-4 text-sm text-amber-200">
-          Guest/read-only mode is enabled. You can open and view previous legality checks, but editing and saving are disabled.
+          Guest/read-only mode is enabled. You can open and view previous legality checks, but editing, saving and PDF sending are disabled.
         </div>
       )}
 
       {message && (
-        <div className="mb-6 rounded-2xl border border-green-800 bg-green-950/20 p-4 text-sm text-green-300">
+        <div className="mb-6 whitespace-pre-wrap rounded-2xl border border-green-800 bg-green-950/20 p-4 text-sm text-green-300">
           {message}
         </div>
       )}
 
       {errorMessage && (
-        <div className="mb-6 rounded-2xl border border-red-900 bg-red-950/40 p-4 text-sm text-red-200">
+        <div className="mb-6 whitespace-pre-wrap rounded-2xl border border-red-900 bg-red-950/40 p-4 text-sm text-red-200">
           {errorMessage}
         </div>
       )}
 
-      <section className="mb-8 grid gap-4 lg:grid-cols-[minmax(0,1fr)_380px]">
+      <section className="mb-8 grid gap-4 lg:grid-cols-[minmax(0,1fr)_400px]">
         <div className="rounded-3xl border border-zinc-800 bg-[#14181d] p-5 shadow-xl">
           <div className="mb-5 flex flex-wrap items-start justify-between gap-4">
             <div>
@@ -970,7 +1616,7 @@ export default function LegalityPage() {
                 {activeCheckId ? "Editing saved check" : "New legality check"}
               </h2>
               <p className="mt-2 max-w-3xl text-sm leading-6 text-zinc-400">
-                Illegal selections cannot be saved unless the note box explains what is illegal.
+                Car, driver and engineer allocation are handled from the selected car. Chassis number is not required.
               </p>
             </div>
 
@@ -993,6 +1639,7 @@ export default function LegalityPage() {
                   setSelectedCarId(nextCarId);
                   setDriver(nextCar?.name ?? "");
                   setActiveCheckId(null);
+                  setLastSentToEngineerAt(null);
                 }}
                 className="mt-2 w-full rounded-xl border border-zinc-700 bg-[#0d0f12] px-4 py-3 text-sm text-zinc-100 outline-none focus:border-red-500 disabled:cursor-not-allowed disabled:opacity-70"
               >
@@ -1006,15 +1653,24 @@ export default function LegalityPage() {
 
             <label>
               <span className="text-xs font-semibold uppercase tracking-[0.24em] text-zinc-500">
-                Chassis #
+                Circuit
               </span>
-              <input
+              <select
                 disabled={readOnly}
-                value={chassisNumber}
-                onChange={(event) => setChassisNumber(event.target.value)}
-                placeholder="e.g. 022"
+                value={selectedCircuit}
+                onChange={(event) => {
+                  setSelectedCircuit(event.target.value);
+                  setActiveCheckId(null);
+                  setLastSentToEngineerAt(null);
+                }}
                 className="mt-2 w-full rounded-xl border border-zinc-700 bg-[#0d0f12] px-4 py-3 text-sm text-zinc-100 outline-none focus:border-red-500 disabled:cursor-not-allowed disabled:opacity-70"
-              />
+              >
+                {CIRCUIT_OPTIONS.map((circuit) => (
+                  <option key={circuit} value={circuit}>
+                    {circuit}
+                  </option>
+                ))}
+              </select>
             </label>
 
             <label>
@@ -1028,6 +1684,7 @@ export default function LegalityPage() {
                 onChange={(event) => {
                   setCheckDate(event.target.value);
                   setActiveCheckId(null);
+                  setLastSentToEngineerAt(null);
                 }}
                 className="mt-2 w-full rounded-xl border border-zinc-700 bg-[#0d0f12] px-4 py-3 text-sm text-zinc-100 outline-none focus:border-red-500 disabled:cursor-not-allowed disabled:opacity-70"
               />
@@ -1047,9 +1704,229 @@ export default function LegalityPage() {
             </label>
           </div>
 
-          {activeExistingCheckForCarDate && !activeCheckId && !readOnly && (
+          {selectedCircuit === "Other" && (
+            <label className="mt-4 block max-w-xl">
+              <span className="text-xs font-semibold uppercase tracking-[0.24em] text-zinc-500">
+                Other Circuit
+              </span>
+              <input
+                disabled={readOnly}
+                value={customCircuit}
+                onChange={(event) => {
+                  setCustomCircuit(event.target.value);
+                  setActiveCheckId(null);
+                  setLastSentToEngineerAt(null);
+                }}
+                placeholder="Enter circuit name"
+                className="mt-2 w-full rounded-xl border border-zinc-700 bg-[#0d0f12] px-4 py-3 text-sm text-zinc-100 outline-none focus:border-red-500 disabled:cursor-not-allowed disabled:opacity-70"
+              />
+            </label>
+          )}
+
+          <div className="mt-5 rounded-2xl border border-zinc-700 bg-[#0d0f12] p-4">
+            <p className="text-xs font-semibold uppercase tracking-[0.28em] text-zinc-500">
+              Auto-selected Engineer
+            </p>
+            <div className="mt-2 flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <div className="text-base font-semibold text-zinc-100">
+                  {selectedEngineer.engineerName}
+                </div>
+                <div className={`mt-1 text-sm ${selectedCarHasEmail ? "text-zinc-400" : "text-red-300"}`}>
+                  {selectedCarHasEmail
+                    ? selectedEngineer.engineerEmail
+                    : `No engineer email configured for Car ${selectedCarId}`}
+                </div>
+              </div>
+              <span className="rounded-full border border-red-900/60 bg-red-950/30 px-3 py-1 text-xs font-semibold text-red-200">
+                Car {selectedCarId}
+              </span>
+            </div>
+            {lastSentToEngineerAt && (
+              <p className="mt-3 text-xs text-zinc-500">
+                Last PDF sent: {niceDateTime(lastSentToEngineerAt)}
+              </p>
+            )}
+          </div>
+
+          {!readOnly && (
+            <div className="mt-5 rounded-2xl border border-zinc-700 bg-[#0d0f12] p-4">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-[0.28em] text-zinc-500">
+                    Measurement Layout
+                  </p>
+                  <p className="mt-2 text-sm leading-6 text-zinc-400">
+                    Chief mechanic can edit the box names and drag their positions on the car overview.
+                  </p>
+                </div>
+
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setLayoutEditMode((current) => !current)}
+                    className={`rounded-xl px-4 py-2 text-sm font-semibold transition ${
+                      layoutEditMode
+                        ? "bg-red-700 text-white hover:bg-red-600"
+                        : "border border-zinc-700 bg-[#1b2026] text-zinc-100 hover:border-red-500 hover:text-red-200"
+                    }`}
+                  >
+                    {layoutEditMode ? "Close Layout Edit" : "Edit Measurement Boxes"}
+                  </button>
+
+                  {layoutEditMode && (
+                    <>
+                      <button
+                        type="button"
+                        onClick={addLayoutPoint}
+                        className="rounded-xl border border-zinc-700 bg-[#1b2026] px-4 py-2 text-sm font-semibold text-zinc-100 transition hover:border-red-500 hover:text-red-200"
+                      >
+                        Add Box
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={saveLayout}
+                        disabled={savingLayout}
+                        className="rounded-xl bg-red-700 px-4 py-2 text-sm font-semibold text-white transition hover:bg-red-600 disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        {savingLayout ? "Saving Layout..." : "Save Layout"}
+                      </button>
+                    </>
+                  )}
+                </div>
+              </div>
+
+              {layoutEditMode && selectedLayoutPoint && (
+                <div className="mt-4 grid gap-4 rounded-2xl border border-red-900/50 bg-red-950/10 p-4 lg:grid-cols-2">
+                  <label>
+                    <span className="text-xs font-semibold uppercase tracking-[0.24em] text-zinc-500">
+                      Box Name
+                    </span>
+                    <input
+                      value={selectedLayoutPoint.label}
+                      onChange={(event) =>
+                        updateLayoutPoint(selectedLayoutPoint.key, {
+                          label: event.target.value,
+                        })
+                      }
+                      className="mt-2 w-full rounded-xl border border-zinc-700 bg-[#111418] px-4 py-3 text-sm text-zinc-100 outline-none focus:border-red-500"
+                    />
+                  </label>
+
+                  <label>
+                    <span className="text-xs font-semibold uppercase tracking-[0.24em] text-zinc-500">
+                      Short Display Label
+                    </span>
+                    <input
+                      value={selectedLayoutPoint.shortLabel}
+                      onChange={(event) =>
+                        updateLayoutPoint(selectedLayoutPoint.key, {
+                          shortLabel: event.target.value,
+                        })
+                      }
+                      className="mt-2 w-full rounded-xl border border-zinc-700 bg-[#111418] px-4 py-3 text-sm text-zinc-100 outline-none focus:border-red-500"
+                    />
+                  </label>
+
+                  <label>
+                    <span className="text-xs font-semibold uppercase tracking-[0.24em] text-zinc-500">
+                      Side
+                    </span>
+                    <select
+                      value={selectedLayoutPoint.side}
+                      onChange={(event) =>
+                        updateLayoutPoint(selectedLayoutPoint.key, {
+                          side: event.target.value as LegalitySide,
+                        })
+                      }
+                      className="mt-2 w-full rounded-xl border border-zinc-700 bg-[#111418] px-4 py-3 text-sm text-zinc-100 outline-none focus:border-red-500"
+                    >
+                      <option value="LH">LH</option>
+                      <option value="RH">RH</option>
+                      <option value="Centre">Centre</option>
+                    </select>
+                  </label>
+
+                  <label>
+                    <span className="text-xs font-semibold uppercase tracking-[0.24em] text-zinc-500">
+                      Position Description
+                    </span>
+                    <input
+                      value={selectedLayoutPoint.position}
+                      onChange={(event) =>
+                        updateLayoutPoint(selectedLayoutPoint.key, {
+                          position: event.target.value,
+                        })
+                      }
+                      className="mt-2 w-full rounded-xl border border-zinc-700 bg-[#111418] px-4 py-3 text-sm text-zinc-100 outline-none focus:border-red-500"
+                    />
+                  </label>
+
+                  <label>
+                    <span className="text-xs font-semibold uppercase tracking-[0.24em] text-zinc-500">
+                      Horizontal Position
+                    </span>
+                    <input
+                      type="range"
+                      min="2"
+                      max="98"
+                      step="0.5"
+                      value={selectedLayoutPoint.x}
+                      onChange={(event) =>
+                        updateLayoutPoint(selectedLayoutPoint.key, {
+                          x: Number(event.target.value),
+                        })
+                      }
+                      className="mt-3 w-full accent-red-600"
+                    />
+                    <div className="mt-1 text-xs text-zinc-500">
+                      X {selectedLayoutPoint.x.toFixed(1)}%
+                    </div>
+                  </label>
+
+                  <label>
+                    <span className="text-xs font-semibold uppercase tracking-[0.24em] text-zinc-500">
+                      Vertical Position
+                    </span>
+                    <input
+                      type="range"
+                      min="2"
+                      max="98"
+                      step="0.5"
+                      value={selectedLayoutPoint.y}
+                      onChange={(event) =>
+                        updateLayoutPoint(selectedLayoutPoint.key, {
+                          y: Number(event.target.value),
+                        })
+                      }
+                      className="mt-3 w-full accent-red-600"
+                    />
+                    <div className="mt-1 text-xs text-zinc-500">
+                      Y {selectedLayoutPoint.y.toFixed(1)}%
+                    </div>
+                  </label>
+
+                  <div className="flex flex-wrap items-center justify-between gap-3 border-t border-zinc-800 pt-4 lg:col-span-2">
+                    <div className="text-xs leading-5 text-zinc-500">
+                      Selected key: <span className="font-mono text-zinc-300">{selectedLayoutPoint.key}</span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => removeLayoutPoint(selectedLayoutPoint.key)}
+                      className="rounded-xl border border-red-900 bg-red-950/30 px-4 py-2 text-sm font-semibold text-red-200 transition hover:border-red-500 hover:bg-red-900/40"
+                    >
+                      Remove Selected Box
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {activeExistingCheckForCarDateCircuit && !activeCheckId && !readOnly && (
             <div className="mt-4 rounded-2xl border border-amber-800 bg-amber-950/25 p-4 text-sm text-amber-200">
-              A saved legality check already exists for this car/date. Pressing save will update that sheet rather than creating a duplicate.
+              A saved legality check already exists for this car/date/circuit. Pressing save will update that sheet rather than creating a duplicate.
             </div>
           )}
 
@@ -1058,10 +1935,25 @@ export default function LegalityPage() {
               <button
                 type="button"
                 onClick={saveCheck}
-                disabled={saving}
+                disabled={saving || sending || !selectedCarHasEmail}
                 className="rounded-2xl bg-red-700 px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-red-950/30 transition hover:bg-red-600 disabled:cursor-not-allowed disabled:opacity-60"
               >
-                {saving ? "Saving..." : activeCheckId ? "Update Legality Check" : "Save Legality Check"}
+                {saving
+                  ? "Saving & sending PDF..."
+                  : activeCheckId
+                    ? "Update & Send PDF"
+                    : "Save & Send PDF"}
+              </button>
+            )}
+
+            {!readOnly && activeCheckId && (
+              <button
+                type="button"
+                onClick={resendCurrentPdf}
+                disabled={saving || sending || !selectedCarHasEmail}
+                className="rounded-2xl border border-red-800 bg-red-950/30 px-6 py-3 text-sm font-semibold text-red-100 transition hover:border-red-500 hover:bg-red-900/40 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {sending ? "Sending..." : "Resend PDF"}
               </button>
             )}
 
@@ -1083,10 +1975,10 @@ export default function LegalityPage() {
             History
           </h2>
           <p className="mt-2 text-sm leading-6 text-zinc-400">
-            Open any saved sheet to view or edit it.
+            Open any saved sheet to view or edit it. Saved sheets are grouped by date, car and circuit.
           </p>
 
-          <div className="mt-5 max-h-[420px] space-y-3 overflow-y-auto pr-1">
+          <div className="mt-5 max-h-[500px] space-y-3 overflow-y-auto pr-1">
             {history.length === 0 ? (
               <div className="rounded-2xl border border-dashed border-zinc-700 bg-[#0d0f12] p-4 text-sm text-zinc-500">
                 No previous legality checks found.
@@ -1112,15 +2004,19 @@ export default function LegalityPage() {
                           {niceDate(check.check_date)} · Car {check.car_id}
                         </div>
                         <div className="mt-1 text-xs text-zinc-500">
-                          {car?.name ?? check.driver} · Chassis {check.chassis_number || "—"}
+                          {check.circuit || "No circuit"} · {car?.name ?? check.driver}
+                        </div>
+                        <div className="mt-1 text-xs text-zinc-600">
+                          Engineer: {check.engineer_email || "—"}
                         </div>
                       </div>
                       <span className={`rounded-full border px-2 py-1 text-[10px] font-bold uppercase tracking-[0.16em] ${summaryTone(check.items)}`}>
                         {summaryForItems(check.items)}
                       </span>
                     </div>
-                    <div className="mt-3 text-[11px] uppercase tracking-[0.18em] text-zinc-600">
-                      Updated {niceDateTime(check.updated_at || check.created_at)}
+                    <div className="mt-3 flex flex-wrap justify-between gap-2 text-[11px] uppercase tracking-[0.18em] text-zinc-600">
+                      <span>Updated {niceDateTime(check.updated_at || check.created_at)}</span>
+                      <span>{check.sent_to_engineer_at ? `PDF ${niceDateTime(check.sent_to_engineer_at)}` : "PDF not sent"}</span>
                     </div>
                   </button>
                 );
@@ -1139,14 +2035,14 @@ export default function LegalityPage() {
               <img src="/gb3-logo.png" alt="GB3 Championship" className="h-12 w-auto" />
             </div>
 
-            <div className="grid gap-2 text-sm sm:grid-cols-2 md:min-w-[360px]">
-              <div className="rounded-xl border border-zinc-300 bg-zinc-50 px-3 py-2">
-                <span className="text-[10px] font-black uppercase tracking-[0.24em] text-zinc-500">Chassis #</span>
-                <div className="mt-1 font-semibold">{chassisNumber.trim() || "—"}</div>
-              </div>
+            <div className="grid gap-2 text-sm sm:grid-cols-2 md:min-w-[500px] lg:grid-cols-3">
               <div className="rounded-xl border border-zinc-300 bg-zinc-50 px-3 py-2">
                 <span className="text-[10px] font-black uppercase tracking-[0.24em] text-zinc-500">Date</span>
                 <div className="mt-1 font-semibold">{niceDate(checkDate)}</div>
+              </div>
+              <div className="rounded-xl border border-zinc-300 bg-zinc-50 px-3 py-2">
+                <span className="text-[10px] font-black uppercase tracking-[0.24em] text-zinc-500">Circuit</span>
+                <div className="mt-1 font-semibold">{finalCircuit || "—"}</div>
               </div>
               <div className="rounded-xl border border-zinc-300 bg-zinc-50 px-3 py-2">
                 <span className="text-[10px] font-black uppercase tracking-[0.24em] text-zinc-500">Car</span>
@@ -1156,34 +2052,46 @@ export default function LegalityPage() {
                 <span className="text-[10px] font-black uppercase tracking-[0.24em] text-zinc-500">Driver</span>
                 <div className="mt-1 font-semibold">{driver.trim() || selectedCar?.name || "—"}</div>
               </div>
+              <div className="rounded-xl border border-zinc-300 bg-zinc-50 px-3 py-2 sm:col-span-2">
+                <span className="text-[10px] font-black uppercase tracking-[0.24em] text-zinc-500">Engineer</span>
+                <div className="mt-1 font-semibold">{selectedEngineer.engineerName}</div>
+                <div className="mt-0.5 text-xs text-zinc-500">{selectedEngineer.engineerEmail || "No email configured"}</div>
+              </div>
             </div>
           </div>
 
           <div className="grid gap-4 p-4 xl:grid-cols-[minmax(220px,280px)_minmax(360px,1fr)_minmax(220px,280px)] xl:items-start">
             <div className="grid gap-3 xl:pt-10">
-              {LEFT_POINTS.map((point) => (
+              {leftPoints.map((point) => (
                 <LegalityPointCard
                   key={point.key}
                   point={point}
                   state={getPointState(itemStates, point.key)}
-                  disabled={readOnly}
+                  disabled={readOnly || layoutEditMode}
                   onStatusChange={(status) => updatePointStatus(point.key, status)}
                   onNoteChange={(note) => updatePointNote(point.key, note)}
                 />
               ))}
             </div>
 
-            <div className="relative min-h-[620px] rounded-3xl border border-zinc-300 bg-white p-4 shadow-inner">
-              <TopDownRaceCar />
-            </div>
+            <LegalityCarOverview
+              points={activeLayoutPoints}
+              itemStates={itemStates}
+              readOnly={readOnly}
+              layoutEditMode={layoutEditMode}
+              selectedLayoutKey={selectedLayoutKey}
+              onSelectLayoutPoint={setSelectedLayoutKey}
+              onMoveLayoutPoint={(key, x, y) => updateLayoutPoint(key, { x, y })}
+              onTogglePointStatus={togglePointStatus}
+            />
 
             <div className="grid gap-3 xl:pt-10">
-              {RIGHT_POINTS.map((point) => (
+              {rightPoints.map((point) => (
                 <LegalityPointCard
                   key={point.key}
                   point={point}
                   state={getPointState(itemStates, point.key)}
-                  disabled={readOnly}
+                  disabled={readOnly || layoutEditMode}
                   onStatusChange={(status) => updatePointStatus(point.key, status)}
                   onNoteChange={(note) => updatePointNote(point.key, note)}
                 />
@@ -1193,12 +2101,12 @@ export default function LegalityPage() {
 
           <div className="border-t border-zinc-300 bg-white p-4">
             <div className="mx-auto max-w-xl">
-              {CENTRE_POINTS.map((point) => (
+              {centrePoints.map((point) => (
                 <LegalityPointCard
                   key={point.key}
                   point={point}
                   state={getPointState(itemStates, point.key)}
-                  disabled={readOnly}
+                  disabled={readOnly || layoutEditMode}
                   onStatusChange={(status) => updatePointStatus(point.key, status)}
                   onNoteChange={(note) => updatePointNote(point.key, note)}
                 />
