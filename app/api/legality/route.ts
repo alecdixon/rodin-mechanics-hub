@@ -52,6 +52,7 @@ type LegalityEmailPayload = {
   engineer_email?: string | null;
   created_by?: string | null;
   corner_weights?: Partial<CornerWeights> | null;
+  download_only?: boolean | null;
   items?: LegalityPdfItem[];
 };
 
@@ -842,14 +843,17 @@ ${payload.engineer_email}`, startX + 134 + headerGap, pageHeight - 80, pageWidth
 }
 
 export async function POST(request: NextRequest) {
-  const authBlock = blockUnauthorisedUser(request);
-
-  if (authBlock) {
-    return authBlock;
-  }
-
   try {
     const rawPayload = (await request.json()) as LegalityEmailPayload;
+    const downloadOnly = rawPayload.download_only === true;
+
+    if (!downloadOnly) {
+      const authBlock = blockUnauthorisedUser(request);
+
+      if (authBlock) {
+        return authBlock;
+      }
+    }
 
     if (!rawPayload.car_id || !rawPayload.check_date || !rawPayload.circuit) {
       return NextResponse.json(
@@ -886,6 +890,55 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    const fallbackEngineerEmail = getFallbackEngineerEmailForCar(Number(rawPayload.car_id));
+    const to = clean(rawPayload.engineer_email) || fallbackEngineerEmail;
+
+    if (!downloadOnly && !to) {
+      return NextResponse.json(
+        {
+          error: "No engineer email selected and no fallback engineer email is configured.",
+          details: `No engineer email was found for car ${rawPayload.car_id}.`,
+          fix: `Add DRAIN_OUT_ENGINEER_EMAIL_CAR_${rawPayload.car_id}, NEXT_PUBLIC_DRAIN_OUT_ENGINEER_EMAIL_CAR_${rawPayload.car_id} or DRAIN_OUT_ENGINEER_EMAIL in Vercel/.env.local.`,
+        },
+        { status: 500 },
+      );
+    }
+
+    const payload: NormalisedLegalityEmailPayload = {
+      check_id: clean(rawPayload.check_id),
+      car_id: Number(rawPayload.car_id),
+      car_name: clean(rawPayload.car_name) || `Car ${rawPayload.car_id}`,
+      driver: clean(rawPayload.driver) || "Unknown",
+      circuit: clean(rawPayload.circuit) || "Unknown",
+      check_date: clean(rawPayload.check_date),
+      engineer_name:
+        clean(rawPayload.engineer_name) || getFallbackEngineerNameForCar(Number(rawPayload.car_id)),
+      engineer_email: to || clean(rawPayload.engineer_email) || "Not supplied",
+      created_by: clean(rawPayload.created_by) || getRequestUserEmail(request) || "Unknown",
+      corner_weights: normaliseCornerWeights(rawPayload.corner_weights),
+      items,
+    };
+
+    const illegalCount = payload.items.filter((item) => item.status === "illegal").length;
+    const summary =
+      illegalCount === 0
+        ? `${payload.items.length}/${payload.items.length} legal`
+        : `${illegalCount} illegal · ${payload.items.length - illegalCount} legal`;
+
+    const pdfBuffer = await buildLegalityPdf(payload);
+    const safeFileName = `Legality_${payload.circuit.replace(/[^a-z0-9]+/gi, "_")}_Car_${payload.car_id}_${payload.check_date}.pdf`;
+
+    if (downloadOnly) {
+      return new NextResponse(pdfBuffer, {
+        status: 200,
+        headers: {
+          "Content-Type": "application/pdf",
+          "Content-Disposition": `inline; filename="${safeFileName}"`,
+          "Cache-Control": "no-store",
+        },
+      });
+    }
+
     const gmailUser = process.env.GMAIL_USER?.trim();
     const gmailAppPassword = process.env.GMAIL_APP_PASSWORD?.replace(/\s/g, "");
 
@@ -906,43 +959,6 @@ export async function POST(request: NextRequest) {
         { status: 500 },
       );
     }
-
-    const fallbackEngineerEmail = getFallbackEngineerEmailForCar(Number(rawPayload.car_id));
-    const to = clean(rawPayload.engineer_email) || fallbackEngineerEmail;
-
-    if (!to) {
-      return NextResponse.json(
-        {
-          error: "No engineer email selected and no fallback engineer email is configured.",
-          details: `No engineer email was found for car ${rawPayload.car_id}.`,
-          fix: `Add DRAIN_OUT_ENGINEER_EMAIL_CAR_${rawPayload.car_id}, NEXT_PUBLIC_DRAIN_OUT_ENGINEER_EMAIL_CAR_${rawPayload.car_id} or DRAIN_OUT_ENGINEER_EMAIL in Vercel/.env.local.`,
-        },
-        { status: 500 },
-      );
-    }
-
-    const payload: NormalisedLegalityEmailPayload = {
-      check_id: clean(rawPayload.check_id),
-      car_id: Number(rawPayload.car_id),
-      car_name: clean(rawPayload.car_name) || `Car ${rawPayload.car_id}`,
-      driver: clean(rawPayload.driver) || "Unknown",
-      circuit: clean(rawPayload.circuit) || "Unknown",
-      check_date: clean(rawPayload.check_date),
-      engineer_name:
-        clean(rawPayload.engineer_name) || getFallbackEngineerNameForCar(Number(rawPayload.car_id)),
-      engineer_email: to,
-      created_by: clean(rawPayload.created_by) || getRequestUserEmail(request) || "Unknown",
-      corner_weights: normaliseCornerWeights(rawPayload.corner_weights),
-      items,
-    };
-
-    const illegalCount = payload.items.filter((item) => item.status === "illegal").length;
-    const summary =
-      illegalCount === 0
-        ? `${payload.items.length}/${payload.items.length} legal`
-        : `${illegalCount} illegal · ${payload.items.length - illegalCount} legal`;
-
-    const pdfBuffer = await buildLegalityPdf(payload);
 
     const transporter = nodemailer.createTransport({
       service: "gmail",
@@ -1031,7 +1047,7 @@ export async function POST(request: NextRequest) {
       `,
       attachments: [
         {
-          filename: `Legality_${payload.circuit.replace(/[^a-z0-9]+/gi, "_")}_Car_${payload.car_id}_${payload.check_date}.pdf`,
+          filename: safeFileName,
           content: pdfBuffer,
           contentType: "application/pdf",
         },

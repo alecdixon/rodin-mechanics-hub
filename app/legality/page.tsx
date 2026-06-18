@@ -787,6 +787,8 @@ export default function LegalityPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [sending, setSending] = useState(false);
+  const [viewingPdfId, setViewingPdfId] = useState<string | null>(null);
+  const [deletingCheckId, setDeletingCheckId] = useState<string | null>(null);
   const [userEmail, setUserEmail] = useState<string | null>(null);
   const [userRole, setUserRole] = useState<UserRole>("unknown");
   const [assignedCar, setAssignedCar] = useState<number | null>(null);
@@ -1364,6 +1366,36 @@ export default function LegalityPage() {
     });
   }
 
+  function createItemPayloadFromSavedCheck(check: LegalityCheckWithItems): PdfItemPayload[] {
+    return check.items.map((item) => ({
+      item_key: item.item_key,
+      item_name: item.item_name,
+      item_side: item.item_side || "Centre",
+      item_position: item.item_position || "",
+      status: item.status,
+      illegal_note: item.status === "illegal" ? item.illegal_note || "Missing note" : null,
+    }));
+  }
+
+  function createPdfPayloadFromSavedCheck(check: LegalityCheckWithItems) {
+    const car = cars.find((current) => current.id === check.car_id);
+    const engineerAllocation = getEngineerAllocationForCar(check.car_id);
+
+    return {
+      check_id: check.id,
+      car_id: check.car_id,
+      car_name: car ? carDisplayName(car) : `Car ${check.car_id}`,
+      driver: check.driver || car?.name || "Unknown",
+      circuit: check.circuit || "Unknown",
+      check_date: check.check_date,
+      engineer_name: check.engineer_name || engineerAllocation.engineerName,
+      engineer_email: check.engineer_email || engineerAllocation.engineerEmail,
+      corner_weights: cornerWeightsFromCheck(check),
+      created_by: check.created_by || userEmail,
+      items: createItemPayloadFromSavedCheck(check),
+    };
+  }
+
   async function sendLegalityPdf(checkId: string, items: PdfItemPayload[]) {
     const carLabel = selectedCar ? carDisplayName(selectedCar) : `Car ${selectedCarId}`;
 
@@ -1593,6 +1625,111 @@ export default function LegalityPage() {
       );
     } finally {
       setSending(false);
+    }
+  }
+
+  async function viewSavedPdf(check: LegalityCheckWithItems) {
+    if (check.items.length === 0) {
+      setErrorMessage("This saved legality check has no component items, so a PDF cannot be generated.");
+      return;
+    }
+
+    setViewingPdfId(check.id);
+    setMessage("");
+    setErrorMessage("");
+
+    try {
+      const response = await fetch("/api/legality", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          ...createPdfPayloadFromSavedCheck(check),
+          download_only: true,
+        }),
+      });
+
+      if (!response.ok) {
+        const body = await response.json().catch(() => null);
+        throw new Error(body?.error || "Failed to generate the legality PDF.");
+      }
+
+      const pdfBlob = await response.blob();
+      const pdfUrl = window.URL.createObjectURL(pdfBlob);
+      const openedWindow = window.open(pdfUrl, "_blank", "noopener,noreferrer");
+
+      if (!openedWindow) {
+        const downloadLink = document.createElement("a");
+        downloadLink.href = pdfUrl;
+        downloadLink.download = `Legality_${(check.circuit || "Circuit").replace(/[^a-z0-9]+/gi, "_")}_Car_${check.car_id}_${check.check_date}.pdf`;
+        document.body.appendChild(downloadLink);
+        downloadLink.click();
+        downloadLink.remove();
+      }
+
+      window.setTimeout(() => window.URL.revokeObjectURL(pdfUrl), 60000);
+      setMessage(`PDF opened for Car ${check.car_id} · ${niceDate(check.check_date)}.`);
+    } catch (error) {
+      setErrorMessage(
+        error instanceof Error
+          ? error.message
+          : "Failed to open legality PDF.",
+      );
+    } finally {
+      setViewingPdfId(null);
+    }
+  }
+
+  async function deleteSavedCheck(check: LegalityCheckWithItems) {
+    if (readOnly) {
+      setErrorMessage("Guest/read-only users cannot delete legality checks.");
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `Delete the saved legality check for Car ${check.car_id} at ${check.circuit || "No circuit"} on ${niceDate(check.check_date)}? This cannot be undone.`,
+    );
+
+    if (!confirmed) return;
+
+    setDeletingCheckId(check.id);
+    setMessage("");
+    setErrorMessage("");
+
+    try {
+      const { error: itemDeleteError } = await supabase
+        .from("legality_check_items")
+        .delete()
+        .eq("legality_check_id", check.id);
+
+      if (itemDeleteError) {
+        throw new Error(itemDeleteError.message);
+      }
+
+      const { error: checkDeleteError } = await supabase
+        .from("legality_checks")
+        .delete()
+        .eq("id", check.id);
+
+      if (checkDeleteError) {
+        throw new Error(checkDeleteError.message);
+      }
+
+      if (activeCheckId === check.id) {
+        resetToNewSheet(check.car_id);
+      }
+
+      await loadHistory(activeLayoutPoints);
+      setMessage(`Deleted obsolete legality check for Car ${check.car_id} · ${niceDate(check.check_date)}.`);
+    } catch (error) {
+      setErrorMessage(
+        error instanceof Error
+          ? error.message
+          : "Failed to delete legality check.",
+      );
+    } finally {
+      setDeletingCheckId(null);
     }
   }
 
@@ -2057,11 +2194,9 @@ export default function LegalityPage() {
                 const car = cars.find((current) => current.id === check.car_id);
 
                 return (
-                  <button
+                  <div
                     key={check.id}
-                    type="button"
-                    onClick={() => openCheck(check)}
-                    className={`w-full rounded-2xl border p-4 text-left transition hover:border-red-500 hover:bg-[#1b2026] ${
+                    className={`w-full rounded-2xl border p-4 text-left transition ${
                       activeCheckId === check.id
                         ? "border-red-600 bg-red-950/25"
                         : "border-zinc-800 bg-[#0d0f12]"
@@ -2083,11 +2218,42 @@ export default function LegalityPage() {
                         {summaryForItems(check.items)}
                       </span>
                     </div>
+
                     <div className="mt-3 flex flex-wrap justify-between gap-2 text-[11px] uppercase tracking-[0.18em] text-zinc-600">
                       <span>Updated {niceDateTime(check.updated_at || check.created_at)}</span>
                       <span>{check.sent_to_engineer_at ? `PDF ${niceDateTime(check.sent_to_engineer_at)}` : "PDF not sent"}</span>
                     </div>
-                  </button>
+
+                    <div className="mt-4 grid gap-2 sm:grid-cols-3">
+                      <button
+                        type="button"
+                        onClick={() => openCheck(check)}
+                        className="rounded-xl border border-zinc-700 bg-[#151a20] px-3 py-2 text-xs font-semibold text-zinc-100 transition hover:border-red-500 hover:bg-[#1d242c] hover:text-red-200"
+                      >
+                        Open Sheet
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => viewSavedPdf(check)}
+                        disabled={viewingPdfId === check.id}
+                        className="rounded-xl border border-zinc-700 bg-[#151a20] px-3 py-2 text-xs font-semibold text-zinc-100 transition hover:border-red-500 hover:bg-[#1d242c] hover:text-red-200 disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        {viewingPdfId === check.id ? "Opening PDF..." : "View PDF"}
+                      </button>
+
+                      {!readOnly && (
+                        <button
+                          type="button"
+                          onClick={() => deleteSavedCheck(check)}
+                          disabled={deletingCheckId === check.id}
+                          className="rounded-xl border border-red-900 bg-red-950/30 px-3 py-2 text-xs font-semibold text-red-100 transition hover:border-red-500 hover:bg-red-900/40 disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          {deletingCheckId === check.id ? "Deleting..." : "Delete"}
+                        </button>
+                      )}
+                    </div>
+                  </div>
                 );
               })
             )}
