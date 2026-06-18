@@ -75,6 +75,11 @@ type LegalityCheckRecord = {
   engineer_name: string | null;
   engineer_email: string | null;
   check_date: string;
+  corner_weight_fl: number | string | null;
+  corner_weight_fr: number | string | null;
+  corner_weight_rl: number | string | null;
+  corner_weight_rr: number | string | null;
+  corner_weight_total: number | string | null;
   sent_to_engineer_at: string | null;
   created_by: string | null;
   created_at: string | null;
@@ -114,7 +119,23 @@ type PdfItemPayload = {
   illegal_note: string | null;
 };
 
+type CornerWeights = {
+  fl: string;
+  fr: string;
+  rl: string;
+  rr: string;
+  total: string;
+};
+
 const DEFAULT_CAR_COLOUR = "#b91c1c";
+
+const EMPTY_CORNER_WEIGHTS: CornerWeights = {
+  fl: "",
+  fr: "",
+  rl: "",
+  rr: "",
+  total: "",
+};
 
 const DEFAULT_CARS: DashboardCar[] = [
   {
@@ -329,6 +350,33 @@ function clampPercent(value: number) {
   return Math.min(98, Math.max(2, Math.round(value * 10) / 10));
 }
 
+function cleanWeightInput(value: string) {
+  return value.replace(/[^0-9.]/g, "");
+}
+
+function weightValueForDatabase(value: string) {
+  const cleanValue = value.trim();
+  if (!cleanValue) return null;
+
+  const numericValue = Number(cleanValue);
+  return Number.isFinite(numericValue) ? numericValue : null;
+}
+
+function weightValueFromDatabase(value: number | string | null | undefined) {
+  if (value === null || value === undefined) return "";
+  return String(value);
+}
+
+function cornerWeightsFromCheck(check: LegalityCheckRecord): CornerWeights {
+  return {
+    fl: weightValueFromDatabase(check.corner_weight_fl),
+    fr: weightValueFromDatabase(check.corner_weight_fr),
+    rl: weightValueFromDatabase(check.corner_weight_rl),
+    rr: weightValueFromDatabase(check.corner_weight_rr),
+    total: weightValueFromDatabase(check.corner_weight_total),
+  };
+}
+
 function withTimeout<T>(promise: Promise<T>, timeoutMs: number, fallback: T) {
   return Promise.race<T>([
     promise,
@@ -534,26 +582,26 @@ function LegalityCarOverview({
   return (
     <div
       ref={canvasRef}
-      className="relative mx-auto aspect-[3/4] min-h-[620px] w-full max-w-[640px] overflow-hidden rounded-[2rem] border border-zinc-300 bg-white shadow-inner"
+      className="relative mx-auto aspect-[3/4] min-h-[620px] w-full max-w-[640px] overflow-hidden rounded-[2rem] border border-zinc-700 bg-[#030507] shadow-inner shadow-black/40"
     >
-      <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(to_right,rgba(228,228,231,0.44)_1px,transparent_1px),linear-gradient(to_bottom,rgba(228,228,231,0.44)_1px,transparent_1px)] bg-[size:28px_28px]" />
-      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(239,68,68,0.08),transparent_58%)]" />
+      <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(to_right,rgba(82,82,91,0.34)_1px,transparent_1px),linear-gradient(to_bottom,rgba(82,82,91,0.34)_1px,transparent_1px)] bg-[size:28px_28px]" />
+      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(239,68,68,0.12),transparent_58%)]" />
 
       <img
-        src="/legality-car-overview.png"
+        src="/legality-car-overview-inverted.png"
         alt="Top-down formula car legality overview"
-        className="pointer-events-none absolute inset-[4%] h-[92%] w-[92%] object-contain opacity-95 [filter:contrast(1.08)_saturate(0.7)]"
+        className="pointer-events-none absolute inset-[4%] h-[92%] w-[92%] object-contain opacity-95 [filter:contrast(1.12)_drop-shadow(0_0_10px_rgba(255,255,255,0.08))]"
       />
 
-      <div className="pointer-events-none absolute inset-x-[22%] top-[4%] h-[92%] border-x border-zinc-300/80" />
+      <div className="pointer-events-none absolute inset-x-[22%] top-[4%] h-[92%] border-x border-zinc-600/70" />
 
       {points.map((point) => {
         const state = getPointState(itemStates, point.key);
         const isIllegal = state.status === "illegal";
         const isSelected = selectedLayoutKey === point.key;
         const statusClasses = isIllegal
-          ? "border-red-500 bg-red-50 text-red-700 shadow-red-950/10"
-          : "border-green-500 bg-green-50 text-green-700 shadow-green-950/10";
+          ? "border-red-500 bg-red-950/80 text-red-100 shadow-red-950/30"
+          : "border-green-500 bg-green-950/70 text-green-100 shadow-green-950/25";
         const editClasses = isSelected
           ? "ring-4 ring-red-500/30"
           : "ring-0";
@@ -587,7 +635,7 @@ function LegalityCarOverview({
               left: `${point.x}%`,
               top: `${point.y}%`,
             }}
-            className={`absolute z-10 -translate-x-1/2 -translate-y-1/2 rounded-xl border bg-white/95 px-2.5 py-2 text-left shadow-lg backdrop-blur-sm transition hover:scale-[1.03] ${
+            className={`absolute z-10 -translate-x-1/2 -translate-y-1/2 rounded-xl border bg-[#070a0f]/95 px-2.5 py-2 text-left shadow-lg backdrop-blur-sm transition hover:scale-[1.03] ${
               layoutEditMode && !readOnly ? "cursor-move border-red-500" : statusClasses
             } ${editClasses}`}
             title={
@@ -597,14 +645,14 @@ function LegalityCarOverview({
             }
           >
             <div className="flex items-center gap-2">
-              <span className="min-w-[56px] text-[10px] font-black uppercase tracking-[0.18em] text-zinc-950">
+              <span className="min-w-[56px] text-[10px] font-black uppercase tracking-[0.18em] text-zinc-100">
                 {point.shortLabel}
               </span>
               <span
                 className={`h-5 w-14 rounded border-2 ${
                   isIllegal
-                    ? "border-red-600 bg-red-100"
-                    : "border-zinc-950 bg-white"
+                    ? "border-red-400 bg-red-950"
+                    : "border-zinc-300 bg-[#0b0f14]"
                 }`}
               />
             </div>
@@ -618,7 +666,7 @@ function LegalityCarOverview({
       })}
 
       {layoutEditMode && !readOnly && (
-        <div className="absolute bottom-4 left-4 right-4 rounded-2xl border border-red-200 bg-white/95 p-3 text-xs text-zinc-700 shadow-lg">
+        <div className="absolute bottom-4 left-4 right-4 rounded-2xl border border-red-800 bg-[#070a0f]/95 p-3 text-xs text-zinc-300 shadow-lg">
           Drag boxes around the car, then use the layout editor above to rename,
           change side/position, add or remove points.
         </div>
@@ -653,7 +701,7 @@ function StatusButton({
       className={`rounded-lg border px-3 py-1.5 text-[11px] font-bold uppercase tracking-[0.18em] transition disabled:cursor-not-allowed disabled:opacity-60 ${
         active
           ? activeClass
-          : "border-zinc-300 bg-white text-zinc-600 hover:border-zinc-500 hover:bg-zinc-100"
+          : "border-zinc-700 bg-[#0b0f14] text-zinc-300 hover:border-zinc-500 hover:bg-zinc-900"
       }`}
     >
       {children}
@@ -677,21 +725,21 @@ function LegalityPointCard({
   const isIllegal = state.status === "illegal";
 
   return (
-    <div className="rounded-2xl border border-zinc-300 bg-white p-3 shadow-sm">
+    <div className="rounded-2xl border border-zinc-700 bg-[#070a0f] p-3 shadow-sm shadow-black/30">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <div className="text-sm font-black uppercase tracking-[0.18em] text-zinc-950">
+          <div className="text-sm font-black uppercase tracking-[0.18em] text-zinc-100">
             {point.label}
           </div>
-          <div className="mt-1 text-[11px] leading-4 text-zinc-500">
+          <div className="mt-1 text-[11px] leading-4 text-zinc-400">
             {point.position}
           </div>
         </div>
         <span
           className={`rounded-full border px-2 py-1 text-[10px] font-bold uppercase tracking-[0.18em] ${
             isIllegal
-              ? "border-red-400 bg-red-50 text-red-700"
-              : "border-green-400 bg-green-50 text-green-700"
+              ? "border-red-400 bg-red-950/80 text-red-100"
+              : "border-green-400 bg-green-950/70 text-green-100"
           }`}
         >
           {state.status}
@@ -727,7 +775,7 @@ function LegalityPointCard({
             value={state.illegal_note}
             onChange={(event) => onNoteChange(event.target.value)}
             placeholder="Enter what is illegal..."
-            className="mt-2 min-h-20 w-full resize-y rounded-xl border border-red-300 bg-red-50 px-3 py-2 text-sm text-zinc-950 outline-none transition placeholder:text-red-300 focus:border-red-600 disabled:cursor-not-allowed disabled:bg-zinc-100"
+            className="mt-2 min-h-20 w-full resize-y rounded-xl border border-red-700 bg-red-950/35 px-3 py-2 text-sm text-red-50 outline-none transition placeholder:text-red-300 focus:border-red-500 disabled:cursor-not-allowed disabled:bg-zinc-900"
           />
         </label>
       )}
@@ -750,6 +798,7 @@ export default function LegalityPage() {
   const [selectedCircuit, setSelectedCircuit] = useState<string>(CIRCUIT_OPTIONS[0]);
   const [customCircuit, setCustomCircuit] = useState("");
   const [driver, setDriver] = useState(DEFAULT_CARS[0].name);
+  const [cornerWeights, setCornerWeights] = useState<CornerWeights>(EMPTY_CORNER_WEIGHTS);
   const [activeCheckId, setActiveCheckId] = useState<string | null>(null);
   const [lastSentToEngineerAt, setLastSentToEngineerAt] = useState<string | null>(null);
   const [layoutPoints, setLayoutPoints] = useState<LegalityPoint[]>(
@@ -1019,6 +1068,13 @@ export default function LegalityPage() {
     };
   }, [loadCars, loadHistory, loadLayout]);
 
+  function updateCornerWeight(key: keyof CornerWeights, value: string) {
+    setCornerWeights((current) => ({
+      ...current,
+      [key]: cleanWeightInput(value),
+    }));
+  }
+
   function updatePointStatus(key: string, status: LegalityStatus) {
     setItemStates((current) => ({
       ...current,
@@ -1211,6 +1267,7 @@ export default function LegalityPage() {
     setSelectedCircuit(CIRCUIT_OPTIONS[0]);
     setCustomCircuit("");
     setDriver(car?.name ?? "");
+    setCornerWeights(EMPTY_CORNER_WEIGHTS);
     setLastSentToEngineerAt(null);
     setItemStates(createDefaultItemState(activeLayoutPoints));
     setMessage("");
@@ -1246,6 +1303,7 @@ export default function LegalityPage() {
     setCheckDate(check.check_date);
     applyCircuitFromSavedValue(check.circuit);
     setDriver(check.driver ?? "");
+    setCornerWeights(cornerWeightsFromCheck(check));
     setLastSentToEngineerAt(check.sent_to_engineer_at ?? null);
     setItemStates(nextState);
     setMessage(`Opened legality check for Car ${check.car_id} on ${niceDate(check.check_date)}.`);
@@ -1323,6 +1381,7 @@ export default function LegalityPage() {
         check_date: checkDate,
         engineer_name: selectedEngineer.engineerName,
         engineer_email: selectedEngineer.engineerEmail,
+        corner_weights: cornerWeights,
         created_by: userEmail,
         items,
       }),
@@ -1401,6 +1460,11 @@ export default function LegalityPage() {
             engineer_name: selectedEngineer.engineerName,
             engineer_email: selectedEngineer.engineerEmail,
             check_date: checkDate,
+            corner_weight_fl: weightValueForDatabase(cornerWeights.fl),
+            corner_weight_fr: weightValueForDatabase(cornerWeights.fr),
+            corner_weight_rl: weightValueForDatabase(cornerWeights.rl),
+            corner_weight_rr: weightValueForDatabase(cornerWeights.rr),
+            corner_weight_total: weightValueForDatabase(cornerWeights.total),
             updated_by: userEmail,
             updated_at: now,
           })
@@ -1420,6 +1484,11 @@ export default function LegalityPage() {
             engineer_name: selectedEngineer.engineerName,
             engineer_email: selectedEngineer.engineerEmail,
             check_date: checkDate,
+            corner_weight_fl: weightValueForDatabase(cornerWeights.fl),
+            corner_weight_fr: weightValueForDatabase(cornerWeights.fr),
+            corner_weight_rl: weightValueForDatabase(cornerWeights.rl),
+            corner_weight_rr: weightValueForDatabase(cornerWeights.rr),
+            corner_weight_total: weightValueForDatabase(cornerWeights.total),
             created_by: userEmail,
             updated_by: userEmail,
             updated_at: now,
@@ -2027,8 +2096,8 @@ export default function LegalityPage() {
       </section>
 
       <section className="rounded-[2rem] border border-zinc-800 bg-[#111418] p-4 shadow-2xl shadow-black/30">
-        <div className="overflow-hidden rounded-[1.5rem] border border-zinc-300 bg-zinc-50 text-zinc-950">
-          <div className="grid gap-4 border-b border-zinc-300 bg-white p-5 md:grid-cols-[1fr_auto] md:items-center">
+        <div className="overflow-hidden rounded-[1.5rem] border border-zinc-700 bg-[#030507] text-zinc-100">
+          <div className="grid gap-4 border-b border-zinc-700 bg-[#05070b] p-5 md:grid-cols-[1fr_auto] md:items-center">
             <div className="flex flex-wrap items-center gap-5">
               <img src="/rodin-logo.png" alt="Rodin Motorsport" className="h-12 w-auto" />
               <div className="h-10 w-px bg-zinc-300" />
@@ -2036,26 +2105,89 @@ export default function LegalityPage() {
             </div>
 
             <div className="grid gap-2 text-sm sm:grid-cols-2 md:min-w-[500px] lg:grid-cols-3">
-              <div className="rounded-xl border border-zinc-300 bg-zinc-50 px-3 py-2">
-                <span className="text-[10px] font-black uppercase tracking-[0.24em] text-zinc-500">Date</span>
+              <div className="rounded-xl border border-zinc-700 bg-[#0b0f14] px-3 py-2">
+                <span className="text-[10px] font-black uppercase tracking-[0.24em] text-zinc-400">Date</span>
                 <div className="mt-1 font-semibold">{niceDate(checkDate)}</div>
               </div>
-              <div className="rounded-xl border border-zinc-300 bg-zinc-50 px-3 py-2">
-                <span className="text-[10px] font-black uppercase tracking-[0.24em] text-zinc-500">Circuit</span>
+              <div className="rounded-xl border border-zinc-700 bg-[#0b0f14] px-3 py-2">
+                <span className="text-[10px] font-black uppercase tracking-[0.24em] text-zinc-400">Circuit</span>
                 <div className="mt-1 font-semibold">{finalCircuit || "—"}</div>
               </div>
-              <div className="rounded-xl border border-zinc-300 bg-zinc-50 px-3 py-2">
-                <span className="text-[10px] font-black uppercase tracking-[0.24em] text-zinc-500">Car</span>
+              <div className="rounded-xl border border-zinc-700 bg-[#0b0f14] px-3 py-2">
+                <span className="text-[10px] font-black uppercase tracking-[0.24em] text-zinc-400">Car</span>
                 <div className="mt-1 font-semibold">Car {selectedCarId}</div>
               </div>
-              <div className="rounded-xl border border-zinc-300 bg-zinc-50 px-3 py-2">
-                <span className="text-[10px] font-black uppercase tracking-[0.24em] text-zinc-500">Driver</span>
+              <div className="rounded-xl border border-zinc-700 bg-[#0b0f14] px-3 py-2">
+                <span className="text-[10px] font-black uppercase tracking-[0.24em] text-zinc-400">Driver</span>
                 <div className="mt-1 font-semibold">{driver.trim() || selectedCar?.name || "—"}</div>
               </div>
-              <div className="rounded-xl border border-zinc-300 bg-zinc-50 px-3 py-2 sm:col-span-2">
-                <span className="text-[10px] font-black uppercase tracking-[0.24em] text-zinc-500">Engineer</span>
+              <div className="rounded-xl border border-zinc-700 bg-[#0b0f14] px-3 py-2 sm:col-span-2">
+                <span className="text-[10px] font-black uppercase tracking-[0.24em] text-zinc-400">Engineer</span>
                 <div className="mt-1 font-semibold">{selectedEngineer.engineerName}</div>
                 <div className="mt-0.5 text-xs text-zinc-500">{selectedEngineer.engineerEmail || "No email configured"}</div>
+              </div>
+           </div>
+          </div>
+
+          <div className="border-b border-zinc-700 bg-[#05070b] px-5 py-4">
+            <div className="mx-auto max-w-4xl">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <p className="text-[10px] font-black uppercase tracking-[0.28em] text-zinc-400">
+                    Corner Weight Measurements
+                  </p>
+                  <p className="mt-1 text-xs leading-5 text-zinc-400">
+                    Manual entry for the legality sheet. Total weight is not auto-calculated.
+                  </p>
+                </div>
+                <span className="rounded-full border border-zinc-700 bg-[#0b0f14] px-3 py-1 text-[10px] font-black uppercase tracking-[0.2em] text-zinc-300">
+                  kg
+                </span>
+              </div>
+
+              <div className="mt-3 grid gap-x-3 gap-y-4 md:grid-cols-3">
+                {([
+                  ["fl", "FL", "Front Left"],
+                  ["fr", "FR", "Front Right"],
+                ] as const).map(([key, label, helper]) => (
+                  <label key={key}>
+                    <span className="text-[10px] font-black uppercase tracking-[0.24em] text-zinc-500">
+                      {label}
+                    </span>
+                    <input
+                      disabled={readOnly}
+                      inputMode="decimal"
+                      value={cornerWeights[key]}
+                      onChange={(event) => updateCornerWeight(key, event.target.value)}
+                      placeholder="0.0"
+                      className="mt-2 w-full rounded-xl border border-zinc-700 bg-[#0b0f14] px-4 py-3 text-sm font-bold text-zinc-100 outline-none transition placeholder:text-zinc-500 focus:border-red-500 disabled:cursor-not-allowed disabled:bg-zinc-900 disabled:text-zinc-500"
+                    />
+                    <div className="mt-1 text-[11px] text-zinc-500">{helper}</div>
+                  </label>
+                ))}
+
+                <div className="hidden md:block" aria-hidden="true" />
+
+                {([
+                  ["rl", "RL", "Rear Left"],
+                  ["rr", "RR", "Rear Right"],
+                  ["total", "Total", "Total Weight"],
+                ] as const).map(([key, label, helper]) => (
+                  <label key={key}>
+                    <span className="text-[10px] font-black uppercase tracking-[0.24em] text-zinc-500">
+                      {label}
+                    </span>
+                    <input
+                      disabled={readOnly}
+                      inputMode="decimal"
+                      value={cornerWeights[key]}
+                      onChange={(event) => updateCornerWeight(key, event.target.value)}
+                      placeholder="0.0"
+                      className="mt-2 w-full rounded-xl border border-zinc-700 bg-[#0b0f14] px-4 py-3 text-sm font-bold text-zinc-100 outline-none transition placeholder:text-zinc-500 focus:border-red-500 disabled:cursor-not-allowed disabled:bg-zinc-900 disabled:text-zinc-500"
+                    />
+                    <div className="mt-1 text-[11px] text-zinc-500">{helper}</div>
+                  </label>
+                ))}
               </div>
             </div>
           </div>
@@ -2099,7 +2231,7 @@ export default function LegalityPage() {
             </div>
           </div>
 
-          <div className="border-t border-zinc-300 bg-white p-4">
+          <div className="border-t border-zinc-700 bg-[#05070b] p-4">
             <div className="mx-auto max-w-xl">
               {centrePoints.map((point) => (
                 <LegalityPointCard

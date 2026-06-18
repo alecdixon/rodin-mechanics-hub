@@ -287,19 +287,22 @@ async function buildLegalityPdf(payload: NormalisedLegalityEmailPayload) {
 
   const rodinLogo = await tryEmbedPng(pdfDoc, "rodin-logo.png");
   const gb3Logo = await tryEmbedPng(pdfDoc, "gb3-logo.png");
-  const carOverview = await tryEmbedPng(pdfDoc, "legality-car-overview.png");
+  const carOverview = await tryEmbedPng(pdfDoc, "legality-car-overview-inverted.png");
 
-  const green = rgb(0, 0.68, 0.26);
-  const red = rgb(0.93, 0.05, 0.12);
-  const dark = rgb(0.04, 0.05, 0.06);
-  const grey = rgb(0.39, 0.4, 0.44);
-  const lightGrey = rgb(0.94, 0.95, 0.96);
-  const borderGrey = rgb(0.76, 0.77, 0.8);
+  const green = rgb(0, 0.78, 0.32);
+  const red = rgb(1, 0.12, 0.18);
+  const dark = rgb(0.93, 0.94, 0.96);
+  const grey = rgb(0.58, 0.61, 0.68);
+  const lightGrey = rgb(0.06, 0.07, 0.09);
+  const borderGrey = rgb(0.25, 0.27, 0.32);
+  const sheetBlack = rgb(0.015, 0.02, 0.03);
+  const panelBlack = rgb(0.035, 0.045, 0.06);
 
   const worksheetSize: [number, number] = [595.28, 841.89];
   let page = pdfDoc.addPage(worksheetSize);
   const pageWidth = worksheetSize[0];
   const pageHeight = worksheetSize[1];
+  page.drawRectangle({ x: 0, y: 0, width: pageWidth, height: pageHeight, color: sheetBlack });
 
   const illegalItems = payload.items.filter((item) => item.status === "illegal");
   const summary =
@@ -325,7 +328,7 @@ async function buildLegalityPdf(payload: NormalisedLegalityEmailPayload) {
   }
 
   function drawHeaderInfo(label: string, value: string, x: number, y: number, width: number, height = 34) {
-    drawOutlinedBox(page, x, y, width, height, borderGrey, rgb(0.99, 0.99, 1));
+    drawOutlinedBox(page, x, y, width, height, borderGrey, panelBlack);
     drawText(label.toUpperCase(), x + 8, y + height - 12, 6.2, boldFont, grey);
     const valueLines = wrapTextByWidth(value || "—", boldFont, 8.2, width - 16).slice(0, 2);
     valueLines.forEach((line, index) => {
@@ -335,7 +338,7 @@ async function buildLegalityPdf(payload: NormalisedLegalityEmailPayload) {
 
   function drawPill(text: string, x: number, y: number, isIllegal: boolean) {
     const width = 44;
-    const fill = isIllegal ? rgb(1, 0.92, 0.92) : rgb(0.9, 1, 0.94);
+    const fill = isIllegal ? rgb(0.2, 0.035, 0.045) : rgb(0.025, 0.16, 0.08);
     const color = isIllegal ? red : green;
 
     page.drawRectangle({
@@ -357,7 +360,7 @@ async function buildLegalityPdf(payload: NormalisedLegalityEmailPayload) {
       y,
       width,
       height: 17,
-      color: active ? activeColor : rgb(1, 1, 1),
+      color: active ? activeColor : panelBlack,
       borderColor: active ? activeColor : borderGrey,
       borderWidth: 0.9,
     });
@@ -375,7 +378,7 @@ async function buildLegalityPdf(payload: NormalisedLegalityEmailPayload) {
       y,
       width: 32,
       height: 12,
-      color: isIllegal ? rgb(1, 0.92, 0.92) : rgb(1, 1, 1),
+      color: isIllegal ? rgb(0.2, 0.035, 0.045) : panelBlack,
       borderColor: isIllegal ? red : dark,
       borderWidth: 1,
     });
@@ -388,7 +391,7 @@ async function buildLegalityPdf(payload: NormalisedLegalityEmailPayload) {
       y,
       width,
       height: 22,
-      color: rgb(1, 1, 1),
+      color: panelBlack,
       borderColor: isIllegal ? red : green,
       borderWidth: 1.25,
     });
@@ -407,8 +410,8 @@ async function buildLegalityPdf(payload: NormalisedLegalityEmailPayload) {
       y,
       width,
       height,
-      color: rgb(1, 1, 1),
-      borderColor: isIllegal ? rgb(1, 0.63, 0.65) : borderGrey,
+      color: panelBlack,
+      borderColor: isIllegal ? red : borderGrey,
       borderWidth: 0.85,
     });
 
@@ -430,8 +433,8 @@ async function buildLegalityPdf(payload: NormalisedLegalityEmailPayload) {
         y: y + 8,
         width: width - 16,
         height: Math.max(22, height - 86),
-        color: rgb(1, 0.94, 0.94),
-        borderColor: rgb(1, 0.43, 0.46),
+        color: rgb(0.18, 0.035, 0.045),
+        borderColor: red,
         borderWidth: 0.9,
       });
 
@@ -461,7 +464,7 @@ async function buildLegalityPdf(payload: NormalisedLegalityEmailPayload) {
   const centreItems = sortedItems.filter((item) => item.item_side !== "LH" && item.item_side !== "RH");
 
   // Header / worksheet top strip - portrait A4 to make the first page readable.
-  page.drawRectangle({ x: 0, y: pageHeight - 92, width: pageWidth, height: 92, color: rgb(1, 1, 1) });
+  page.drawRectangle({ x: 0, y: pageHeight - 92, width: pageWidth, height: 92, color: sheetBlack });
   page.drawLine({ start: { x: 0, y: pageHeight - 92 }, end: { x: pageWidth, y: pageHeight - 92 }, thickness: 0.8, color: borderGrey });
 
   if (rodinLogo) {
@@ -499,12 +502,12 @@ ${payload.engineer_email}`, startX + 134 + headerGap, pageHeight - 80, pageWidth
   const carW = carPanelW - 32;
   const carH = carPanelH - 36;
 
-  drawOutlinedBox(page, carPanelX, carPanelY, carPanelW, carPanelH, borderGrey, rgb(1, 1, 1));
+  drawOutlinedBox(page, carPanelX, carPanelY, carPanelW, carPanelH, borderGrey, sheetBlack);
   for (let gridX = carPanelX + 35; gridX < carPanelX + carPanelW; gridX += 44) {
-    page.drawLine({ start: { x: gridX, y: carPanelY + 10 }, end: { x: gridX, y: carPanelY + carPanelH - 10 }, thickness: 0.25, color: rgb(0.88, 0.89, 0.91) });
+    page.drawLine({ start: { x: gridX, y: carPanelY + 10 }, end: { x: gridX, y: carPanelY + carPanelH - 10 }, thickness: 0.25, color: rgb(0.16, 0.17, 0.2) });
   }
   for (let gridY = carPanelY + 38; gridY < carPanelY + carPanelH; gridY += 44) {
-    page.drawLine({ start: { x: carPanelX + 10, y: gridY }, end: { x: carPanelX + carPanelW - 10, y: gridY }, thickness: 0.25, color: rgb(0.88, 0.89, 0.91) });
+    page.drawLine({ start: { x: carPanelX + 10, y: gridY }, end: { x: carPanelX + carPanelW - 10, y: gridY }, thickness: 0.25, color: rgb(0.16, 0.17, 0.2) });
   }
   page.drawLine({ start: { x: carPanelX + 62, y: carPanelY + 18 }, end: { x: carPanelX + 62, y: carPanelY + carPanelH - 18 }, thickness: 0.45, color: borderGrey });
   page.drawLine({ start: { x: carPanelX + carPanelW - 62, y: carPanelY + 18 }, end: { x: carPanelX + carPanelW - 62, y: carPanelY + carPanelH - 18 }, thickness: 0.45, color: borderGrey });
@@ -548,17 +551,19 @@ ${payload.engineer_email}`, startX + 134 + headerGap, pageHeight - 80, pageWidth
   }
 
   drawText(`Summary: ${summary}`, 18, 48, 10, boldFont, illegalItems.length ? red : green);
-  drawText("PDF layout: portrait-app-v5", pageWidth - 118, 18, 5.5, normalFont, grey);
+  drawText("PDF layout: portrait-app-v7-black", pageWidth - 124, 18, 5.5, normalFont, grey);
 
   // Component list pages
   const listPageSize: [number, number] = [595.28, 841.89];
   page = pdfDoc.addPage(listPageSize);
+  page.drawRectangle({ x: 0, y: 0, width: listPageSize[0], height: listPageSize[1], color: sheetBlack });
   let y = 796;
   const margin = 34;
   const usableWidth = listPageSize[0] - margin * 2;
 
   function newListPage() {
     page = pdfDoc.addPage(listPageSize);
+    page.drawRectangle({ x: 0, y: 0, width: listPageSize[0], height: listPageSize[1], color: sheetBlack });
     y = 796;
     drawListHeader();
   }
@@ -611,7 +616,7 @@ ${payload.engineer_email}`, startX + 134 + headerGap, pageHeight - 80, pageWidth
       y: y - rowHeight + 8,
       width: usableWidth,
       height: rowHeight,
-      color: isIllegal ? rgb(1, 0.96, 0.96) : rgb(1, 1, 1),
+      color: isIllegal ? rgb(0.16, 0.035, 0.045) : panelBlack,
       borderColor: borderGrey,
       borderWidth: 0.45,
     });
@@ -663,7 +668,7 @@ ${payload.engineer_email}`, startX + 134 + headerGap, pageHeight - 80, pageWidth
         y: y - blockHeight + 8,
         width: usableWidth,
         height: blockHeight,
-        color: rgb(1, 0.94, 0.94),
+        color: rgb(0.16, 0.035, 0.045),
         borderColor: red,
         borderWidth: 0.55,
       });
