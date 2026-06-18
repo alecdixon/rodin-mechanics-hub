@@ -188,6 +188,7 @@ export default function DashboardPage() {
   const [cars, setCars] = useState<CarProgress[]>([]);
   const [clutches, setClutches] = useState<ClutchInventoryItem[]>([]);
   const [readOnly, setReadOnly] = useState(false);
+  const [userEmail, setUserEmail] = useState<string | null>(null);
 
   const [carSettingsOpen, setCarSettingsOpen] = useState(false);
   const [expandedCarId, setExpandedCarId] = useState<number | null>(null);
@@ -336,6 +337,8 @@ export default function DashboardPage() {
         return;
       }
 
+      setUserEmail(email);
+
       const role = getUserRole(email);
       const userIsReadOnly = isReadOnlyUser(email);
 
@@ -448,6 +451,10 @@ export default function DashboardPage() {
 
     return map;
   }, [activeClutches]);
+
+  const canOpenLegality = userEmail
+    ? hasPermission(userEmail, "legality:view")
+    : false;
 
   const totalJobs = useMemo(() => {
     return activeCars.reduce((sum, car) => sum + car.total, 0);
@@ -867,7 +874,7 @@ export default function DashboardPage() {
         <div className="bg-[#0d0f12]/80 p-4">
           <div
             className={`grid gap-3 md:grid-cols-2 ${
-              readOnly ? "xl:grid-cols-4" : "xl:grid-cols-5"
+              readOnly ? "xl:grid-cols-5" : "xl:grid-cols-6"
             }`}
           >
             <QuickLink
@@ -888,6 +895,15 @@ export default function DashboardPage() {
               title="Recorded Issues"
               description="Faults, fixes and approved solutions"
             />
+
+            {canOpenLegality && (
+              <QuickLink
+                href="/legality"
+                title="Legality"
+                description="Race car legality checks and sign-off sheet"
+                variant="red"
+              />
+            )}
 
             <QuickLink
               href="/dashboard/team-jobs"

@@ -32,7 +32,9 @@ export type Permission =
   | "sticker_list:view"
   | "sticker_list:edit"
   | "sticker_list:delete"
-  | "sticker_list:send";
+  | "sticker_list:send"
+  | "legality:view"
+  | "legality:edit";
 
 export type UserAccess = {
   role: UserRole;
@@ -72,6 +74,8 @@ const ALL_PERMISSIONS: Permission[] = [
   "sticker_list:edit",
   "sticker_list:delete",
   "sticker_list:send",
+  "legality:view",
+  "legality:edit",
 ];
 
 const VIEW_PERMISSIONS: Permission[] = ALL_PERMISSIONS.filter((permission) =>
@@ -337,6 +341,14 @@ export function canDeleteStickerList(email: string | null | undefined): boolean 
 
 export function canSendStickerList(email: string | null | undefined): boolean {
   return canWrite(email, "sticker_list:send");
+}
+
+export function canAccessLegality(email: string | null | undefined): boolean {
+  return hasPermission(email, "legality:view");
+}
+
+export function canEditLegality(email: string | null | undefined): boolean {
+  return canWrite(email, "legality:edit");
 }
 
 export function canAccessClutch(email: string | null | undefined): boolean {
