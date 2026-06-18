@@ -25,6 +25,22 @@ type LegalityPdfItem = {
   illegal_note: string | null;
 };
 
+type CornerWeights = {
+  fl: string | number | null;
+  fr: string | number | null;
+  rl: string | number | null;
+  rr: string | number | null;
+  total: string | number | null;
+};
+
+type NormalisedCornerWeights = {
+  fl: string;
+  fr: string;
+  rl: string;
+  rr: string;
+  total: string;
+};
+
 type LegalityEmailPayload = {
   check_id?: string | null;
   car_id: number;
@@ -35,6 +51,7 @@ type LegalityEmailPayload = {
   engineer_name?: string | null;
   engineer_email?: string | null;
   created_by?: string | null;
+  corner_weights?: Partial<CornerWeights> | null;
   items?: LegalityPdfItem[];
 };
 
@@ -48,6 +65,7 @@ type NormalisedLegalityEmailPayload = {
   engineer_name: string;
   engineer_email: string;
   created_by: string;
+  corner_weights: NormalisedCornerWeights;
   items: LegalityPdfItem[];
 };
 
@@ -70,8 +88,32 @@ function blockUnauthorisedUser(request: NextRequest) {
   return null;
 }
 
-function clean(value: string | null | undefined) {
-  return value?.trim() || "";
+function clean(value: string | number | null | undefined) {
+  return String(value ?? "").trim();
+}
+
+function cleanWeightValue(value: string | number | null | undefined) {
+  const cleanValue = String(value ?? "").trim();
+  if (!cleanValue) return "";
+
+  const numericValue = Number(cleanValue);
+  if (!Number.isFinite(numericValue)) return cleanValue;
+
+  return numericValue.toFixed(1).replace(/\.0$/, "");
+}
+
+function normaliseCornerWeights(weights: Partial<CornerWeights> | null | undefined): NormalisedCornerWeights {
+  return {
+    fl: cleanWeightValue(weights?.fl),
+    fr: cleanWeightValue(weights?.fr),
+    rl: cleanWeightValue(weights?.rl),
+    rr: cleanWeightValue(weights?.rr),
+    total: cleanWeightValue(weights?.total),
+  };
+}
+
+function formatCornerWeight(value: string) {
+  return value ? `${value} kg` : "—";
 }
 
 function getFallbackEngineerEmailForCar(carId: number) {
@@ -336,6 +378,60 @@ async function buildLegalityPdf(payload: NormalisedLegalityEmailPayload) {
     });
   }
 
+  function drawCornerWeightsPanel(x: number, y: number, width: number, height: number) {
+    const cells = [
+      ["FL", "Front Left", payload.corner_weights.fl],
+      ["FR", "Front Right", payload.corner_weights.fr],
+      ["RL", "Rear Left", payload.corner_weights.rl],
+      ["RR", "Rear Right", payload.corner_weights.rr],
+      ["TOTAL", "Total Weight", payload.corner_weights.total],
+    ] as const;
+
+    page.drawRectangle({
+      x,
+      y,
+      width,
+      height,
+      color: panelBlack,
+      borderColor: borderGrey,
+      borderWidth: 0.85,
+    });
+
+    drawText("CORNER WEIGHTS", x + 10, y + height - 15, 7.2, boldFont, grey);
+    drawText("kg", x + width - 22, y + height - 15, 6.8, boldFont, grey);
+
+    const innerX = x + 10;
+    const innerY = y + 8;
+    const innerWidth = width - 20;
+    const cellGap = 6;
+    const cellW = (innerWidth - cellGap * 4) / 5;
+    const cellH = height - 28;
+
+    cells.forEach(([label, helper, value], index) => {
+      const cellX = innerX + index * (cellW + cellGap);
+
+      page.drawRectangle({
+        x: cellX,
+        y: innerY,
+        width: cellW,
+        height: cellH,
+        color: sheetBlack,
+        borderColor: borderGrey,
+        borderWidth: 0.65,
+      });
+
+      drawText(label, cellX + 6, innerY + cellH - 11, 6.4, boldFont, grey);
+
+      const displayValue = formatCornerWeight(value);
+      const valueSize = displayValue.length > 8 ? 8.8 : 10.2;
+      const safeValue = wrapTextByWidth(displayValue, boldFont, valueSize, cellW - 12).slice(0, 1)[0] || "—";
+      drawText(safeValue, cellX + 6, innerY + cellH - 25, valueSize, boldFont, dark);
+
+      const helperLine = wrapTextByWidth(helper, normalFont, 5.4, cellW - 12).slice(0, 1)[0] || "";
+      drawText(helperLine, cellX + 6, innerY + 5, 5.4, normalFont, grey);
+    });
+  }
+
   function drawPill(text: string, x: number, y: number, isIllegal: boolean) {
     const width = 44;
     const fill = isIllegal ? rgb(0.2, 0.035, 0.045) : rgb(0.025, 0.16, 0.08);
@@ -488,19 +584,22 @@ async function buildLegalityPdf(payload: NormalisedLegalityEmailPayload) {
   drawHeaderInfo("Engineer", `${payload.engineer_name}
 ${payload.engineer_email}`, startX + 134 + headerGap, pageHeight - 80, pageWidth - (startX + 134 + headerGap) - 14, topBoxH);
 
-  // Body worksheet - portrait and compact: side cards sit close to a much larger car panel.
+  // Corner weights sit high on page 1 so they are visible before the component detail.
+  drawCornerWeightsPanel(14, 690, pageWidth - 28, 50);
+
+  // Body worksheet - compact portrait layout with no overlap between the top weights band and the car panel.
   const cardW = 116;
-  const cardH = 74;
+  const cardH = 66;
   const leftX = 14;
   const rightX = pageWidth - leftX - cardW;
   const carPanelX = leftX + cardW + 8;
-  const carPanelY = 165;
+  const carPanelY = 150;
   const carPanelW = pageWidth - (leftX + cardW + 8) * 2;
-  const carPanelH = 580;
+  const carPanelH = 526;
   const carX = carPanelX + 16;
-  const carY = carPanelY + 18;
+  const carY = carPanelY + 16;
   const carW = carPanelW - 32;
-  const carH = carPanelH - 36;
+  const carH = carPanelH - 32;
 
   drawOutlinedBox(page, carPanelX, carPanelY, carPanelW, carPanelH, borderGrey, sheetBlack);
   for (let gridX = carPanelX + 35; gridX < carPanelX + carPanelW; gridX += 44) {
@@ -518,8 +617,8 @@ ${payload.engineer_email}`, startX + 134 + headerGap, pageHeight - 80, pageWidth
     drawText("CAR OVERVIEW IMAGE MISSING", carX + 18, carY + carH / 2, 10, boldFont, red);
   }
 
-  const startY = 650;
-  const stepY = 78;
+  const startY = 604;
+  const stepY = 70;
 
   leftItems.slice(0, 6).forEach((item, index) => {
     drawComponentCard(item, leftX, startY - index * stepY, cardW, cardH);
@@ -532,7 +631,7 @@ ${payload.engineer_email}`, startX + 134 + headerGap, pageHeight - 80, pageWidth
   const tagW = 64;
   const tagLeftX = carPanelX + 8;
   const tagRightX = carPanelX + carPanelW - tagW - 8;
-  const tagYValues = [696, 630, 552, 474, 396, 318];
+  const tagYValues = [620, 566, 498, 430, 362, 294];
 
   leftItems.slice(0, 6).forEach((item, index) => {
     drawMeasurementTag(item, tagLeftX, tagYValues[index] ?? 290, tagW);
@@ -547,11 +646,11 @@ ${payload.engineer_email}`, startX + 134 + headerGap, pageHeight - 80, pageWidth
   });
 
   if (centreItems.length > 0) {
-    drawComponentCard(centreItems[0], pageWidth / 2 - 170, 64, 340, 88);
+    drawComponentCard(centreItems[0], pageWidth / 2 - 170, 54, 340, 86);
   }
 
-  drawText(`Summary: ${summary}`, 18, 48, 10, boldFont, illegalItems.length ? red : green);
-  drawText("PDF layout: portrait-app-v7-black", pageWidth - 124, 18, 5.5, normalFont, grey);
+  drawText(`Summary: ${summary}`, 18, 40, 10, boldFont, illegalItems.length ? red : green);
+  drawText("PDF layout: portrait-app-v8-corner-top", pageWidth - 144, 18, 5.5, normalFont, grey);
 
   // Component list pages
   const listPageSize: [number, number] = [595.28, 841.89];
@@ -590,6 +689,49 @@ ${payload.engineer_email}`, startX + 134 + headerGap, pageHeight - 80, pageWidth
       color: dark,
     });
     y -= 22;
+
+    const listWeights = [
+      ["FL", payload.corner_weights.fl],
+      ["FR", payload.corner_weights.fr],
+      ["RL", payload.corner_weights.rl],
+      ["RR", payload.corner_weights.rr],
+      ["TOTAL", payload.corner_weights.total],
+    ] as const;
+
+    page.drawRectangle({
+      x: margin,
+      y: y - 28,
+      width: usableWidth,
+      height: 24,
+      color: panelBlack,
+      borderColor: borderGrey,
+      borderWidth: 0.55,
+    });
+    page.drawText("CORNER WEIGHTS", {
+      x: margin + 8,
+      y: y - 13,
+      size: 7,
+      font: boldFont,
+      color: grey,
+    });
+    listWeights.forEach(([label, value], index) => {
+      const cellX = margin + 120 + index * 78;
+      page.drawText(label, {
+        x: cellX,
+        y: y - 10,
+        size: 6,
+        font: boldFont,
+        color: grey,
+      });
+      page.drawText(formatCornerWeight(value), {
+        x: cellX,
+        y: y - 22,
+        size: 8,
+        font: boldFont,
+        color: dark,
+      });
+    });
+    y -= 34;
 
     page.drawRectangle({ x: margin, y: y - 7, width: usableWidth, height: 18, color: lightGrey });
     drawListText("COMPONENT", margin + 6, 7, boldFont, dark);
@@ -790,6 +932,7 @@ export async function POST(request: NextRequest) {
         clean(rawPayload.engineer_name) || getFallbackEngineerNameForCar(Number(rawPayload.car_id)),
       engineer_email: to,
       created_by: clean(rawPayload.created_by) || getRequestUserEmail(request) || "Unknown",
+      corner_weights: normaliseCornerWeights(rawPayload.corner_weights),
       items,
     };
 
@@ -823,6 +966,7 @@ export async function POST(request: NextRequest) {
         `Circuit: ${payload.circuit}`,
         `Car: ${payload.car_name}`,
         `Driver: ${payload.driver}`,
+        `Corner weights: FL ${formatCornerWeight(payload.corner_weights.fl)} · FR ${formatCornerWeight(payload.corner_weights.fr)} · RL ${formatCornerWeight(payload.corner_weights.rl)} · RR ${formatCornerWeight(payload.corner_weights.rr)} · Total ${formatCornerWeight(payload.corner_weights.total)}`,
         "",
         "Status Summary",
         summary,
@@ -855,6 +999,16 @@ export async function POST(request: NextRequest) {
                 <tr>
                   <td style="padding:9px 10px;font-weight:bold;border-bottom:1px solid #eee">Engineer Email</td>
                   <td style="padding:9px 10px;border-bottom:1px solid #eee">${escapeHtml(to)}</td>
+                </tr>
+                <tr>
+                  <td style="padding:9px 10px;font-weight:bold;border-bottom:1px solid #eee">Corner Weights</td>
+                  <td style="padding:9px 10px;border-bottom:1px solid #eee">
+                    FL ${escapeHtml(formatCornerWeight(payload.corner_weights.fl))} ·
+                    FR ${escapeHtml(formatCornerWeight(payload.corner_weights.fr))} ·
+                    RL ${escapeHtml(formatCornerWeight(payload.corner_weights.rl))} ·
+                    RR ${escapeHtml(formatCornerWeight(payload.corner_weights.rr))} ·
+                    Total ${escapeHtml(formatCornerWeight(payload.corner_weights.total))}
+                  </td>
                 </tr>
                 <tr>
                   <td style="padding:9px 10px;font-weight:bold;border-bottom:1px solid #eee">Summary</td>
