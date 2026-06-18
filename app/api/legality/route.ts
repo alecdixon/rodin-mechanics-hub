@@ -398,8 +398,9 @@ async function buildLegalityPdf(payload: NormalisedLegalityEmailPayload) {
       borderWidth: 0.85,
     });
 
-    drawText("CORNER WEIGHTS", x + 10, y + height - 15, 7.2, boldFont, grey);
-    drawText("kg", x + width - 22, y + height - 15, 6.8, boldFont, grey);
+    const titleY = y + height - 14;
+    drawText("CORNER WEIGHTS", x + 10, titleY, 7.2, boldFont, grey);
+    drawText("kg", x + width - 22, titleY, 6.8, boldFont, grey);
 
     const innerX = x + 10;
     const innerY = y + 8;
@@ -421,15 +422,15 @@ async function buildLegalityPdf(payload: NormalisedLegalityEmailPayload) {
         borderWidth: 0.65,
       });
 
-      drawText(label, cellX + 6, innerY + cellH - 11, 6.4, boldFont, grey);
+      drawText(label, cellX + 7, innerY + cellH - 12, 6.5, boldFont, grey);
+
+      const helperLine = wrapTextByWidth(helper, normalFont, 5.2, cellW - 14).slice(0, 1)[0] || "";
+      drawText(helperLine, cellX + 7, innerY + cellH - 21, 5.2, normalFont, grey);
 
       const displayValue = formatCornerWeight(value);
-      const valueSize = displayValue.length > 8 ? 8.8 : 10.2;
-      const safeValue = wrapTextByWidth(displayValue, boldFont, valueSize, cellW - 12).slice(0, 1)[0] || "—";
-      drawText(safeValue, cellX + 6, innerY + cellH - 25, valueSize, boldFont, dark);
-
-      const helperLine = wrapTextByWidth(helper, normalFont, 5.4, cellW - 12).slice(0, 1)[0] || "";
-      drawText(helperLine, cellX + 6, innerY + 5, 5.4, normalFont, grey);
+      const valueSize = displayValue.length > 8 ? 8.6 : 10.2;
+      const safeValue = wrapTextByWidth(displayValue, boldFont, valueSize, cellW - 14).slice(0, 1)[0] || "—";
+      drawText(safeValue, cellX + 7, innerY + 6.5, valueSize, boldFont, dark);
     });
   }
 
@@ -500,7 +501,6 @@ async function buildLegalityPdf(payload: NormalisedLegalityEmailPayload) {
 
   function drawComponentCard(item: LegalityPdfItem, x: number, y: number, width: number, height: number) {
     const isIllegal = item.status === "illegal";
-    const tone = isIllegal ? red : green;
 
     page.drawRectangle({
       x,
@@ -509,36 +509,33 @@ async function buildLegalityPdf(payload: NormalisedLegalityEmailPayload) {
       height,
       color: panelBlack,
       borderColor: isIllegal ? red : borderGrey,
-      borderWidth: 0.85,
+      borderWidth: isIllegal ? 1 : 0.75,
     });
 
-    drawText(item.item_name.toUpperCase(), x + 8, y + height - 15, 9.5, boldFont, dark);
+    const title = wrapTextByWidth(item.item_name.toUpperCase(), boldFont, 8.6, width - 66).slice(0, 1)[0] || item.item_name.toUpperCase();
+    drawText(title, x + 8, y + height - 15, 8.6, boldFont, dark);
     drawPill(isIllegal ? "Illegal" : "Legal", x + width - 52, y + height - 19, isIllegal);
 
-    const positionLines = wrapTextByWidth(item.item_position || "—", normalFont, 7, width - 16).slice(0, 2);
+    const positionLines = wrapTextByWidth(item.item_position || "—", normalFont, 6.5, width - 16).slice(0, 2);
     positionLines.forEach((line, index) => {
-      drawText(line, x + 8, y + height - 31 - index * 9, 7, normalFont, grey);
+      drawText(line, x + 8, y + height - 30 - index * 8, 6.5, normalFont, grey);
     });
 
-    drawStatusButton("Legal", x + 8, y + height - 55, (width - 22) / 2, !isIllegal, "legal");
-    drawStatusButton("Illegal", x + 14 + (width - 22) / 2, y + height - 55, (width - 22) / 2, isIllegal, "illegal");
+    drawStatusButton("Legal", x + 8, y + 22, (width - 22) / 2, !isIllegal, "legal");
+    drawStatusButton("Illegal", x + 14 + (width - 22) / 2, y + 22, (width - 22) / 2, isIllegal, "illegal");
 
     if (isIllegal) {
-      drawText("ILLEGAL NOTE REQUIRED", x + 8, y + height - 72, 6.4, boldFont, red);
       page.drawRectangle({
         x: x + 8,
-        y: y + 8,
+        y: y + 7,
         width: width - 16,
-        height: Math.max(22, height - 86),
+        height: 12,
         color: rgb(0.18, 0.035, 0.045),
         borderColor: red,
-        borderWidth: 0.9,
+        borderWidth: 0.75,
       });
-
-      const noteLines = wrapTextByWidth(item.illegal_note || "Missing note", normalFont, 7, width - 24).slice(0, 4);
-      noteLines.forEach((line, index) => {
-        drawText(line, x + 12, y + Math.max(12, height - 97 - index * 9), 7, normalFont, dark);
-      });
+      const notePreview = wrapTextByWidth(item.illegal_note || "See component list for note", normalFont, 5.5, width - 24).slice(0, 1)[0] || "See component list";
+      drawText(notePreview, x + 12, y + 10.4, 5.5, normalFont, dark);
     }
   }
 
@@ -586,17 +583,17 @@ async function buildLegalityPdf(payload: NormalisedLegalityEmailPayload) {
 ${payload.engineer_email}`, startX + 134 + headerGap, pageHeight - 80, pageWidth - (startX + 134 + headerGap) - 14, topBoxH);
 
   // Corner weights sit high on page 1 so they are visible before the component detail.
-  drawCornerWeightsPanel(14, 690, pageWidth - 28, 50);
+  drawCornerWeightsPanel(14, 684, pageWidth - 28, 58);
 
   // Body worksheet - compact portrait layout with no overlap between the top weights band and the car panel.
   const cardW = 116;
-  const cardH = 66;
+  const cardH = 72;
   const leftX = 14;
   const rightX = pageWidth - leftX - cardW;
   const carPanelX = leftX + cardW + 8;
-  const carPanelY = 150;
+  const carPanelY = 142;
   const carPanelW = pageWidth - (leftX + cardW + 8) * 2;
-  const carPanelH = 526;
+  const carPanelH = 528;
   const carX = carPanelX + 16;
   const carY = carPanelY + 16;
   const carW = carPanelW - 32;
@@ -618,8 +615,8 @@ ${payload.engineer_email}`, startX + 134 + headerGap, pageHeight - 80, pageWidth
     drawText("CAR OVERVIEW IMAGE MISSING", carX + 18, carY + carH / 2, 10, boldFont, red);
   }
 
-  const startY = 604;
-  const stepY = 70;
+  const startY = 598;
+  const stepY = 76;
 
   leftItems.slice(0, 6).forEach((item, index) => {
     drawComponentCard(item, leftX, startY - index * stepY, cardW, cardH);
@@ -632,7 +629,7 @@ ${payload.engineer_email}`, startX + 134 + headerGap, pageHeight - 80, pageWidth
   const tagW = 64;
   const tagLeftX = carPanelX + 8;
   const tagRightX = carPanelX + carPanelW - tagW - 8;
-  const tagYValues = [620, 566, 498, 430, 362, 294];
+  const tagYValues = [612, 556, 488, 420, 352, 284];
 
   leftItems.slice(0, 6).forEach((item, index) => {
     drawMeasurementTag(item, tagLeftX, tagYValues[index] ?? 290, tagW);
@@ -647,11 +644,11 @@ ${payload.engineer_email}`, startX + 134 + headerGap, pageHeight - 80, pageWidth
   });
 
   if (centreItems.length > 0) {
-    drawComponentCard(centreItems[0], pageWidth / 2 - 170, 54, 340, 86);
+    drawComponentCard(centreItems[0], pageWidth / 2 - 170, 44, 340, 80);
   }
 
-  drawText(`Summary: ${summary}`, 18, 40, 10, boldFont, illegalItems.length ? red : green);
-  drawText("PDF layout: portrait-app-v8-corner-top", pageWidth - 144, 18, 5.5, normalFont, grey);
+  drawText(`Summary: ${summary}`, 18, 32, 10, boldFont, illegalItems.length ? red : green);
+  drawText("PDF layout: portrait-app-v9-polished", pageWidth - 126, 18, 5.5, normalFont, grey);
 
   // Component list pages
   const listPageSize: [number, number] = [595.28, 841.89];
