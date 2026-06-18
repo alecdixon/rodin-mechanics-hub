@@ -296,7 +296,7 @@ async function buildLegalityPdf(payload: NormalisedLegalityEmailPayload) {
   const lightGrey = rgb(0.94, 0.95, 0.96);
   const borderGrey = rgb(0.76, 0.77, 0.8);
 
-  const worksheetSize: [number, number] = [841.89, 595.28];
+  const worksheetSize: [number, number] = [595.28, 841.89];
   let page = pdfDoc.addPage(worksheetSize);
   const pageWidth = worksheetSize[0];
   const pageHeight = worksheetSize[1];
@@ -324,17 +324,17 @@ async function buildLegalityPdf(payload: NormalisedLegalityEmailPayload) {
     });
   }
 
-  function drawHeaderInfo(label: string, value: string, x: number, y: number, width: number, height = 28) {
+  function drawHeaderInfo(label: string, value: string, x: number, y: number, width: number, height = 34) {
     drawOutlinedBox(page, x, y, width, height, borderGrey, rgb(0.99, 0.99, 1));
-    drawText(label.toUpperCase(), x + 6, y + height - 10, 4.8, boldFont, grey);
-    const valueLines = wrapTextByWidth(value || "—", boldFont, 6.4, width - 12).slice(0, 2);
+    drawText(label.toUpperCase(), x + 8, y + height - 12, 6.2, boldFont, grey);
+    const valueLines = wrapTextByWidth(value || "—", boldFont, 8.2, width - 16).slice(0, 2);
     valueLines.forEach((line, index) => {
-      drawText(line, x + 6, y + height - 19 - index * 7, 6.4, boldFont, dark);
+      drawText(line, x + 8, y + height - 24 - index * 9, 8.2, boldFont, dark);
     });
   }
 
   function drawPill(text: string, x: number, y: number, isIllegal: boolean) {
-    const width = 31;
+    const width = 44;
     const fill = isIllegal ? rgb(1, 0.92, 0.92) : rgb(0.9, 1, 0.94);
     const color = isIllegal ? red : green;
 
@@ -342,12 +342,12 @@ async function buildLegalityPdf(payload: NormalisedLegalityEmailPayload) {
       x,
       y,
       width,
-      height: 10,
+      height: 14,
       color: fill,
       borderColor: color,
-      borderWidth: 0.8,
+      borderWidth: 1,
     });
-    drawText(text.toUpperCase(), x + 6, y + 3.1, 4.7, boldFont, color);
+    drawText(text.toUpperCase(), x + width / 2 - fontWidth(text.toUpperCase(), boldFont, 6.2) / 2, y + 4.5, 6.2, boldFont, color);
   }
 
   function drawStatusButton(text: string, x: number, y: number, width: number, active: boolean, tone: "legal" | "illegal") {
@@ -356,13 +356,13 @@ async function buildLegalityPdf(payload: NormalisedLegalityEmailPayload) {
       x,
       y,
       width,
-      height: 11,
+      height: 17,
       color: active ? activeColor : rgb(1, 1, 1),
       borderColor: active ? activeColor : borderGrey,
-      borderWidth: 0.7,
+      borderWidth: 0.9,
     });
     const textColor = active ? rgb(1, 1, 1) : dark;
-    drawText(text.toUpperCase(), x + width / 2 - fontWidth(text.toUpperCase(), boldFont, 4.7) / 2, y + 3.4, 4.7, boldFont, textColor);
+    drawText(text.toUpperCase(), x + width / 2 - fontWidth(text.toUpperCase(), boldFont, 6.5) / 2, y + 5.8, 6.5, boldFont, textColor);
   }
 
   function fontWidth(text: string, font: PDFFont, size: number) {
@@ -373,11 +373,11 @@ async function buildLegalityPdf(payload: NormalisedLegalityEmailPayload) {
     page.drawRectangle({
       x,
       y,
-      width: 22,
-      height: 8,
+      width: 32,
+      height: 12,
       color: isIllegal ? rgb(1, 0.92, 0.92) : rgb(1, 1, 1),
       borderColor: isIllegal ? red : dark,
-      borderWidth: 0.8,
+      borderWidth: 1,
     });
   }
 
@@ -387,15 +387,15 @@ async function buildLegalityPdf(payload: NormalisedLegalityEmailPayload) {
       x,
       y,
       width,
-      height: 14,
+      height: 22,
       color: rgb(1, 1, 1),
       borderColor: isIllegal ? red : green,
-      borderWidth: 1,
+      borderWidth: 1.25,
     });
 
     const label = item.item_name.replace(/\s+(LH|RH)$/i, "");
-    drawText(label.toUpperCase().slice(0, 10), x + 4, y + 4.7, 4.9, boldFont, dark);
-    drawTickBox(x + width - 28, y + 3, isIllegal);
+    drawText(label.toUpperCase().slice(0, 10), x + 6, y + 7.4, 7, boldFont, dark);
+    drawTickBox(x + width - 40, y + 5, isIllegal);
   }
 
   function drawComponentCard(item: LegalityPdfItem, x: number, y: number, width: number, height: number) {
@@ -412,32 +412,32 @@ async function buildLegalityPdf(payload: NormalisedLegalityEmailPayload) {
       borderWidth: 0.85,
     });
 
-    drawText(item.item_name.toUpperCase(), x + 5, y + height - 10, 5.5, boldFont, dark);
-    drawPill(isIllegal ? "Illegal" : "Legal", x + width - 35, y + height - 12, isIllegal);
+    drawText(item.item_name.toUpperCase(), x + 8, y + height - 15, 9.5, boldFont, dark);
+    drawPill(isIllegal ? "Illegal" : "Legal", x + width - 52, y + height - 19, isIllegal);
 
-    const positionLines = wrapTextByWidth(item.item_position || "—", normalFont, 4.8, width - 12).slice(0, 2);
+    const positionLines = wrapTextByWidth(item.item_position || "—", normalFont, 7, width - 16).slice(0, 2);
     positionLines.forEach((line, index) => {
-      drawText(line, x + 5, y + height - 18 - index * 6, 4.8, normalFont, grey);
+      drawText(line, x + 8, y + height - 31 - index * 9, 7, normalFont, grey);
     });
 
-    drawStatusButton("Legal", x + 5, y + height - 34, (width - 14) / 2, !isIllegal, "legal");
-    drawStatusButton("Illegal", x + 9 + (width - 14) / 2, y + height - 34, (width - 14) / 2, isIllegal, "illegal");
+    drawStatusButton("Legal", x + 8, y + height - 55, (width - 22) / 2, !isIllegal, "legal");
+    drawStatusButton("Illegal", x + 14 + (width - 22) / 2, y + height - 55, (width - 22) / 2, isIllegal, "illegal");
 
     if (isIllegal) {
-      drawText("ILLEGAL NOTE REQUIRED", x + 5, y + height - 47, 4.9, boldFont, red);
+      drawText("ILLEGAL NOTE REQUIRED", x + 8, y + height - 72, 6.4, boldFont, red);
       page.drawRectangle({
-        x: x + 5,
-        y: y + 5,
-        width: width - 10,
-        height: Math.max(12, height - 55),
+        x: x + 8,
+        y: y + 8,
+        width: width - 16,
+        height: Math.max(22, height - 86),
         color: rgb(1, 0.94, 0.94),
         borderColor: rgb(1, 0.43, 0.46),
-        borderWidth: 0.75,
+        borderWidth: 0.9,
       });
 
-      const noteLines = wrapTextByWidth(item.illegal_note || "Missing note", normalFont, 4.8, width - 16).slice(0, 4);
+      const noteLines = wrapTextByWidth(item.illegal_note || "Missing note", normalFont, 7, width - 24).slice(0, 4);
       noteLines.forEach((line, index) => {
-        drawText(line, x + 8, y + Math.max(8, height - 63 - index * 6), 4.8, normalFont, dark);
+        drawText(line, x + 12, y + Math.max(12, height - 97 - index * 9), 7, normalFont, dark);
       });
     }
   }
@@ -460,49 +460,63 @@ async function buildLegalityPdf(payload: NormalisedLegalityEmailPayload) {
   const rightItems = sortedItems.filter((item) => item.item_side === "RH");
   const centreItems = sortedItems.filter((item) => item.item_side !== "LH" && item.item_side !== "RH");
 
-  // Header / worksheet top strip
-  page.drawRectangle({ x: 0, y: pageHeight - 56, width: pageWidth, height: 56, color: rgb(1, 1, 1) });
-  page.drawLine({ start: { x: 0, y: pageHeight - 56 }, end: { x: pageWidth, y: pageHeight - 56 }, thickness: 0.7, color: borderGrey });
+  // Header / worksheet top strip - portrait A4 to make the first page readable.
+  page.drawRectangle({ x: 0, y: pageHeight - 92, width: pageWidth, height: 92, color: rgb(1, 1, 1) });
+  page.drawLine({ start: { x: 0, y: pageHeight - 92 }, end: { x: pageWidth, y: pageHeight - 92 }, thickness: 0.8, color: borderGrey });
 
   if (rodinLogo) {
-    drawFittedImage(page, rodinLogo, 14, pageHeight - 43, 52, 26);
+    drawFittedImage(page, rodinLogo, 16, pageHeight - 68, 92, 46);
   } else {
-    drawText("RODIN", 16, pageHeight - 29, 13, boldFont, dark);
-    drawText("MOTORSPORT", 17, pageHeight - 38, 5.5, boldFont, grey);
+    drawText("RODIN", 18, pageHeight - 40, 20, boldFont, dark);
+    drawText("MOTORSPORT", 20, pageHeight - 54, 8, boldFont, grey);
   }
 
-  const boxW = 92;
-  const boxH = 24;
-  const gap = 5;
-  const startX = pageWidth - (boxW * 3 + gap * 2) - 14;
-  drawHeaderInfo("Date", formatReportDate(payload.check_date), startX, pageHeight - 26, boxW, boxH);
-  drawHeaderInfo("Circuit", payload.circuit, startX + boxW + gap, pageHeight - 26, boxW, boxH);
-  drawHeaderInfo("Car", payload.car_name || `Car ${payload.car_id}`, startX + (boxW + gap) * 2, pageHeight - 26, boxW, boxH);
-  drawHeaderInfo("Driver", payload.driver, startX, pageHeight - 53, boxW, boxH);
-  drawHeaderInfo("Engineer", `${payload.engineer_name}\n${payload.engineer_email}`, startX + boxW + gap, pageHeight - 53, boxW * 2 + gap, boxH);
+  drawText("LEGALITY CHECK", 128, pageHeight - 38, 18, boldFont, dark);
+  drawText(summary, 130, pageHeight - 55, 9, boldFont, illegalItems.length ? red : green);
 
-  // Body worksheet
-  const carX = pageWidth / 2 - 76;
-  const carY = 125;
-  const carW = 152;
-  const carH = 350;
+  const headerGap = 6;
+  const topBoxW = 92;
+  const topBoxH = 34;
+  const startX = pageWidth - (topBoxW * 3 + headerGap * 2) - 14;
+  drawHeaderInfo("Date", formatReportDate(payload.check_date), startX, pageHeight - 40, topBoxW, topBoxH);
+  drawHeaderInfo("Circuit", payload.circuit, startX + topBoxW + headerGap, pageHeight - 40, topBoxW, topBoxH);
+  drawHeaderInfo("Car", payload.car_name || `Car ${payload.car_id}`, startX + (topBoxW + headerGap) * 2, pageHeight - 40, topBoxW, topBoxH);
+  drawHeaderInfo("Driver", payload.driver, startX, pageHeight - 80, 134, topBoxH);
+  drawHeaderInfo("Engineer", `${payload.engineer_name}
+${payload.engineer_email}`, startX + 134 + headerGap, pageHeight - 80, pageWidth - (startX + 134 + headerGap) - 14, topBoxH);
 
-  drawOutlinedBox(page, carX - 26, carY - 12, carW + 52, carH + 24, borderGrey, rgb(1, 1, 1));
-  page.drawLine({ start: { x: carX + 20, y: carY + 5 }, end: { x: carX + 20, y: carY + carH - 5 }, thickness: 0.4, color: borderGrey });
-  page.drawLine({ start: { x: carX + carW - 20, y: carY + 5 }, end: { x: carX + carW - 20, y: carY + carH - 5 }, thickness: 0.4, color: borderGrey });
+  // Body worksheet - portrait and compact: side cards sit close to a much larger car panel.
+  const cardW = 116;
+  const cardH = 74;
+  const leftX = 14;
+  const rightX = pageWidth - leftX - cardW;
+  const carPanelX = leftX + cardW + 8;
+  const carPanelY = 165;
+  const carPanelW = pageWidth - (leftX + cardW + 8) * 2;
+  const carPanelH = 580;
+  const carX = carPanelX + 16;
+  const carY = carPanelY + 18;
+  const carW = carPanelW - 32;
+  const carH = carPanelH - 36;
+
+  drawOutlinedBox(page, carPanelX, carPanelY, carPanelW, carPanelH, borderGrey, rgb(1, 1, 1));
+  for (let gridX = carPanelX + 35; gridX < carPanelX + carPanelW; gridX += 44) {
+    page.drawLine({ start: { x: gridX, y: carPanelY + 10 }, end: { x: gridX, y: carPanelY + carPanelH - 10 }, thickness: 0.25, color: rgb(0.88, 0.89, 0.91) });
+  }
+  for (let gridY = carPanelY + 38; gridY < carPanelY + carPanelH; gridY += 44) {
+    page.drawLine({ start: { x: carPanelX + 10, y: gridY }, end: { x: carPanelX + carPanelW - 10, y: gridY }, thickness: 0.25, color: rgb(0.88, 0.89, 0.91) });
+  }
+  page.drawLine({ start: { x: carPanelX + 62, y: carPanelY + 18 }, end: { x: carPanelX + 62, y: carPanelY + carPanelH - 18 }, thickness: 0.45, color: borderGrey });
+  page.drawLine({ start: { x: carPanelX + carPanelW - 62, y: carPanelY + 18 }, end: { x: carPanelX + carPanelW - 62, y: carPanelY + carPanelH - 18 }, thickness: 0.45, color: borderGrey });
 
   if (carOverview) {
     drawFittedImage(page, carOverview, carX, carY, carW, carH);
   } else {
-    drawText("CAR OVERVIEW IMAGE MISSING", carX + 9, carY + carH / 2, 8, boldFont, red);
+    drawText("CAR OVERVIEW IMAGE MISSING", carX + 18, carY + carH / 2, 10, boldFont, red);
   }
 
-  const cardW = 104;
-  const cardH = 56;
-  const leftX = 14;
-  const rightX = pageWidth - leftX - cardW;
-  const startY = 415;
-  const stepY = 62;
+  const startY = 650;
+  const stepY = 78;
 
   leftItems.slice(0, 6).forEach((item, index) => {
     drawComponentCard(item, leftX, startY - index * stepY, cardW, cardH);
@@ -512,27 +526,29 @@ async function buildLegalityPdf(payload: NormalisedLegalityEmailPayload) {
     drawComponentCard(item, rightX, startY - index * stepY, cardW, cardH);
   });
 
-  const tagLeftX = carX - 22;
-  const tagRightX = carX + carW - 28;
-  const tagYValues = [394, 357, 306, 257, 207, 158];
+  const tagW = 64;
+  const tagLeftX = carPanelX + 8;
+  const tagRightX = carPanelX + carPanelW - tagW - 8;
+  const tagYValues = [696, 630, 552, 474, 396, 318];
 
   leftItems.slice(0, 6).forEach((item, index) => {
-    drawMeasurementTag(item, tagLeftX, tagYValues[index] ?? 150, 46);
+    drawMeasurementTag(item, tagLeftX, tagYValues[index] ?? 290, tagW);
   });
 
   rightItems.slice(0, 6).forEach((item, index) => {
-    drawMeasurementTag(item, tagRightX, tagYValues[index] ?? 150, 46);
+    drawMeasurementTag(item, tagRightX, tagYValues[index] ?? 290, tagW);
   });
 
   centreItems.slice(0, 2).forEach((item, index) => {
-    drawMeasurementTag(item, carX + carW / 2 - 24, carY - 2 - index * 18, 48);
+    drawMeasurementTag(item, carPanelX + carPanelW / 2 - tagW / 2, carPanelY + 10 - index * 28, tagW);
   });
 
   if (centreItems.length > 0) {
-    drawComponentCard(centreItems[0], pageWidth / 2 - 110, 22, 220, 52);
+    drawComponentCard(centreItems[0], pageWidth / 2 - 170, 64, 340, 88);
   }
 
-  drawText(`Summary: ${summary}`, 14, 18, 7, boldFont, illegalItems.length ? red : green);
+  drawText(`Summary: ${summary}`, 18, 48, 10, boldFont, illegalItems.length ? red : green);
+  drawText("PDF layout: portrait-app-v5", pageWidth - 118, 18, 5.5, normalFont, grey);
 
   // Component list pages
   const listPageSize: [number, number] = [595.28, 841.89];

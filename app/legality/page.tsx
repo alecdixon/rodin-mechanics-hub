@@ -540,7 +540,7 @@ function LegalityCarOverview({
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(239,68,68,0.08),transparent_58%)]" />
 
       <img
-        src="/legality-car-overview.png?v=2"
+        src="/legality-car-overview.png"
         alt="Top-down formula car legality overview"
         className="pointer-events-none absolute inset-[4%] h-[92%] w-[92%] object-contain opacity-95 [filter:contrast(1.08)_saturate(0.7)]"
       />
