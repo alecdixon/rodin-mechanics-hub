@@ -1067,8 +1067,9 @@ export default function PlankLegalityPage() {
           max_mm: Number(record.hole_4_b_mm ?? NaN),
           status: Number(record.hole_4_b_mm ?? 0) < PLANK_LIMIT_MM ? "illegal" : Number(record.hole_4_b_mm ?? 0) < NEAR_LIMIT_MM ? "warning" : "legal",
         },
-      ].map((hole) => ({
+      ].map<PlankHolePdfPayload>((hole) => ({
         ...hole,
+        status: hole.status as PlankStatus,
         min_mm: Number.isFinite(hole.min_mm) ? hole.min_mm : null,
         max_mm: Number.isFinite(hole.max_mm) ? hole.max_mm : null,
       }));
