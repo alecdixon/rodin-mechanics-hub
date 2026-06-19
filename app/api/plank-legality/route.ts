@@ -386,7 +386,6 @@ function drawMeasurementCardPdf(
       color: rgb(0.06, 0.075, 0.095),
       borderColor: borderGrey,
       borderWidth: 0.7,
-      borderRadius: 5,
     });
 
     const value = idx == 0 ? formatMm(hole.min_mm) : formatMm(hole.max_mm);
