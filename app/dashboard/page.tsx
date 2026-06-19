@@ -107,17 +107,13 @@ function QuickLink({
   href,
   title,
   description,
-  variant = "dark",
 }: {
   href: string;
   title: string;
   description: string;
-  variant?: "dark" | "red";
 }) {
   const className =
-    variant === "red"
-      ? "rounded-2xl border border-red-600 bg-red-700 px-5 py-4 text-sm font-semibold text-white shadow-lg shadow-red-950/25 transition hover:border-red-400 hover:bg-red-600"
-      : "rounded-2xl border border-zinc-700 bg-[#1b2026] px-5 py-4 text-sm font-semibold text-zinc-100 transition hover:border-red-500 hover:bg-[#222832] hover:text-red-200";
+    "rounded-2xl border border-zinc-700 bg-[#1b2026] px-5 py-4 text-sm font-semibold text-zinc-100 shadow-lg shadow-black/10 transition hover:border-red-500 hover:bg-[#222832] hover:text-red-200 focus:outline-none focus:ring-2 focus:ring-red-600/50";
 
   return (
     <Link href={href} className={className}>
@@ -452,9 +448,8 @@ export default function DashboardPage() {
     return map;
   }, [activeClutches]);
 
-  const canOpenLegality = userEmail
-    ? hasPermission(userEmail, "legality:view")
-    : false;
+  // The dashboard route is already protected above. Keep these main menu buttons visible
+  // so Legality and Plank Legality remain separate pages in the chief dashboard menu.
 
   const totalJobs = useMemo(() => {
     return activeCars.reduce((sum, car) => sum + car.total, 0);
@@ -872,16 +867,23 @@ export default function DashboardPage() {
         </div>
 
         <div className="bg-[#0d0f12]/80 p-4">
-          <div
-            className={`grid gap-3 md:grid-cols-2 ${
-              readOnly ? "xl:grid-cols-5" : "xl:grid-cols-6"
-            }`}
-          >
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-7">
             <QuickLink
               href="/drain-out"
               title="Drain Out"
               description="Submit and review drain-out reports"
-              variant="red"
+            />
+
+            <QuickLink
+              href="/legality"
+              title="Legality"
+              description="Race car legality checks and sign-off sheet"
+            />
+
+            <QuickLink
+              href="/plank-legality"
+              title="Plank Legality"
+              description="Skid plank thickness checks and warnings"
             />
 
             <QuickLink
@@ -896,15 +898,6 @@ export default function DashboardPage() {
               description="Faults, fixes and approved solutions"
             />
 
-            {canOpenLegality && (
-              <QuickLink
-                href="/legality"
-                title="Legality"
-                description="Race car legality checks and sign-off sheet"
-                variant="red"
-              />
-            )}
-
             <QuickLink
               href="/dashboard/team-jobs"
               title="Team Jobs"
@@ -915,10 +908,10 @@ export default function DashboardPage() {
               <button
                 type="button"
                 onClick={() => setCarSettingsOpen((current) => !current)}
-                className="rounded-2xl border border-zinc-700 bg-[#1b2026] px-5 py-4 text-left text-sm font-semibold text-zinc-100 transition hover:border-red-500 hover:bg-[#222832] hover:text-red-200"
+                className="rounded-2xl border border-zinc-700 bg-[#1b2026] px-5 py-4 text-left text-sm font-semibold text-zinc-100 shadow-lg shadow-black/10 transition hover:border-red-500 hover:bg-[#222832] hover:text-red-200 focus:outline-none focus:ring-2 focus:ring-red-600/50"
               >
                 {carSettingsOpen ? "Hide Settings" : "Manage Cars"}
-                <span className="mt-1 block text-xs font-normal leading-5 text-zinc-500">
+                <span className="mt-1 block text-xs font-normal leading-5 opacity-70">
                   Cars, colours and clutch allocation
                 </span>
               </button>
