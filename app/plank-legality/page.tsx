@@ -1541,32 +1541,46 @@ export default function PlankLegalityPage() {
             </div>
 
             <div className="hidden xl:grid xl:grid-cols-[270px_minmax(360px,0.9fr)_270px] xl:gap-5">
-              <div className="flex flex-col justify-between gap-5 py-10">
-                <HoleMeasurementCard
-                  hole={analysis.holeAnalyses[0]}
-                  measurements={measurements}
-                  onChange={updateMeasurement}
-                />
-                <HoleMeasurementCard
-                  hole={analysis.holeAnalyses[2]}
-                  measurements={measurements}
-                  onChange={updateMeasurement}
-                />
+              <div className="grid grid-rows-[190px_230px_190px] gap-5 py-10">
+                <div className="self-start">
+                  <HoleMeasurementCard
+                    hole={analysis.holeAnalyses[0]}
+                    measurements={measurements}
+                    onChange={updateMeasurement}
+                  />
+                </div>
+
+                <div />
+
+                <div />
               </div>
 
               <SimplePlankDiagram />
 
-              <div className="flex flex-col justify-between gap-5 py-10">
-                <HoleMeasurementCard
-                  hole={analysis.holeAnalyses[1]}
-                  measurements={measurements}
-                  onChange={updateMeasurement}
-                />
-                <HoleMeasurementCard
-                  hole={analysis.holeAnalyses[3]}
-                  measurements={measurements}
-                  onChange={updateMeasurement}
-                />
+              <div className="grid grid-rows-[190px_230px_190px] gap-5 py-10">
+                <div className="self-start">
+                  <HoleMeasurementCard
+                    hole={analysis.holeAnalyses[1]}
+                    measurements={measurements}
+                    onChange={updateMeasurement}
+                  />
+                </div>
+
+                <div className="self-center">
+                  <HoleMeasurementCard
+                    hole={analysis.holeAnalyses[2]}
+                    measurements={measurements}
+                    onChange={updateMeasurement}
+                  />
+                </div>
+
+                <div className="self-end">
+                  <HoleMeasurementCard
+                    hole={analysis.holeAnalyses[3]}
+                    measurements={measurements}
+                    onChange={updateMeasurement}
+                  />
+                </div>
               </div>
             </div>
 
