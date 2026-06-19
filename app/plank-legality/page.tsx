@@ -33,12 +33,32 @@ type PlankLegalityRecord = {
   illegal_count: number | null;
   near_limit_count: number | null;
   notes: string | null;
+  engineer_name: string | null;
+  engineer_email: string | null;
+  sent_to_engineer_at: string | null;
+  updated_by: string | null;
+  updated_at: string | null;
 };
 
 type CarAllocation = {
   id: string;
   carId: number;
   driverName: string;
+};
+
+type CarEngineerAllocation = {
+  carId: number;
+  engineerName: string;
+  engineerEmail: string;
+};
+
+type PlankHolePdfPayload = {
+  hole_key: string;
+  hole_name: string;
+  position: string;
+  min_mm: number | null;
+  max_mm: number | null;
+  status: PlankStatus;
 };
 
 const PLANK_LIMIT_MM = 3.0;
@@ -61,6 +81,27 @@ const CAR_ALLOCATIONS: CarAllocation[] = [
   { id: "car-1", carId: 1, driverName: "Rehm" },
   { id: "car-2", carId: 2, driverName: "Molnar" },
   { id: "car-3", carId: 3, driverName: "Pulling" },
+];
+
+const CAR_ENGINEER_ALLOCATIONS: CarEngineerAllocation[] = [
+  {
+    carId: 1,
+    engineerName:
+      process.env.NEXT_PUBLIC_DRAIN_OUT_ENGINEER_NAME_CAR_1 || "Engineer Car 1",
+    engineerEmail: process.env.NEXT_PUBLIC_DRAIN_OUT_ENGINEER_EMAIL_CAR_1 || "",
+  },
+  {
+    carId: 2,
+    engineerName:
+      process.env.NEXT_PUBLIC_DRAIN_OUT_ENGINEER_NAME_CAR_2 || "Engineer Car 2",
+    engineerEmail: process.env.NEXT_PUBLIC_DRAIN_OUT_ENGINEER_EMAIL_CAR_2 || "",
+  },
+  {
+    carId: 3,
+    engineerName:
+      process.env.NEXT_PUBLIC_DRAIN_OUT_ENGINEER_NAME_CAR_3 || "Engineer Car 3",
+    engineerEmail: process.env.NEXT_PUBLIC_DRAIN_OUT_ENGINEER_EMAIL_CAR_3 || "",
+  },
 ];
 
 const HOLES = [
@@ -200,6 +241,44 @@ function getReadings(measurements: MeasurementState): ReadingDetail[] {
 function formatMm(value: number | null | undefined) {
   if (value === null || value === undefined || !Number.isFinite(value)) return "—";
   return `${value.toFixed(2)} mm`;
+}
+
+function getEngineerAllocationForCar(carId: number) {
+  return (
+    CAR_ENGINEER_ALLOCATIONS.find((allocation) => allocation.carId === carId) ??
+    CAR_ENGINEER_ALLOCATIONS[0]
+  );
+}
+
+function normaliseCircuit(value: string | null | undefined) {
+  const cleanValue = value?.trim() || CIRCUIT_OPTIONS[0];
+  const knownCircuit = CIRCUIT_OPTIONS.find((option) => option === cleanValue);
+
+  if (knownCircuit) {
+    return {
+      circuit: knownCircuit,
+      customCircuit: "",
+    };
+  }
+
+  return {
+    circuit: "Other" as (typeof CIRCUIT_OPTIONS)[number],
+    customCircuit: cleanValue,
+  };
+}
+
+function holeStatus(hole: HoleAnalysis): PlankStatus {
+  if (hole.isIllegal) return "illegal";
+  if (hole.isWarning) return "warning";
+  return "legal";
+}
+
+function statusText(status: PlankStatus | "incomplete" | "invalid" | null | undefined) {
+  if (status === "illegal") return "ILLEGAL";
+  if (status === "warning") return "LEGAL BUT CLOSE TO LIMIT";
+  if (status === "legal") return "LEGAL";
+  if (status === "invalid") return "INVALID";
+  return "INCOMPLETE";
 }
 
 function clampMax(min: number | null, max: number | null) {
@@ -462,8 +541,11 @@ export default function PlankLegalityPage() {
   const [createdBy, setCreatedBy] = useState<string | null>(null);
 
   const [records, setRecords] = useState<PlankLegalityRecord[]>([]);
+  const [activeReportId, setActiveReportId] = useState<string | null>(null);
+  const [lastSentToEngineerAt, setLastSentToEngineerAt] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [sending, setSending] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
   const [message, setMessage] = useState("");
@@ -485,6 +567,12 @@ export default function PlankLegalityPage() {
   const carDisplayLabel = activeCarId
     ? `Car ${activeCarId} - ${activeDriverName}`
     : "No car selected";
+
+  const selectedEngineer = useMemo(() => {
+    return getEngineerAllocationForCar(activeCarId);
+  }, [activeCarId]);
+
+  const selectedCarHasEmail = Boolean(selectedEngineer.engineerEmail.trim());
 
   const finalSession = useMemo(() => session.trim(), [session]);
 
@@ -659,54 +747,58 @@ export default function PlankLegalityPage() {
     setNotes("");
   }
 
-  async function submitPlankLegalityReport() {
-    setMessage("");
-    setErrorMessage("");
-
+  function validatePlankSheet() {
     if (!canSubmitPlankReports) {
-      setErrorMessage("Guest users cannot submit plank legality reports.");
-      return;
+      return "Guest users cannot submit plank legality reports.";
     }
 
     if (!selectedAllocation) {
-      setErrorMessage("Select a car before submitting.");
-      return;
+      return "Select a car before saving.";
     }
 
     if (!reportDate) {
-      setErrorMessage("Select a report date.");
-      return;
+      return "Select a report date.";
     }
 
     if (!finalSession) {
-      setErrorMessage("Enter a session.");
-      return;
+      return "Enter a session.";
     }
 
     if (!finalCircuit) {
-      setErrorMessage("Enter a circuit.");
-      return;
+      return "Enter a circuit.";
+    }
+
+    if (!selectedCarHasEmail) {
+      return `No engineer email is configured for Car ${activeCarId}. Add NEXT_PUBLIC_DRAIN_OUT_ENGINEER_EMAIL_CAR_${activeCarId} in .env.local/Vercel.`;
     }
 
     if (analysis.status === "invalid") {
-      setErrorMessage("One or more thickness measurements is not a valid number.");
-      return;
+      return "One or more thickness measurements is not a valid number.";
     }
 
     if (!analysis.isComplete) {
-      setErrorMessage(
-        `Complete Min and Max for all 4 holes before submitting. Missing ${analysis.missingReadings.length}.`,
-      );
-      return;
+      return `Complete Min and Max for all 4 holes before saving. Missing ${analysis.missingReadings.length}.`;
     }
 
-    const minimumThickness = analysis.minimumReading?.value ?? null;
-
-    if (minimumThickness === null) {
-      setErrorMessage("Unable to calculate the minimum plank thickness.");
-      return;
+    if (analysis.minimumReading?.value === null || analysis.minimumReading?.value === undefined) {
+      return "Unable to calculate the minimum plank thickness.";
     }
 
+    return "";
+  }
+
+  function createHolePdfPayload(): PlankHolePdfPayload[] {
+    return analysis.holeAnalyses.map((hole) => ({
+      hole_key: hole.holeId,
+      hole_name: hole.holeLabel,
+      position: hole.displayPosition,
+      min_mm: hole.min,
+      max_mm: hole.max,
+      status: holeStatus(hole),
+    }));
+  }
+
+  function createReportPayload() {
     const status: PlankStatus =
       analysis.status === "illegal"
         ? "illegal"
@@ -714,69 +806,375 @@ export default function PlankLegalityPage() {
           ? "warning"
           : "legal";
 
+    return {
+      report_date: reportDate,
+      session: finalSession,
+      circuit: finalCircuit,
+      car_id: selectedAllocation?.carId ?? activeCarId,
+      car_name: carDisplayLabel,
+
+      // Existing database columns are reused:
+      // A = Min, B = Max, C = unused/null for the simplified Min/Max input format.
+      hole_1_a_mm: analysis.holeAnalyses[0]?.min ?? null,
+      hole_1_b_mm: analysis.holeAnalyses[0]?.max ?? null,
+      hole_1_c_mm: null,
+      hole_2_a_mm: analysis.holeAnalyses[1]?.min ?? null,
+      hole_2_b_mm: analysis.holeAnalyses[1]?.max ?? null,
+      hole_2_c_mm: null,
+      hole_3_a_mm: analysis.holeAnalyses[2]?.min ?? null,
+      hole_3_b_mm: analysis.holeAnalyses[2]?.max ?? null,
+      hole_3_c_mm: null,
+      hole_4_a_mm: analysis.holeAnalyses[3]?.min ?? null,
+      hole_4_b_mm: analysis.holeAnalyses[3]?.max ?? null,
+      hole_4_c_mm: null,
+
+      minimum_thickness_mm: analysis.minimumReading?.value ?? null,
+      status,
+      illegal_count: analysis.failedHoles.length,
+      near_limit_count: analysis.warningHoles.length,
+      notes: notes.trim() || null,
+      engineer_name: selectedEngineer.engineerName,
+      engineer_email: selectedEngineer.engineerEmail,
+      created_by: createdBy,
+      updated_by: createdBy,
+      updated_at: new Date().toISOString(),
+    };
+  }
+
+  async function sendPlankLegalityPdf(reportId: string, holes: PlankHolePdfPayload[]) {
+    const notifyResponse = await fetch("/api/plank-legality", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        report_id: reportId,
+        car_id: activeCarId,
+        car_name: carDisplayLabel,
+        driver: activeDriverName,
+        circuit: finalCircuit,
+        report_date: reportDate,
+        session: finalSession,
+        engineer_name: selectedEngineer.engineerName,
+        engineer_email: selectedEngineer.engineerEmail,
+        created_by: createdBy,
+        status: analysis.status === "illegal" ? "illegal" : analysis.status === "warning" ? "warning" : "legal",
+        minimum_thickness_mm: analysis.minimumReading?.value ?? null,
+        failed_holes: analysis.failedHoles.length,
+        near_limit_holes: analysis.warningHoles.length,
+        notes: notes.trim() || null,
+        holes,
+      }),
+    });
+
+    if (!notifyResponse.ok) {
+      const body = await notifyResponse.json().catch(() => null);
+
+      const readableError = [
+        body?.error,
+        body?.likely_cause ? `Cause: ${body.likely_cause}` : null,
+        body?.fix ? `Fix: ${body.fix}` : null,
+        body?.technical_error ? `Technical: ${body.technical_error}` : null,
+      ]
+        .filter(Boolean)
+        .join("\n\n");
+
+      throw new Error(
+        readableError || "Plank legality report saved, but the PDF email failed.",
+      );
+    }
+
+    const sentAt = new Date().toISOString();
+
+    await supabase
+      .from("plank_legality_reports")
+      .update({
+        sent_to_engineer_at: sentAt,
+        updated_by: createdBy,
+        updated_at: sentAt,
+      })
+      .eq("id", reportId);
+
+    setLastSentToEngineerAt(sentAt);
+
+    return notifyResponse.json() as Promise<{
+      ok: boolean;
+      sent_to: string;
+      engineer_name: string;
+    }>;
+  }
+
+  async function submitPlankLegalityReport() {
+    setMessage("");
+    setErrorMessage("");
+
+    const validationError = validatePlankSheet();
+
+    if (validationError) {
+      setErrorMessage(validationError);
+      return;
+    }
+
     setSaving(true);
 
     try {
-      const payload = {
-        report_date: reportDate,
-        session: finalSession,
-        circuit: finalCircuit,
-        car_id: selectedAllocation.carId,
-        car_name: carDisplayLabel,
+      const payload = createReportPayload();
+      const existingReportId = activeReportId;
+      let savedReport: PlankLegalityRecord | null = null;
 
-        // Existing database columns are reused:
-        // A = Min, B = Max, C = unused/null for the new simplified Min/Max input format.
-        hole_1_a_mm: analysis.holeAnalyses[0]?.min ?? null,
-        hole_1_b_mm: analysis.holeAnalyses[0]?.max ?? null,
-        hole_1_c_mm: null,
-        hole_2_a_mm: analysis.holeAnalyses[1]?.min ?? null,
-        hole_2_b_mm: analysis.holeAnalyses[1]?.max ?? null,
-        hole_2_c_mm: null,
-        hole_3_a_mm: analysis.holeAnalyses[2]?.min ?? null,
-        hole_3_b_mm: analysis.holeAnalyses[2]?.max ?? null,
-        hole_3_c_mm: null,
-        hole_4_a_mm: analysis.holeAnalyses[3]?.min ?? null,
-        hole_4_b_mm: analysis.holeAnalyses[3]?.max ?? null,
-        hole_4_c_mm: null,
+      if (existingReportId) {
+        const { data, error } = await supabase
+          .from("plank_legality_reports")
+          .update(payload)
+          .eq("id", existingReportId)
+          .select("*")
+          .single();
 
-        minimum_thickness_mm: minimumThickness,
-        status,
-        illegal_count: analysis.failedHoles.length,
-        near_limit_count: analysis.warningHoles.length,
-        notes: notes.trim() || null,
-        created_by: createdBy,
-      };
+        if (error) {
+          throw new Error(error.message);
+        }
 
-      const { error } = await supabase
-        .from("plank_legality_reports")
-        .insert(payload);
+        savedReport = data as PlankLegalityRecord;
+      } else {
+        const { data, error } = await supabase
+          .from("plank_legality_reports")
+          .insert(payload)
+          .select("*")
+          .single();
 
-      if (error) {
-        throw new Error(error.message);
+        if (error) {
+          throw new Error(error.message);
+        }
+
+        savedReport = data as PlankLegalityRecord;
       }
 
-      const statusText =
-        status === "illegal"
-          ? "ILLEGAL"
-          : status === "warning"
-            ? "LEGAL BUT CLOSE TO LIMIT"
-            : "LEGAL";
+      if (!savedReport?.id) {
+        throw new Error("The plank legality report was saved without returning an ID. Reload and try again.");
+      }
 
-      setMessage(
-        `Plank legality report submitted for ${carDisplayLabel} — ${finalCircuit}, ${finalSession}. Result: ${statusText}. Lowest reading: ${minimumThickness.toFixed(2)} mm. Failed holes: ${analysis.failedHoles.length}.`,
-      );
+      setActiveReportId(savedReport.id);
+      const holePayload = createHolePdfPayload();
 
-      resetFormAfterSubmit();
-      await loadRecordsForCar(selectedAllocation.carId);
+      try {
+        const notifyResult = await sendPlankLegalityPdf(savedReport.id, holePayload);
+        setMessage(
+          `${existingReportId ? "Plank legality report updated" : "Plank legality report saved"}. PDF sent to ${notifyResult.sent_to}. Result: ${statusText(payload.status)}. Lowest reading: ${formatMm(payload.minimum_thickness_mm)}.`,
+        );
+      } catch (error) {
+        setErrorMessage(
+          error instanceof Error
+            ? `Plank legality report saved, but the engineer PDF was not sent.\n\n${error.message}`
+            : "Plank legality report saved, but the engineer PDF was not sent.",
+        );
+      }
+
+      await loadRecordsForCar(activeCarId);
     } catch (error) {
       setErrorMessage(
         error instanceof Error
           ? error.message
-          : "Failed to submit plank legality report.",
+          : "Failed to save plank legality report.",
       );
     } finally {
       setSaving(false);
     }
+  }
+
+  async function resendCurrentPlankPdf() {
+    setMessage("");
+    setErrorMessage("");
+
+    if (!activeReportId) {
+      setErrorMessage("Save the plank legality report before sending the PDF.");
+      return;
+    }
+
+    const validationError = validatePlankSheet();
+
+    if (validationError) {
+      setErrorMessage(validationError);
+      return;
+    }
+
+    setSending(true);
+
+    try {
+      const notifyResult = await sendPlankLegalityPdf(activeReportId, createHolePdfPayload());
+      setMessage(`Plank legality PDF sent to ${notifyResult.sent_to}.`);
+      await loadRecordsForCar(activeCarId);
+    } catch (error) {
+      setErrorMessage(
+        error instanceof Error
+          ? error.message
+          : "Failed to send plank legality PDF.",
+      );
+    } finally {
+      setSending(false);
+    }
+  }
+
+  async function resendSavedPlankPdf(record: PlankLegalityRecord) {
+    setMessage("");
+    setErrorMessage("");
+
+    if (!canSubmitPlankReports) {
+      setErrorMessage("Guest users cannot send plank legality PDFs.");
+      return;
+    }
+
+    const engineerEmail = record.engineer_email || getEngineerAllocationForCar(record.car_id).engineerEmail;
+    const engineerName = record.engineer_name || getEngineerAllocationForCar(record.car_id).engineerName;
+
+    if (!engineerEmail.trim()) {
+      setErrorMessage(`No engineer email is configured for Car ${record.car_id}.`);
+      return;
+    }
+
+    setSending(true);
+
+    try {
+      const holes: PlankHolePdfPayload[] = [
+        {
+          hole_key: "hole_1",
+          hole_name: "Hole 1",
+          position: "Front plank · LH",
+          min_mm: Number(record.hole_1_a_mm ?? NaN),
+          max_mm: Number(record.hole_1_b_mm ?? NaN),
+          status: Number(record.hole_1_b_mm ?? 0) < PLANK_LIMIT_MM ? "illegal" : Number(record.hole_1_b_mm ?? 0) < NEAR_LIMIT_MM ? "warning" : "legal",
+        },
+        {
+          hole_key: "hole_2",
+          hole_name: "Hole 2",
+          position: "Front plank · RH",
+          min_mm: Number(record.hole_2_a_mm ?? NaN),
+          max_mm: Number(record.hole_2_b_mm ?? NaN),
+          status: Number(record.hole_2_b_mm ?? 0) < PLANK_LIMIT_MM ? "illegal" : Number(record.hole_2_b_mm ?? 0) < NEAR_LIMIT_MM ? "warning" : "legal",
+        },
+        {
+          hole_key: "hole_3",
+          hole_name: "Hole 3",
+          position: "Rear plank · Forward",
+          min_mm: Number(record.hole_3_a_mm ?? NaN),
+          max_mm: Number(record.hole_3_b_mm ?? NaN),
+          status: Number(record.hole_3_b_mm ?? 0) < PLANK_LIMIT_MM ? "illegal" : Number(record.hole_3_b_mm ?? 0) < NEAR_LIMIT_MM ? "warning" : "legal",
+        },
+        {
+          hole_key: "hole_4",
+          hole_name: "Hole 4",
+          position: "Rear plank · Rearward",
+          min_mm: Number(record.hole_4_a_mm ?? NaN),
+          max_mm: Number(record.hole_4_b_mm ?? NaN),
+          status: Number(record.hole_4_b_mm ?? 0) < PLANK_LIMIT_MM ? "illegal" : Number(record.hole_4_b_mm ?? 0) < NEAR_LIMIT_MM ? "warning" : "legal",
+        },
+      ].map((hole) => ({
+        ...hole,
+        min_mm: Number.isFinite(hole.min_mm) ? hole.min_mm : null,
+        max_mm: Number.isFinite(hole.max_mm) ? hole.max_mm : null,
+      }));
+
+      const notifyResponse = await fetch("/api/plank-legality", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          report_id: record.id,
+          car_id: record.car_id,
+          car_name: record.car_name || `Car ${record.car_id}`,
+          driver: record.car_name || `Car ${record.car_id}`,
+          circuit: record.circuit,
+          report_date: record.report_date,
+          session: record.session,
+          engineer_name: engineerName,
+          engineer_email: engineerEmail,
+          created_by: createdBy,
+          status: record.status || "legal",
+          minimum_thickness_mm: record.minimum_thickness_mm,
+          failed_holes: record.illegal_count ?? 0,
+          near_limit_holes: record.near_limit_count ?? 0,
+          notes: record.notes,
+          holes,
+        }),
+      });
+
+      if (!notifyResponse.ok) {
+        const body = await notifyResponse.json().catch(() => null);
+        throw new Error(body?.error || "Failed to send saved plank legality PDF.");
+      }
+
+      const sentAt = new Date().toISOString();
+
+      await supabase
+        .from("plank_legality_reports")
+        .update({
+          sent_to_engineer_at: sentAt,
+          engineer_name: engineerName,
+          engineer_email: engineerEmail,
+          updated_by: createdBy,
+          updated_at: sentAt,
+        })
+        .eq("id", record.id);
+
+      const notifyResult = await notifyResponse.json() as {
+        sent_to: string;
+      };
+
+      setMessage(`Plank legality PDF sent to ${notifyResult.sent_to}.`);
+      await loadRecordsForCar(record.car_id);
+    } catch (error) {
+      setErrorMessage(
+        error instanceof Error ? error.message : "Failed to send saved plank legality PDF.",
+      );
+    } finally {
+      setSending(false);
+    }
+  }
+
+  function openPlankLegalityRecord(record: PlankLegalityRecord) {
+    const savedCircuit = normaliseCircuit(record.circuit);
+
+    setActiveReportId(record.id);
+    setSelectedAllocationId(`car-${record.car_id}`);
+    setReportDate(record.report_date || getTodayIsoDate());
+    setSession(record.session || "");
+    setCircuit(savedCircuit.circuit);
+    setCustomCircuit(savedCircuit.customCircuit);
+    setMeasurements({
+      hole_1: {
+        min: record.hole_1_a_mm === null ? "" : String(record.hole_1_a_mm),
+        max: record.hole_1_b_mm === null ? "" : String(record.hole_1_b_mm),
+      },
+      hole_2: {
+        min: record.hole_2_a_mm === null ? "" : String(record.hole_2_a_mm),
+        max: record.hole_2_b_mm === null ? "" : String(record.hole_2_b_mm),
+      },
+      hole_3: {
+        min: record.hole_3_a_mm === null ? "" : String(record.hole_3_a_mm),
+        max: record.hole_3_b_mm === null ? "" : String(record.hole_3_b_mm),
+      },
+      hole_4: {
+        min: record.hole_4_a_mm === null ? "" : String(record.hole_4_a_mm),
+        max: record.hole_4_b_mm === null ? "" : String(record.hole_4_b_mm),
+      },
+    });
+    setNotes(record.notes || "");
+    setLastSentToEngineerAt(record.sent_to_engineer_at || null);
+    setMessage(`Opened plank legality report for ${record.car_name || `Car ${record.car_id}`} on ${formatReportDate(record.report_date)}.`);
+    setErrorMessage("");
+  }
+
+  function resetToNewReport() {
+    setActiveReportId(null);
+    setLastSentToEngineerAt(null);
+    setReportDate(getTodayIsoDate());
+    setSession("");
+    setCircuit(CIRCUIT_OPTIONS[0]);
+    setCustomCircuit("");
+    setMeasurements(createEmptyMeasurements());
+    setNotes("");
+    setMessage("");
+    setErrorMessage("");
   }
 
   async function deletePlankLegalityRecord(record: PlankLegalityRecord) {
@@ -808,6 +1206,11 @@ export default function PlankLegalityPage() {
     }
 
     setMessage("Plank legality record deleted.");
+
+    if (activeReportId === record.id) {
+      resetToNewReport();
+    }
+
     setDeletingId(null);
 
     if (selectedAllocation) {
@@ -885,7 +1288,7 @@ export default function PlankLegalityPage() {
               </h1>
 
               <p className="mt-2 max-w-4xl text-sm text-zinc-400">
-                Measure the 4 rule-book holes. Enter only the Min and Max reading beside each hole.
+                Measure the 4 rule-book holes. Save the sheet and send the generated PDF to the assigned engineer.
                 A hole passes if its Max / available point is at least 3.00 mm.
               </p>
             </div>
@@ -1005,7 +1408,7 @@ export default function PlankLegalityPage() {
               Event Details
             </p>
 
-            <div className="grid gap-4 md:grid-cols-4">
+            <div className="grid gap-4 md:grid-cols-5">
               <label>
                 <span className="mb-2 block text-xs font-semibold uppercase tracking-[0.2em] text-zinc-500">
                   Date
@@ -1064,6 +1467,8 @@ export default function PlankLegalityPage() {
                   value={selectedAllocationId}
                   onChange={(event) => {
                     setSelectedAllocationId(event.target.value);
+                    setActiveReportId(null);
+                    setLastSentToEngineerAt(null);
                     setMeasurements(createEmptyMeasurements());
                     setNotes("");
                     setMessage("");
@@ -1078,6 +1483,18 @@ export default function PlankLegalityPage() {
                   ))}
                 </select>
               </label>
+
+              <div className="rounded-xl border border-zinc-800 bg-[#0d0f12] px-4 py-3">
+                <span className="mb-2 block text-xs font-semibold uppercase tracking-[0.2em] text-zinc-500">
+                  Engineer
+                </span>
+                <p className="truncate text-sm font-semibold text-zinc-100">
+                  {selectedEngineer.engineerName}
+                </p>
+                <p className={`mt-1 truncate text-xs ${selectedCarHasEmail ? "text-zinc-500" : "text-red-300"}`}>
+                  {selectedEngineer.engineerEmail || "No engineer email configured"}
+                </p>
+              </div>
             </div>
 
             {circuit === "Other" && (
@@ -1203,7 +1620,7 @@ export default function PlankLegalityPage() {
           <div className="mt-6 flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-red-900/40 bg-[#181315] p-5">
             <div>
               <p className="text-xs uppercase tracking-[0.25em] text-zinc-500">
-                Submission Preview
+                Save & Engineer PDF Preview
               </p>
 
               <p className="mt-2 text-sm text-zinc-300">
@@ -1215,18 +1632,42 @@ export default function PlankLegalityPage() {
               </p>
 
               <p className="mt-1 text-xs text-zinc-500">
-                Result saved as: {analysis.isComplete ? analysis.status.toString().toUpperCase() : "INCOMPLETE"}
+                Result saved as: {analysis.isComplete ? statusText(analysis.status) : "INCOMPLETE"} · Engineer: {selectedEngineer.engineerName}
+              </p>
+
+              <p className="mt-1 text-xs text-zinc-500">
+                {lastSentToEngineerAt ? `Last sent: ${formatDateTime(lastSentToEngineerAt)}` : "Not sent to engineer yet"}
               </p>
             </div>
 
-            <button
-              type="button"
-              onClick={submitPlankLegalityReport}
-              disabled={saving || !canSubmitPlankReports}
-              className="rounded-xl bg-red-700 px-6 py-3 text-sm font-semibold text-white hover:bg-red-600 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {saving ? "Submitting..." : "Submit Plank Check"}
-            </button>
+            <div className="flex flex-wrap gap-3">
+              <button
+                type="button"
+                onClick={submitPlankLegalityReport}
+                disabled={saving || sending || !canSubmitPlankReports}
+                className="rounded-xl bg-red-700 px-6 py-3 text-sm font-semibold text-white hover:bg-red-600 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {saving ? "Saving..." : activeReportId ? "Update & Send PDF" : "Save & Send PDF"}
+              </button>
+
+              <button
+                type="button"
+                onClick={resendCurrentPlankPdf}
+                disabled={saving || sending || !activeReportId || !canSubmitPlankReports}
+                className="rounded-xl border border-zinc-700 bg-[#101317] px-5 py-3 text-sm font-semibold text-zinc-200 transition hover:border-red-500 hover:text-red-300 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {sending ? "Sending..." : "Resend PDF"}
+              </button>
+
+              <button
+                type="button"
+                onClick={resetToNewReport}
+                disabled={saving || sending}
+                className="rounded-xl border border-zinc-700 bg-[#101317] px-5 py-3 text-sm font-semibold text-zinc-400 transition hover:border-zinc-500 hover:text-zinc-100 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                New Check
+              </button>
+            </div>
           </div>
         </section>
 
@@ -1234,7 +1675,7 @@ export default function PlankLegalityPage() {
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div>
               <h2 className="text-2xl font-semibold">
-                Previous Plank Legality Reports
+                Saved Plank Legality Reports
               </h2>
 
               <p className="mt-1 text-sm text-zinc-500">
@@ -1258,9 +1699,9 @@ export default function PlankLegalityPage() {
                   <th className="px-4 py-3 text-left">Notes</th>
                   <th className="px-4 py-3 text-left">Submitted By</th>
                   <th className="px-4 py-3 text-left">Submitted At</th>
-                  {canDeletePlankReports && (
-                    <th className="px-4 py-3 text-left">Actions</th>
-                  )}
+                  <th className="px-4 py-3 text-left">Engineer</th>
+                  <th className="px-4 py-3 text-left">Sent</th>
+                  <th className="px-4 py-3 text-left">Actions</th>
                 </tr>
               </thead>
 
@@ -1268,7 +1709,7 @@ export default function PlankLegalityPage() {
                 {records.length === 0 ? (
                   <tr>
                     <td
-                      colSpan={canDeletePlankReports ? 12 : 11}
+                      colSpan={14}
                       className="px-4 py-6 text-center text-zinc-500"
                     >
                       No plank legality reports saved yet for {carDisplayLabel}.
@@ -1329,20 +1770,50 @@ export default function PlankLegalityPage() {
                           {formatDateTime(record.created_at)}
                         </td>
 
-                        {canDeletePlankReports && (
-                          <td className="px-4 py-3">
+                        <td className="px-4 py-3 text-zinc-400">
+                          <div className="max-w-[220px]">
+                            <p className="truncate">{record.engineer_name || getEngineerAllocationForCar(record.car_id).engineerName}</p>
+                            <p className="truncate text-xs text-zinc-500">
+                              {record.engineer_email || getEngineerAllocationForCar(record.car_id).engineerEmail || "No email"}
+                            </p>
+                          </div>
+                        </td>
+
+                        <td className="px-4 py-3 text-zinc-400">
+                          {record.sent_to_engineer_at ? formatDateTime(record.sent_to_engineer_at) : "Not sent"}
+                        </td>
+
+                        <td className="px-4 py-3">
+                          <div className="flex flex-wrap gap-2">
                             <button
                               type="button"
-                              onClick={() => deletePlankLegalityRecord(record)}
-                              disabled={deletingId === record.id}
-                              className="rounded-lg border border-red-900/70 px-3 py-2 text-xs font-semibold text-red-300 transition hover:bg-red-950/40 disabled:cursor-not-allowed disabled:opacity-50"
+                              onClick={() => openPlankLegalityRecord(record)}
+                              className="rounded-lg border border-zinc-700 px-3 py-2 text-xs font-semibold text-zinc-300 transition hover:border-red-500 hover:text-red-300"
                             >
-                              {deletingId === record.id
-                                ? "Deleting..."
-                                : "Delete"}
+                              Open
                             </button>
-                          </td>
-                        )}
+
+                            <button
+                              type="button"
+                              onClick={() => resendSavedPlankPdf(record)}
+                              disabled={sending || !canSubmitPlankReports}
+                              className="rounded-lg border border-green-800/70 px-3 py-2 text-xs font-semibold text-green-300 transition hover:bg-green-950/40 disabled:cursor-not-allowed disabled:opacity-50"
+                            >
+                              Send PDF
+                            </button>
+
+                            {canDeletePlankReports && (
+                              <button
+                                type="button"
+                                onClick={() => deletePlankLegalityRecord(record)}
+                                disabled={deletingId === record.id}
+                                className="rounded-lg border border-red-900/70 px-3 py-2 text-xs font-semibold text-red-300 transition hover:bg-red-950/40 disabled:cursor-not-allowed disabled:opacity-50"
+                              >
+                                {deletingId === record.id ? "Deleting..." : "Delete"}
+                              </button>
+                            )}
+                          </div>
+                        </td>
                       </tr>
                     );
                   })
