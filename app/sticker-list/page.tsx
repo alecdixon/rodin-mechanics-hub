@@ -899,6 +899,7 @@ export default function StickerListPage() {
             max-width: 150px !important;
             height: auto !important;
             object-fit: contain !important;
+            filter: brightness(0) !important;
             -webkit-print-color-adjust: exact !important;
             print-color-adjust: exact !important;
           }
