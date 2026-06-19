@@ -837,7 +837,7 @@ export default function PlankLegalityPage() {
     if (analysis.status === "illegal") {
       return {
         title: "ILLEGAL — At Least One Hole Fails The Rule",
-        text: `${analysis.failedHoles.length} hole${analysis.failedHoles.length === 1 ? "" : "s"} failed. For each hole, at least one point must be 3.00 mm or more. Failed: ${analysis.failedHoles.map((hole) => hole.label).join(", ")}.`,
+        text: `${analysis.failedHoles.length} hole${analysis.failedHoles.length === 1 ? "" : "s"} failed. For each hole, at least one point must be 3.00 mm or more. Failed: ${analysis.failedHoles.map((hole) => hole.holeLabel).join(", ")}.`,
         className: "border-red-700 bg-red-950/50 text-red-100 shadow-red-950/40",
         badge: "ILLEGAL",
       };
