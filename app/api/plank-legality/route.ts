@@ -310,6 +310,224 @@ function drawText(
   });
 }
 
+
+function drawCenteredText(
+  page: PDFPage,
+  text: string,
+  centerX: number,
+  y: number,
+  font: PDFFont,
+  size: number,
+  color = rgb(0.93, 0.94, 0.96),
+) {
+  drawText(page, text, centerX - fontWidth(text, font, size) / 2, y, font, size, color);
+}
+
+function holeShortLabel(holeName: string) {
+  return holeName.replace("Hole ", "H");
+}
+
+function drawMeasurementCardPdf(
+  page: PDFPage,
+  hole: NormalisedPlankPayload["holes"][number],
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+  normalFont: PDFFont,
+  boldFont: PDFFont,
+) {
+  const panelBlack = rgb(0.035, 0.045, 0.06);
+  const borderGrey = rgb(0.25, 0.27, 0.32);
+  const grey = rgb(0.58, 0.61, 0.68);
+  const light = rgb(0.93, 0.94, 0.96);
+  const badgeColour = statusColour(hole.status);
+
+  page.drawRectangle({
+    x,
+    y,
+    width,
+    height,
+    color: panelBlack,
+    borderColor: badgeColour,
+    borderWidth: 0.9,
+  });
+
+  drawText(page, holeShortLabel(hole.hole_name), x + 10, y + height - 19, boldFont, 11, light);
+  drawText(page, hole.position, x + 10, y + height - 34, normalFont, 7, grey);
+
+  const badgeText = statusLabel(hole.status) === "LEGAL - CLOSE TO LIMIT" ? "CLOSE" : statusLabel(hole.status);
+  const badgeWidth = 48;
+  page.drawRectangle({
+    x: x + width - badgeWidth - 10,
+    y: y + height - 26,
+    width: badgeWidth,
+    height: 16,
+    color: rgb(0.02, 0.025, 0.035),
+    borderColor: badgeColour,
+    borderWidth: 0.8,
+  });
+  drawCenteredText(page, badgeText, x + width - badgeWidth / 2 - 10, y + height - 21, boldFont, 6.2, badgeColour);
+
+  const boxY = y + 16;
+  const boxW = (width - 30) / 2;
+  const minX = x + 10;
+  const maxX = x + 20 + boxW;
+
+  drawText(page, "MIN", minX, boxY + 43, boldFont, 6.2, grey);
+  drawText(page, "MAX", maxX, boxY + 43, boldFont, 6.2, grey);
+
+  [minX, maxX].forEach((boxX, idx) => {
+    page.drawRectangle({
+      x: boxX,
+      y: boxY,
+      width: boxW,
+      height: 28,
+      color: rgb(0.06, 0.075, 0.095),
+      borderColor: borderGrey,
+      borderWidth: 0.7,
+      borderRadius: 5,
+    });
+
+    const value = idx == 0 ? formatMm(hole.min_mm) : formatMm(hole.max_mm);
+    drawText(page, value, boxX + 8, boxY + 10, boldFont, 8.5, light);
+  });
+}
+
+function drawPlankDiagramPdfPage(
+  pdfDoc: PDFDocument,
+  payload: NormalisedPlankPayload,
+  normalFont: PDFFont,
+  boldFont: PDFFont,
+) {
+  const page = pdfDoc.addPage([595.28, 841.89]);
+  const pageWidth = page.getWidth();
+  const pageHeight = page.getHeight();
+
+  const sheetBlack = rgb(0.015, 0.02, 0.03);
+  const panelBlack = rgb(0.035, 0.045, 0.06);
+  const borderGrey = rgb(0.25, 0.27, 0.32);
+  const light = rgb(0.93, 0.94, 0.96);
+  const grey = rgb(0.58, 0.61, 0.68);
+  const red = rgb(1, 0.12, 0.18);
+
+  page.drawRectangle({ x: 0, y: 0, width: pageWidth, height: pageHeight, color: sheetBlack });
+
+  drawText(page, "RODIN MOTORSPORT · GB3", 34, 792, boldFont, 8, red);
+  drawText(page, "PLANK HOLE POSITION DIAGRAM", 34, 765, boldFont, 20, light);
+  drawText(
+    page,
+    "This page shows the hole positions and their min / max measurements for clarity.",
+    34,
+    746,
+    normalFont,
+    8.2,
+    grey,
+  );
+
+  const selectedHoles = [
+    payload.holes.find((hole) => hole.hole_key === "hole_1"),
+    payload.holes.find((hole) => hole.hole_key === "hole_2"),
+    payload.holes.find((hole) => hole.hole_key === "hole_3"),
+    payload.holes.find((hole) => hole.hole_key === "hole_4"),
+  ].filter(Boolean) as NormalisedPlankPayload["holes"];
+
+  page.drawRectangle({
+    x: 162,
+    y: 120,
+    width: 272,
+    height: 575,
+    color: panelBlack,
+    borderColor: borderGrey,
+    borderWidth: 0.9,
+  });
+
+  drawText(page, "FRONT", 208, 612, boldFont, 12, light);
+  drawText(page, "REAR", 210, 167, boldFont, 12, light);
+
+  page.drawLine({ start: { x: 228, y: 212 }, end: { x: 228, y: 530 }, thickness: 3, color: grey });
+  page.drawLine({ start: { x: 228, y: 530 }, end: { x: 216, y: 530 }, thickness: 3, color: grey });
+  page.drawLine({ start: { x: 228, y: 530 }, end: { x: 240, y: 530 }, thickness: 3, color: grey });
+  page.drawLine({ start: { x: 216, y: 530 }, end: { x: 228, y: 555 }, thickness: 3, color: grey });
+  page.drawLine({ start: { x: 240, y: 530 }, end: { x: 228, y: 555 }, thickness: 3, color: grey });
+  page.drawLine({ start: { x: 223, y: 212 }, end: { x: 223, y: 525 }, thickness: 1.5, color: grey });
+  page.drawLine({ start: { x: 233, y: 212 }, end: { x: 233, y: 525 }, thickness: 1.5, color: grey });
+
+  page.drawRectangle({
+    x: 290,
+    y: 515,
+    width: 140,
+    height: 135,
+    borderColor: light,
+    borderWidth: 2.4,
+    color: rgb(0.05, 0.06, 0.08),
+  });
+
+  page.drawRectangle({
+    x: 290,
+    y: 180,
+    width: 140,
+    height: 250,
+    borderColor: light,
+    borderWidth: 2.4,
+    color: rgb(0.05, 0.06, 0.08),
+  });
+
+  const holeCoords = {
+    hole_1: {"x": 326, "y": 582},
+    hole_2: {"x": 394, "y": 582},
+    hole_3: {"x": 360, "y": 364},
+    hole_4: {"x": 360, "y": 238},
+  } as const;
+
+  Object.entries(holeCoords).forEach(([key, coord]) => {
+    page.drawCircle({
+      x: coord.x,
+      y: coord.y,
+      size: 18,
+      borderColor: light,
+      borderWidth: 2.4,
+      color: sheetBlack,
+    });
+
+    const label = key.replace("hole_", "H");
+    drawText(
+      page,
+      label,
+      coord.x + (label === "H1" ? -11 : label === "H2" ? -11 : 14),
+      coord.y + 28,
+      boldFont,
+      11,
+      light,
+    );
+  });
+
+  page.drawLine({ start: { x: 326, y: 582 }, end: { x: 150, y: 582 }, thickness: 1.2, color: grey });
+  page.drawLine({ start: { x: 394, y: 582 }, end: { x: 450, y: 582 }, thickness: 1.2, color: grey });
+  page.drawLine({ start: { x: 360, y: 364 }, end: { x: 450, y: 364 }, thickness: 1.2, color: grey });
+  page.drawLine({ start: { x: 360, y: 238 }, end: { x: 450, y: 238 }, thickness: 1.2, color: grey });
+
+  const holeMap = Object.fromEntries(selectedHoles.map((hole) => [hole.hole_key, hole]));
+
+  drawMeasurementCardPdf(page, holeMap["hole_1"], 34, 540, 110, 100, normalFont, boldFont);
+  drawMeasurementCardPdf(page, holeMap["hole_2"], 451, 540, 110, 100, normalFont, boldFont);
+  drawMeasurementCardPdf(page, holeMap["hole_3"], 451, 330, 110, 100, normalFont, boldFont);
+  drawMeasurementCardPdf(page, holeMap["hole_4"], 451, 120, 110, 100, normalFont, boldFont);
+
+  page.drawRectangle({
+    x: 34,
+    y: 48,
+    width: 527,
+    height: 44,
+    color: panelBlack,
+    borderColor: borderGrey,
+    borderWidth: 0.75,
+  });
+  drawText(page, "RULE", 48, 76, boldFont, 7, grey);
+  const note = "For each of the four holes, at least one measured point around the circumference must be 3.00 mm or more.";
+  drawText(page, note, 48, 58, normalFont, 8.4, light);
+}
+
 function drawInfoBox(
   page: PDFPage,
   label: string,
@@ -544,6 +762,8 @@ async function buildPlankLegalityPdf(payload: NormalisedPlankPayload) {
 
   drawText(page, `Report ID: ${payload.report_id}`, 34, 37, normalFont, 6.5, grey);
   drawText(page, "Generated by Rodin Mechanics Hub", 410, 37, normalFont, 6.5, grey);
+
+  drawPlankDiagramPdfPage(pdfDoc, payload, normalFont, boldFont);
 
   return pdfDoc.save();
 }
