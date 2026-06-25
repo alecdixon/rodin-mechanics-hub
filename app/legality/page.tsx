@@ -554,7 +554,6 @@ function LegalityCarOverview({
   onMoveLayoutPoint,
   onTogglePointStatus,
   onOpenInlineNote,
-  onCloseInlineNote,
   onMarkPointLegal,
   onNoteChange,
 }: {
@@ -568,27 +567,10 @@ function LegalityCarOverview({
   onMoveLayoutPoint: (key: string, x: number, y: number) => void;
   onTogglePointStatus: (key: string) => void;
   onOpenInlineNote: (key: string) => void;
-  onCloseInlineNote: () => void;
   onMarkPointLegal: (key: string) => void;
   onNoteChange: (key: string, note: string) => void;
 }) {
   const canvasRef = useRef<HTMLDivElement>(null);
-
-  const illegalPoints = useMemo(() => {
-    return points.filter(
-      (point) => getPointState(itemStates, point.key).status === "illegal",
-    );
-  }, [itemStates, points]);
-
-  const activeNotePoint = useMemo(() => {
-    if (!activeInlineNoteKey) return null;
-
-    const point = points.find((current) => current.key === activeInlineNoteKey);
-    if (!point) return null;
-
-    const state = getPointState(itemStates, point.key);
-    return state.status === "illegal" ? point : null;
-  }, [activeInlineNoteKey, itemStates, points]);
 
   function movePointFromPointer(
     key: string,
@@ -606,63 +588,52 @@ function LegalityCarOverview({
   }
 
   return (
-    <div className="mx-auto w-full max-w-[760px] space-y-4">
-      {!layoutEditMode && (
-        <div className="rounded-2xl border border-zinc-800 bg-[#05070b] p-4 text-sm text-zinc-300">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <div className="text-xs font-black uppercase tracking-[0.28em] text-zinc-500">
-                Legality workflow
-              </div>
-              <div className="mt-2 leading-6">
-                Click a green measurement box to mark it illegal. The selected failed item opens in the note panel below the car.
-              </div>
-            </div>
-            <div className="flex flex-wrap gap-2 text-[10px] font-black uppercase tracking-[0.18em]">
-              <span className="rounded-full border border-green-500 bg-green-950/60 px-3 py-1 text-green-100">
-                Green = legal
-              </span>
-              <span className="rounded-full border border-red-500 bg-red-950/70 px-3 py-1 text-red-100">
-                Red = needs note
-              </span>
-            </div>
-          </div>
-        </div>
-      )}
+    <div
+      ref={canvasRef}
+      className="relative mx-auto aspect-[3/4] min-h-[620px] w-full max-w-[640px] overflow-visible rounded-[2rem] border border-zinc-700 bg-[#030507] shadow-inner shadow-black/40"
+    >
+      <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(to_right,rgba(82,82,91,0.34)_1px,transparent_1px),linear-gradient(to_bottom,rgba(82,82,91,0.34)_1px,transparent_1px)] bg-[size:28px_28px]" />
+      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(239,68,68,0.12),transparent_58%)]" />
 
-      <div
-        ref={canvasRef}
-        className="relative mx-auto aspect-[3/4] min-h-[620px] w-full max-w-[700px] overflow-hidden rounded-[2rem] border border-zinc-700 bg-[#030507] shadow-inner shadow-black/40"
-      >
-        <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(to_right,rgba(82,82,91,0.34)_1px,transparent_1px),linear-gradient(to_bottom,rgba(82,82,91,0.34)_1px,transparent_1px)] bg-[size:28px_28px]" />
-        <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(239,68,68,0.12),transparent_58%)]" />
+      <img
+        src="/legality-car-overview-inverted.png"
+        alt="Top-down formula car legality overview"
+        className="pointer-events-none absolute inset-[4%] h-[92%] w-[92%] object-contain opacity-95 [filter:contrast(1.12)_drop-shadow(0_0_10px_rgba(255,255,255,0.08))]"
+      />
 
-        <img
-          src="/legality-car-overview-inverted.png"
-          alt="Top-down formula car legality overview"
-          className="pointer-events-none absolute inset-[4%] h-[92%] w-[92%] object-contain opacity-95 [filter:contrast(1.12)_drop-shadow(0_0_10px_rgba(255,255,255,0.08))]"
-        />
+      <div className="pointer-events-none absolute inset-x-[22%] top-[4%] h-[92%] border-x border-zinc-600/70" />
 
-        <div className="pointer-events-none absolute inset-x-[22%] top-[4%] h-[92%] border-x border-zinc-600/70" />
+      {points.map((point) => {
+        const state = getPointState(itemStates, point.key);
+        const isIllegal = state.status === "illegal";
+        const isSelected = selectedLayoutKey === point.key;
+        const statusClasses = isIllegal
+          ? "border-red-500 bg-red-950/80 text-red-100 shadow-red-950/30"
+          : "border-green-500 bg-green-950/70 text-green-100 shadow-green-950/25";
+        const editClasses = isSelected
+          ? "ring-4 ring-red-500/30"
+          : "ring-0";
 
-        {points.map((point) => {
-          const state = getPointState(itemStates, point.key);
-          const isIllegal = state.status === "illegal";
-          const isSelected = selectedLayoutKey === point.key;
-          const isActiveNote = activeInlineNoteKey === point.key && isIllegal;
-          const statusClasses = isIllegal
-            ? "border-red-500 bg-red-950/90 text-red-100 shadow-red-950/40"
-            : "border-green-500 bg-green-950/75 text-green-100 shadow-green-950/25";
-          const editClasses = isSelected
-            ? "ring-4 ring-red-500/30"
-            : "ring-0";
-          const activeNoteClasses = isActiveNote
-            ? "scale-[1.05] ring-4 ring-red-300/45"
-            : "";
+        const noteVerticalClass = point.y > 80
+          ? "bottom-[calc(100%+0.65rem)]"
+          : "top-[calc(100%+0.65rem)]";
+        const noteHorizontalClass =
+          point.x < 30
+            ? "left-0"
+            : point.x > 70
+              ? "right-0"
+              : "left-1/2 -translate-x-1/2";
 
-          return (
+        return (
+          <div
+            key={point.key}
+            style={{
+              left: `${point.x}%`,
+              top: `${point.y}%`,
+            }}
+            className="absolute z-20 -translate-x-1/2 -translate-y-1/2"
+          >
             <button
-              key={point.key}
               type="button"
               disabled={layoutEditMode && readOnly}
               onClick={() => {
@@ -690,19 +661,13 @@ function LegalityCarOverview({
                 if (event.buttons !== 1) return;
                 movePointFromPointer(point.key, event);
               }}
-              style={{
-                left: `${point.x}%`,
-                top: `${point.y}%`,
-              }}
-              className={`absolute z-20 min-w-[126px] -translate-x-1/2 -translate-y-1/2 rounded-xl border px-3 py-2 text-left shadow-lg backdrop-blur-sm transition hover:scale-[1.04] ${
+              className={`min-w-[126px] rounded-xl border px-3 py-2 text-left shadow-lg backdrop-blur-sm transition hover:scale-[1.03] ${
                 layoutEditMode && !readOnly ? "cursor-move border-red-500 bg-[#070a0f]/95" : statusClasses
-              } ${editClasses} ${activeNoteClasses}`}
+              } ${editClasses}`}
               title={
                 layoutEditMode
                   ? `Drag ${point.label} to reposition it`
-                  : isIllegal
-                    ? `${point.label} · click to edit the illegal note`
-                    : `${point.label} · click to mark illegal`
+                  : `${point.label} · click to toggle legal/illegal`
               }
             >
               <div className="flex items-center justify-between gap-3">
@@ -716,113 +681,67 @@ function LegalityCarOverview({
                       : "border-green-300 bg-green-600 text-white"
                   }`}
                 >
-                  {isIllegal ? "Illegal" : "Legal"}
+                  {isIllegal ? "Red" : "Legal"}
                 </span>
               </div>
-              {isIllegal && !layoutEditMode && (
-                <div className="mt-1 text-[9px] font-bold uppercase tracking-[0.16em] text-red-200/90">
-                  {state.illegal_note.trim() ? "Note added" : "Note required"}
-                </div>
-              )}
               {layoutEditMode && (
                 <div className="mt-1 text-[9px] font-semibold uppercase tracking-[0.16em] text-red-300">
                   X {point.x.toFixed(1)} · Y {point.y.toFixed(1)}
                 </div>
               )}
             </button>
-          );
-        })}
 
-        {layoutEditMode && !readOnly && (
-          <div className="absolute bottom-4 left-4 right-4 rounded-2xl border border-red-800 bg-[#070a0f]/95 p-3 text-xs text-zinc-300 shadow-lg">
-            Drag boxes around the car, then use the layout editor above to rename,
-            change side/position, add or remove points.
-          </div>
-        )}
-      </div>
-
-      {!layoutEditMode && illegalPoints.length === 0 && (
-        <div className="rounded-2xl border border-green-800 bg-green-950/20 p-4 text-sm text-green-200">
-          All measurement boxes are currently marked legal. Click any box on the car if a point fails legality.
-        </div>
-      )}
-
-      {!layoutEditMode && activeNotePoint && (
-        <section className="rounded-[1.5rem] border border-red-700 bg-red-950/30 p-4 shadow-xl shadow-red-950/20">
-          <div className="flex flex-wrap items-start justify-between gap-4">
-            <div>
-              <p className="text-xs font-black uppercase tracking-[0.3em] text-red-300">
-                Illegal note required
-              </p>
-              <h3 className="mt-2 text-xl font-semibold text-red-50">
-                {activeNotePoint.label}
-              </h3>
-              <p className="mt-1 text-sm leading-6 text-red-100/75">
-                {activeNotePoint.position || "Describe exactly what failed this legality point."}
-              </p>
-            </div>
-
-            <div className="flex flex-wrap gap-2">
-              {!readOnly && (
-                <button
-                  type="button"
-                  onClick={() => onMarkPointLegal(activeNotePoint.key)}
-                  className="rounded-xl border border-green-600 bg-green-950/40 px-4 py-2 text-xs font-black uppercase tracking-[0.18em] text-green-100 transition hover:bg-green-900/60"
-                >
-                  Mark legal
-                </button>
-              )}
-              <button
-                type="button"
-                onClick={onCloseInlineNote}
-                className="rounded-xl border border-zinc-700 bg-[#111418] px-4 py-2 text-xs font-black uppercase tracking-[0.18em] text-zinc-200 transition hover:border-red-500 hover:text-red-100"
+            {isIllegal && activeInlineNoteKey === point.key && !layoutEditMode && (
+              <label
+                className={`absolute ${noteVerticalClass} ${noteHorizontalClass} z-40 block w-[280px] rounded-2xl border border-red-600 bg-red-950/95 p-3 text-left shadow-2xl shadow-red-950/60 backdrop-blur-md`}
+                onClick={(event) => event.stopPropagation()}
+                onPointerDown={(event) => event.stopPropagation()}
               >
-                Done
-              </button>
-            </div>
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <div className="text-[10px] font-black uppercase tracking-[0.22em] text-red-100">
+                      {point.label}
+                    </div>
+                    <div className="mt-1 text-[10px] leading-4 text-red-100/70">
+                      {point.position || "Illegal note required"}
+                    </div>
+                  </div>
+                  {!readOnly ? (
+                    <button
+                      type="button"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        onMarkPointLegal(point.key);
+                      }}
+                      className="rounded-full border border-zinc-500 bg-[#111418] px-2 py-1 text-[8px] font-black uppercase tracking-[0.16em] text-zinc-100 transition hover:border-green-400 hover:bg-green-950 hover:text-green-100"
+                    >
+                      Mark Legal
+                    </button>
+                  ) : (
+                    <span className="rounded-full border border-red-300 bg-red-600 px-2 py-1 text-[8px] font-black uppercase tracking-[0.16em] text-white">
+                      Illegal
+                    </span>
+                  )}
+                </div>
+
+                <textarea
+                  disabled={readOnly}
+                  value={state.illegal_note}
+                  onChange={(event) => onNoteChange(point.key, event.target.value)}
+                  placeholder="Enter what is illegal..."
+                  className="mt-3 min-h-20 w-full resize-y rounded-xl border border-red-500 bg-red-950/60 px-3 py-2 text-xs font-semibold text-red-50 outline-none transition placeholder:text-red-200/70 focus:border-red-300 disabled:cursor-not-allowed disabled:border-zinc-700 disabled:bg-zinc-900 disabled:text-zinc-400"
+                />
+              </label>
+            )}
           </div>
+        );
+      })}
 
-          {illegalPoints.length > 1 && (
-            <div className="mt-4 flex flex-wrap gap-2 border-t border-red-900/60 pt-4">
-              {illegalPoints.map((point) => {
-                const state = getPointState(itemStates, point.key);
-                const isCurrent = point.key === activeNotePoint.key;
-
-                return (
-                  <button
-                    key={point.key}
-                    type="button"
-                    onClick={() => onOpenInlineNote(point.key)}
-                    className={`rounded-full border px-3 py-1 text-[10px] font-black uppercase tracking-[0.16em] transition ${
-                      isCurrent
-                        ? "border-red-300 bg-red-600 text-white"
-                        : "border-red-800 bg-[#070a0f] text-red-200 hover:border-red-400"
-                    }`}
-                  >
-                    {point.label} · {state.illegal_note.trim() ? "noted" : "needs note"}
-                  </button>
-                );
-              })}
-            </div>
-          )}
-
-          <label className="mt-4 block">
-            <span className="text-xs font-black uppercase tracking-[0.24em] text-red-300">
-              What is illegal?
-            </span>
-            <textarea
-              disabled={readOnly}
-              value={getPointState(itemStates, activeNotePoint.key).illegal_note}
-              onChange={(event) => onNoteChange(activeNotePoint.key, event.target.value)}
-              placeholder="Example: LH front wing endplate damaged / measurement below limit / splitter edge outside tolerance..."
-              className="mt-2 min-h-28 w-full resize-y rounded-2xl border border-red-600 bg-red-950/50 px-4 py-3 text-sm font-semibold text-red-50 outline-none transition placeholder:text-red-200/60 focus:border-red-300 disabled:cursor-not-allowed disabled:border-zinc-700 disabled:bg-zinc-900 disabled:text-zinc-400"
-            />
-          </label>
-
-          <p className="mt-3 text-xs leading-5 text-red-100/65">
-            This note is saved against the selected red measurement point and is included in the legality PDF sent to the engineer.
-          </p>
-        </section>
+      {layoutEditMode && !readOnly && (
+        <div className="absolute bottom-4 left-4 right-4 rounded-2xl border border-red-800 bg-[#070a0f]/95 p-3 text-xs text-zinc-300 shadow-lg">
+          Drag boxes around the car, then use the layout editor above to rename,
+          change side/position, add or remove points.
+        </div>
       )}
     </div>
   );
@@ -2262,7 +2181,6 @@ export default function LegalityPage() {
                 onMoveLayoutPoint={(key, x, y) => updateLayoutPoint(key, { x, y })}
                 onTogglePointStatus={togglePointStatus}
                 onOpenInlineNote={setActiveInlineNoteKey}
-                onCloseInlineNote={() => setActiveInlineNoteKey(null)}
                 onMarkPointLegal={markPointLegal}
                 onNoteChange={updatePointNote}
               />
