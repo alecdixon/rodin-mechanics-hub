@@ -549,18 +549,26 @@ function LegalityCarOverview({
   readOnly,
   layoutEditMode,
   selectedLayoutKey,
+  activeInlineNoteKey,
   onSelectLayoutPoint,
   onMoveLayoutPoint,
   onTogglePointStatus,
+  onOpenInlineNote,
+  onMarkPointLegal,
+  onNoteChange,
 }: {
   points: LegalityPoint[];
   itemStates: Record<string, LegalityItemState>;
   readOnly: boolean;
   layoutEditMode: boolean;
   selectedLayoutKey: string | null;
+  activeInlineNoteKey: string | null;
   onSelectLayoutPoint: (key: string) => void;
   onMoveLayoutPoint: (key: string, x: number, y: number) => void;
   onTogglePointStatus: (key: string) => void;
+  onOpenInlineNote: (key: string) => void;
+  onMarkPointLegal: (key: string) => void;
+  onNoteChange: (key: string, note: string) => void;
 }) {
   const canvasRef = useRef<HTMLDivElement>(null);
 
@@ -582,7 +590,7 @@ function LegalityCarOverview({
   return (
     <div
       ref={canvasRef}
-      className="relative mx-auto aspect-[3/4] min-h-[620px] w-full max-w-[640px] overflow-hidden rounded-[2rem] border border-zinc-700 bg-[#030507] shadow-inner shadow-black/40"
+      className="relative mx-auto aspect-[3/4] min-h-[620px] w-full max-w-[640px] overflow-visible rounded-[2rem] border border-zinc-700 bg-[#030507] shadow-inner shadow-black/40"
     >
       <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(to_right,rgba(82,82,91,0.34)_1px,transparent_1px),linear-gradient(to_bottom,rgba(82,82,91,0.34)_1px,transparent_1px)] bg-[size:28px_28px]" />
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(239,68,68,0.12),transparent_58%)]" />
@@ -606,62 +614,126 @@ function LegalityCarOverview({
           ? "ring-4 ring-red-500/30"
           : "ring-0";
 
-        return (
-          <button
-            key={point.key}
-            type="button"
-            disabled={readOnly && !layoutEditMode}
-            onClick={() => {
-              if (layoutEditMode) {
-                onSelectLayoutPoint(point.key);
-                return;
-              }
+        const noteVerticalClass = point.y > 80
+          ? "bottom-[calc(100%+0.65rem)]"
+          : "top-[calc(100%+0.65rem)]";
+        const noteHorizontalClass =
+          point.x < 30
+            ? "left-0"
+            : point.x > 70
+              ? "right-0"
+              : "left-1/2 -translate-x-1/2";
 
-              if (!readOnly) {
-                onTogglePointStatus(point.key);
-              }
-            }}
-            onPointerDown={(event) => {
-              if (!layoutEditMode || readOnly) return;
-              event.currentTarget.setPointerCapture(event.pointerId);
-              onSelectLayoutPoint(point.key);
-              movePointFromPointer(point.key, event);
-            }}
-            onPointerMove={(event) => {
-              if (event.buttons !== 1) return;
-              movePointFromPointer(point.key, event);
-            }}
+        return (
+          <div
+            key={point.key}
             style={{
               left: `${point.x}%`,
               top: `${point.y}%`,
             }}
-            className={`absolute z-10 -translate-x-1/2 -translate-y-1/2 rounded-xl border bg-[#070a0f]/95 px-2.5 py-2 text-left shadow-lg backdrop-blur-sm transition hover:scale-[1.03] ${
-              layoutEditMode && !readOnly ? "cursor-move border-red-500" : statusClasses
-            } ${editClasses}`}
-            title={
-              layoutEditMode
-                ? `Drag ${point.label} to reposition it`
-                : `${point.label} · ${state.status}`
-            }
+            className="absolute z-20 -translate-x-1/2 -translate-y-1/2"
           >
-            <div className="flex items-center gap-2">
-              <span className="min-w-[56px] text-[10px] font-black uppercase tracking-[0.18em] text-zinc-100">
-                {point.shortLabel}
-              </span>
-              <span
-                className={`h-5 w-14 rounded border-2 ${
-                  isIllegal
-                    ? "border-red-400 bg-red-950"
-                    : "border-zinc-300 bg-[#0b0f14]"
-                }`}
-              />
-            </div>
-            {layoutEditMode && (
-              <div className="mt-1 text-[9px] font-semibold uppercase tracking-[0.16em] text-red-600">
-                X {point.x.toFixed(1)} · Y {point.y.toFixed(1)}
+            <button
+              type="button"
+              disabled={layoutEditMode && readOnly}
+              onClick={() => {
+                if (layoutEditMode) {
+                  onSelectLayoutPoint(point.key);
+                  return;
+                }
+
+                if (readOnly) {
+                  if (isIllegal) {
+                    onOpenInlineNote(point.key);
+                  }
+                  return;
+                }
+
+                onTogglePointStatus(point.key);
+              }}
+              onPointerDown={(event) => {
+                if (!layoutEditMode || readOnly) return;
+                event.currentTarget.setPointerCapture(event.pointerId);
+                onSelectLayoutPoint(point.key);
+                movePointFromPointer(point.key, event);
+              }}
+              onPointerMove={(event) => {
+                if (event.buttons !== 1) return;
+                movePointFromPointer(point.key, event);
+              }}
+              className={`min-w-[126px] rounded-xl border px-3 py-2 text-left shadow-lg backdrop-blur-sm transition hover:scale-[1.03] ${
+                layoutEditMode && !readOnly ? "cursor-move border-red-500 bg-[#070a0f]/95" : statusClasses
+              } ${editClasses}`}
+              title={
+                layoutEditMode
+                  ? `Drag ${point.label} to reposition it`
+                  : `${point.label} · click to toggle legal/illegal`
+              }
+            >
+              <div className="flex items-center justify-between gap-3">
+                <span className="text-[10px] font-black uppercase tracking-[0.18em] text-zinc-100">
+                  {point.shortLabel}
+                </span>
+                <span
+                  className={`rounded-full border px-2 py-1 text-[8px] font-black uppercase tracking-[0.16em] ${
+                    isIllegal
+                      ? "border-red-300 bg-red-600 text-white"
+                      : "border-green-300 bg-green-600 text-white"
+                  }`}
+                >
+                  {isIllegal ? "Red" : "Legal"}
+                </span>
               </div>
+              {layoutEditMode && (
+                <div className="mt-1 text-[9px] font-semibold uppercase tracking-[0.16em] text-red-300">
+                  X {point.x.toFixed(1)} · Y {point.y.toFixed(1)}
+                </div>
+              )}
+            </button>
+
+            {isIllegal && activeInlineNoteKey === point.key && !layoutEditMode && (
+              <label
+                className={`absolute ${noteVerticalClass} ${noteHorizontalClass} z-40 block w-[280px] rounded-2xl border border-red-600 bg-red-950/95 p-3 text-left shadow-2xl shadow-red-950/60 backdrop-blur-md`}
+                onClick={(event) => event.stopPropagation()}
+                onPointerDown={(event) => event.stopPropagation()}
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <div className="text-[10px] font-black uppercase tracking-[0.22em] text-red-100">
+                      {point.label}
+                    </div>
+                    <div className="mt-1 text-[10px] leading-4 text-red-100/70">
+                      {point.position || "Illegal note required"}
+                    </div>
+                  </div>
+                  {!readOnly ? (
+                    <button
+                      type="button"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        onMarkPointLegal(point.key);
+                      }}
+                      className="rounded-full border border-zinc-500 bg-[#111418] px-2 py-1 text-[8px] font-black uppercase tracking-[0.16em] text-zinc-100 transition hover:border-green-400 hover:bg-green-950 hover:text-green-100"
+                    >
+                      Mark Legal
+                    </button>
+                  ) : (
+                    <span className="rounded-full border border-red-300 bg-red-600 px-2 py-1 text-[8px] font-black uppercase tracking-[0.16em] text-white">
+                      Illegal
+                    </span>
+                  )}
+                </div>
+
+                <textarea
+                  disabled={readOnly}
+                  value={state.illegal_note}
+                  onChange={(event) => onNoteChange(point.key, event.target.value)}
+                  placeholder="Enter what is illegal..."
+                  className="mt-3 min-h-20 w-full resize-y rounded-xl border border-red-500 bg-red-950/60 px-3 py-2 text-xs font-semibold text-red-50 outline-none transition placeholder:text-red-200/70 focus:border-red-300 disabled:cursor-not-allowed disabled:border-zinc-700 disabled:bg-zinc-900 disabled:text-zinc-400"
+                />
+              </label>
             )}
-          </button>
+          </div>
         );
       })}
 
@@ -675,120 +747,10 @@ function LegalityCarOverview({
   );
 }
 
-function StatusButton({
-  active,
-  children,
-  disabled,
-  tone,
-  onClick,
-}: {
-  active: boolean;
-  children: React.ReactNode;
-  disabled: boolean;
-  tone: "legal" | "illegal";
-  onClick: () => void;
-}) {
-  const activeClass =
-    tone === "legal"
-      ? "border-green-500 bg-green-600 text-white"
-      : "border-red-500 bg-red-600 text-white";
-
-  return (
-    <button
-      type="button"
-      disabled={disabled}
-      onClick={onClick}
-      className={`rounded-lg border px-3 py-1.5 text-[11px] font-bold uppercase tracking-[0.18em] transition disabled:cursor-not-allowed disabled:opacity-60 ${
-        active
-          ? activeClass
-          : "border-zinc-700 bg-[#0b0f14] text-zinc-300 hover:border-zinc-500 hover:bg-zinc-900"
-      }`}
-    >
-      {children}
-    </button>
-  );
-}
-
-function LegalityPointCard({
-  point,
-  state,
-  disabled,
-  onStatusChange,
-  onNoteChange,
-}: {
-  point: LegalityPoint;
-  state: LegalityItemState;
-  disabled: boolean;
-  onStatusChange: (status: LegalityStatus) => void;
-  onNoteChange: (note: string) => void;
-}) {
-  const isIllegal = state.status === "illegal";
-
-  return (
-    <div className="rounded-2xl border border-zinc-700 bg-[#070a0f] p-3 shadow-sm shadow-black/30">
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <div className="text-sm font-black uppercase tracking-[0.18em] text-zinc-100">
-            {point.label}
-          </div>
-          <div className="mt-1 text-[11px] leading-4 text-zinc-400">
-            {point.position}
-          </div>
-        </div>
-        <span
-          className={`rounded-full border px-2 py-1 text-[10px] font-bold uppercase tracking-[0.18em] ${
-            isIllegal
-              ? "border-red-400 bg-red-950/80 text-red-100"
-              : "border-green-400 bg-green-950/70 text-green-100"
-          }`}
-        >
-          {state.status}
-        </span>
-      </div>
-
-      <div className="mt-3 grid grid-cols-2 gap-2">
-        <StatusButton
-          active={state.status === "legal"}
-          disabled={disabled}
-          tone="legal"
-          onClick={() => onStatusChange("legal")}
-        >
-          Legal
-        </StatusButton>
-        <StatusButton
-          active={state.status === "illegal"}
-          disabled={disabled}
-          tone="illegal"
-          onClick={() => onStatusChange("illegal")}
-        >
-          Illegal
-        </StatusButton>
-      </div>
-
-      {isIllegal && (
-        <label className="mt-3 block">
-          <span className="text-[11px] font-bold uppercase tracking-[0.22em] text-red-700">
-            Illegal note required
-          </span>
-          <textarea
-            disabled={disabled}
-            value={state.illegal_note}
-            onChange={(event) => onNoteChange(event.target.value)}
-            placeholder="Enter what is illegal..."
-            className="mt-2 min-h-20 w-full resize-y rounded-xl border border-red-700 bg-red-950/35 px-3 py-2 text-sm text-red-50 outline-none transition placeholder:text-red-300 focus:border-red-500 disabled:cursor-not-allowed disabled:bg-zinc-900"
-          />
-        </label>
-      )}
-    </div>
-  );
-}
-
 export default function LegalityPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [sending, setSending] = useState(false);
-  const [viewingPdfId, setViewingPdfId] = useState<string | null>(null);
-  const [deletingCheckId, setDeletingCheckId] = useState<string | null>(null);
   const [userEmail, setUserEmail] = useState<string | null>(null);
   const [userRole, setUserRole] = useState<UserRole>("unknown");
   const [assignedCar, setAssignedCar] = useState<number | null>(null);
@@ -811,6 +773,7 @@ export default function LegalityPage() {
   const [selectedLayoutKey, setSelectedLayoutKey] = useState<string | null>(
     DEFAULT_LEGALITY_POINTS[0]?.key ?? null,
   );
+  const [activeInlineNoteKey, setActiveInlineNoteKey] = useState<string | null>(null);
   const [itemStates, setItemStates] = useState(() =>
     createDefaultItemState(DEFAULT_LEGALITY_POINTS),
   );
@@ -827,17 +790,6 @@ export default function LegalityPage() {
     return sortLayoutPoints(layoutPoints);
   }, [layoutPoints]);
 
-  const leftPoints = useMemo(() => {
-    return activeLayoutPoints.filter((point) => point.side === "LH");
-  }, [activeLayoutPoints]);
-
-  const rightPoints = useMemo(() => {
-    return activeLayoutPoints.filter((point) => point.side === "RH");
-  }, [activeLayoutPoints]);
-
-  const centrePoints = useMemo(() => {
-    return activeLayoutPoints.filter((point) => point.side === "Centre");
-  }, [activeLayoutPoints]);
 
   const selectedLayoutPoint = useMemo(() => {
     return (
@@ -1087,6 +1039,12 @@ export default function LegalityPage() {
           status === "legal" ? "" : getPointState(current, key).illegal_note,
       },
     }));
+
+    if (status === "illegal") {
+      setActiveInlineNoteKey(key);
+    } else {
+      setActiveInlineNoteKey((current) => (current === key ? null : current));
+    }
   }
 
   function updatePointNote(key: string, note: string) {
@@ -1101,7 +1059,17 @@ export default function LegalityPage() {
 
   function togglePointStatus(key: string) {
     const state = getPointState(itemStates, key);
-    updatePointStatus(key, state.status === "legal" ? "illegal" : "legal");
+
+    if (state.status === "legal") {
+      updatePointStatus(key, "illegal");
+      return;
+    }
+
+    setActiveInlineNoteKey(key);
+  }
+
+  function markPointLegal(key: string) {
+    updatePointStatus(key, "legal");
   }
 
   function updateLayoutPoint(key: string, patch: Partial<LegalityPoint>) {
@@ -1177,6 +1145,7 @@ export default function LegalityPage() {
       if (current !== key) return current;
       return nextLayout[0]?.key ?? null;
     });
+    setActiveInlineNoteKey((current) => (current === key ? null : current));
   }
 
   async function saveLayout() {
@@ -1271,6 +1240,7 @@ export default function LegalityPage() {
     setDriver(car?.name ?? "");
     setCornerWeights(EMPTY_CORNER_WEIGHTS);
     setLastSentToEngineerAt(null);
+    setActiveInlineNoteKey(null);
     setItemStates(createDefaultItemState(activeLayoutPoints));
     setMessage("");
     setErrorMessage("");
@@ -1307,6 +1277,9 @@ export default function LegalityPage() {
     setDriver(check.driver ?? "");
     setCornerWeights(cornerWeightsFromCheck(check));
     setLastSentToEngineerAt(check.sent_to_engineer_at ?? null);
+    setActiveInlineNoteKey(
+      check.items.find((item) => item.status === "illegal")?.item_key ?? null,
+    );
     setItemStates(nextState);
     setMessage(`Opened legality check for Car ${check.car_id} on ${niceDate(check.check_date)}.`);
     setErrorMessage("");
@@ -1342,6 +1315,7 @@ export default function LegalityPage() {
     });
 
     if (illegalWithoutNotes.length > 0) {
+      setActiveInlineNoteKey(illegalWithoutNotes[0].key);
       return `Illegal items need notes: ${illegalWithoutNotes
         .map((point) => point.label)
         .join(", ")}.`;
@@ -1364,36 +1338,6 @@ export default function LegalityPage() {
         illegal_note: illegalNote,
       };
     });
-  }
-
-  function createItemPayloadFromSavedCheck(check: LegalityCheckWithItems): PdfItemPayload[] {
-    return check.items.map((item) => ({
-      item_key: item.item_key,
-      item_name: item.item_name,
-      item_side: item.item_side || "Centre",
-      item_position: item.item_position || "",
-      status: item.status,
-      illegal_note: item.status === "illegal" ? item.illegal_note || "Missing note" : null,
-    }));
-  }
-
-  function createPdfPayloadFromSavedCheck(check: LegalityCheckWithItems) {
-    const car = cars.find((current) => current.id === check.car_id);
-    const engineerAllocation = getEngineerAllocationForCar(check.car_id);
-
-    return {
-      check_id: check.id,
-      car_id: check.car_id,
-      car_name: car ? carDisplayName(car) : `Car ${check.car_id}`,
-      driver: check.driver || car?.name || "Unknown",
-      circuit: check.circuit || "Unknown",
-      check_date: check.check_date,
-      engineer_name: check.engineer_name || engineerAllocation.engineerName,
-      engineer_email: check.engineer_email || engineerAllocation.engineerEmail,
-      corner_weights: cornerWeightsFromCheck(check),
-      created_by: check.created_by || userEmail,
-      items: createItemPayloadFromSavedCheck(check),
-    };
   }
 
   async function sendLegalityPdf(checkId: string, items: PdfItemPayload[]) {
@@ -1625,111 +1569,6 @@ export default function LegalityPage() {
       );
     } finally {
       setSending(false);
-    }
-  }
-
-  async function viewSavedPdf(check: LegalityCheckWithItems) {
-    if (check.items.length === 0) {
-      setErrorMessage("This saved legality check has no component items, so a PDF cannot be generated.");
-      return;
-    }
-
-    setViewingPdfId(check.id);
-    setMessage("");
-    setErrorMessage("");
-
-    try {
-      const response = await fetch("/api/legality", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          ...createPdfPayloadFromSavedCheck(check),
-          download_only: true,
-        }),
-      });
-
-      if (!response.ok) {
-        const body = await response.json().catch(() => null);
-        throw new Error(body?.error || "Failed to generate the legality PDF.");
-      }
-
-      const pdfBlob = await response.blob();
-      const pdfUrl = window.URL.createObjectURL(pdfBlob);
-      const openedWindow = window.open(pdfUrl, "_blank", "noopener,noreferrer");
-
-      if (!openedWindow) {
-        const downloadLink = document.createElement("a");
-        downloadLink.href = pdfUrl;
-        downloadLink.download = `Legality_${(check.circuit || "Circuit").replace(/[^a-z0-9]+/gi, "_")}_Car_${check.car_id}_${check.check_date}.pdf`;
-        document.body.appendChild(downloadLink);
-        downloadLink.click();
-        downloadLink.remove();
-      }
-
-      window.setTimeout(() => window.URL.revokeObjectURL(pdfUrl), 60000);
-      setMessage(`PDF opened for Car ${check.car_id} · ${niceDate(check.check_date)}.`);
-    } catch (error) {
-      setErrorMessage(
-        error instanceof Error
-          ? error.message
-          : "Failed to open legality PDF.",
-      );
-    } finally {
-      setViewingPdfId(null);
-    }
-  }
-
-  async function deleteSavedCheck(check: LegalityCheckWithItems) {
-    if (readOnly) {
-      setErrorMessage("Guest/read-only users cannot delete legality checks.");
-      return;
-    }
-
-    const confirmed = window.confirm(
-      `Delete the saved legality check for Car ${check.car_id} at ${check.circuit || "No circuit"} on ${niceDate(check.check_date)}? This cannot be undone.`,
-    );
-
-    if (!confirmed) return;
-
-    setDeletingCheckId(check.id);
-    setMessage("");
-    setErrorMessage("");
-
-    try {
-      const { error: itemDeleteError } = await supabase
-        .from("legality_check_items")
-        .delete()
-        .eq("legality_check_id", check.id);
-
-      if (itemDeleteError) {
-        throw new Error(itemDeleteError.message);
-      }
-
-      const { error: checkDeleteError } = await supabase
-        .from("legality_checks")
-        .delete()
-        .eq("id", check.id);
-
-      if (checkDeleteError) {
-        throw new Error(checkDeleteError.message);
-      }
-
-      if (activeCheckId === check.id) {
-        resetToNewSheet(check.car_id);
-      }
-
-      await loadHistory(activeLayoutPoints);
-      setMessage(`Deleted obsolete legality check for Car ${check.car_id} · ${niceDate(check.check_date)}.`);
-    } catch (error) {
-      setErrorMessage(
-        error instanceof Error
-          ? error.message
-          : "Failed to delete legality check.",
-      );
-    } finally {
-      setDeletingCheckId(null);
     }
   }
 
@@ -2194,9 +2033,11 @@ export default function LegalityPage() {
                 const car = cars.find((current) => current.id === check.car_id);
 
                 return (
-                  <div
+                  <button
                     key={check.id}
-                    className={`w-full rounded-2xl border p-4 text-left transition ${
+                    type="button"
+                    onClick={() => openCheck(check)}
+                    className={`w-full rounded-2xl border p-4 text-left transition hover:border-red-500 hover:bg-[#1b2026] ${
                       activeCheckId === check.id
                         ? "border-red-600 bg-red-950/25"
                         : "border-zinc-800 bg-[#0d0f12]"
@@ -2218,42 +2059,11 @@ export default function LegalityPage() {
                         {summaryForItems(check.items)}
                       </span>
                     </div>
-
                     <div className="mt-3 flex flex-wrap justify-between gap-2 text-[11px] uppercase tracking-[0.18em] text-zinc-600">
                       <span>Updated {niceDateTime(check.updated_at || check.created_at)}</span>
                       <span>{check.sent_to_engineer_at ? `PDF ${niceDateTime(check.sent_to_engineer_at)}` : "PDF not sent"}</span>
                     </div>
-
-                    <div className="mt-4 grid gap-2 sm:grid-cols-3">
-                      <button
-                        type="button"
-                        onClick={() => openCheck(check)}
-                        className="rounded-xl border border-zinc-700 bg-[#151a20] px-3 py-2 text-xs font-semibold text-zinc-100 transition hover:border-red-500 hover:bg-[#1d242c] hover:text-red-200"
-                      >
-                        Open Sheet
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => viewSavedPdf(check)}
-                        disabled={viewingPdfId === check.id}
-                        className="rounded-xl border border-zinc-700 bg-[#151a20] px-3 py-2 text-xs font-semibold text-zinc-100 transition hover:border-red-500 hover:bg-[#1d242c] hover:text-red-200 disabled:cursor-not-allowed disabled:opacity-60"
-                      >
-                        {viewingPdfId === check.id ? "Opening PDF..." : "View PDF"}
-                      </button>
-
-                      {!readOnly && (
-                        <button
-                          type="button"
-                          onClick={() => deleteSavedCheck(check)}
-                          disabled={deletingCheckId === check.id}
-                          className="rounded-xl border border-red-900 bg-red-950/30 px-3 py-2 text-xs font-semibold text-red-100 transition hover:border-red-500 hover:bg-red-900/40 disabled:cursor-not-allowed disabled:opacity-60"
-                        >
-                          {deletingCheckId === check.id ? "Deleting..." : "Delete"}
-                        </button>
-                      )}
-                    </div>
-                  </div>
+                  </button>
                 );
               })
             )}
@@ -2358,57 +2168,22 @@ export default function LegalityPage() {
             </div>
           </div>
 
-          <div className="grid gap-4 p-4 xl:grid-cols-[minmax(220px,280px)_minmax(360px,1fr)_minmax(220px,280px)] xl:items-start">
-            <div className="grid gap-3 xl:pt-10">
-              {leftPoints.map((point) => (
-                <LegalityPointCard
-                  key={point.key}
-                  point={point}
-                  state={getPointState(itemStates, point.key)}
-                  disabled={readOnly || layoutEditMode}
-                  onStatusChange={(status) => updatePointStatus(point.key, status)}
-                  onNoteChange={(note) => updatePointNote(point.key, note)}
-                />
-              ))}
-            </div>
-
-            <LegalityCarOverview
-              points={activeLayoutPoints}
-              itemStates={itemStates}
-              readOnly={readOnly}
-              layoutEditMode={layoutEditMode}
-              selectedLayoutKey={selectedLayoutKey}
-              onSelectLayoutPoint={setSelectedLayoutKey}
-              onMoveLayoutPoint={(key, x, y) => updateLayoutPoint(key, { x, y })}
-              onTogglePointStatus={togglePointStatus}
-            />
-
-            <div className="grid gap-3 xl:pt-10">
-              {rightPoints.map((point) => (
-                <LegalityPointCard
-                  key={point.key}
-                  point={point}
-                  state={getPointState(itemStates, point.key)}
-                  disabled={readOnly || layoutEditMode}
-                  onStatusChange={(status) => updatePointStatus(point.key, status)}
-                  onNoteChange={(note) => updatePointNote(point.key, note)}
-                />
-              ))}
-            </div>
-          </div>
-
-          <div className="border-t border-zinc-700 bg-[#05070b] p-4">
-            <div className="mx-auto max-w-xl">
-              {centrePoints.map((point) => (
-                <LegalityPointCard
-                  key={point.key}
-                  point={point}
-                  state={getPointState(itemStates, point.key)}
-                  disabled={readOnly || layoutEditMode}
-                  onStatusChange={(status) => updatePointStatus(point.key, status)}
-                  onNoteChange={(note) => updatePointNote(point.key, note)}
-                />
-              ))}
+          <div className="p-4">
+            <div className="mx-auto w-full max-w-[760px]">
+              <LegalityCarOverview
+                points={activeLayoutPoints}
+                itemStates={itemStates}
+                readOnly={readOnly}
+                layoutEditMode={layoutEditMode}
+                selectedLayoutKey={selectedLayoutKey}
+                activeInlineNoteKey={activeInlineNoteKey}
+                onSelectLayoutPoint={setSelectedLayoutKey}
+                onMoveLayoutPoint={(key, x, y) => updateLayoutPoint(key, { x, y })}
+                onTogglePointStatus={togglePointStatus}
+                onOpenInlineNote={setActiveInlineNoteKey}
+                onMarkPointLegal={markPointLegal}
+                onNoteChange={updatePointNote}
+              />
             </div>
           </div>
         </div>
