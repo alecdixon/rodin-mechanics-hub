@@ -543,6 +543,23 @@ function formatSupabaseInList(values: string[]) {
   return `(${values.map((value) => `"${value.replace(/"/g, "\\\"")}"`).join(",")})`;
 }
 
+const LEGALITY_SHEET_EDITOR_ROLES = new Set<string>([
+  "chief_mechanic",
+  "engineer",
+  "number1_mechanic",
+  "number2_mechanic",
+]);
+
+function canEditLegalitySheetForUser(email: string, role: UserRole) {
+  if (isReadOnlyUser(email)) return false;
+
+  return canEditLegality(email) || LEGALITY_SHEET_EDITOR_ROLES.has(role);
+}
+
+function canEditLegalityLayoutForUser(email: string) {
+  return !isReadOnlyUser(email) && canEditLegality(email);
+}
+
 function LegalityCarOverview({
   points,
   itemStates,
@@ -555,6 +572,7 @@ function LegalityCarOverview({
   onTogglePointStatus,
   onOpenInlineNote,
   onMarkPointLegal,
+  onCloseInlineNote,
   onNoteChange,
 }: {
   points: LegalityPoint[];
@@ -568,6 +586,7 @@ function LegalityCarOverview({
   onTogglePointStatus: (key: string) => void;
   onOpenInlineNote: (key: string) => void;
   onMarkPointLegal: (key: string) => void;
+  onCloseInlineNote: () => void;
   onNoteChange: (key: string, note: string) => void;
 }) {
   const canvasRef = useRef<HTMLDivElement>(null);
@@ -692,7 +711,7 @@ function LegalityCarOverview({
             </button>
 
             {isIllegal && activeInlineNoteKey === point.key && !layoutEditMode && (
-              <label
+              <div
                 className={`absolute ${noteVerticalClass} ${noteHorizontalClass} z-40 block w-[280px] rounded-2xl border border-red-600 bg-red-950/95 p-3 text-left shadow-2xl shadow-red-950/60 backdrop-blur-md`}
                 onClick={(event) => event.stopPropagation()}
                 onPointerDown={(event) => event.stopPropagation()}
@@ -706,22 +725,36 @@ function LegalityCarOverview({
                       {point.position || "Illegal note required"}
                     </div>
                   </div>
-                  {!readOnly ? (
+
+                  <div className="flex shrink-0 flex-col items-end gap-2">
                     <button
                       type="button"
                       onClick={(event) => {
                         event.stopPropagation();
-                        onMarkPointLegal(point.key);
+                        onCloseInlineNote();
                       }}
-                      className="rounded-full border border-zinc-500 bg-[#111418] px-2 py-1 text-[8px] font-black uppercase tracking-[0.16em] text-zinc-100 transition hover:border-green-400 hover:bg-green-950 hover:text-green-100"
+                      className="rounded-full border border-red-300/70 bg-red-950/80 px-2 py-1 text-[8px] font-black uppercase tracking-[0.16em] text-red-100 transition hover:border-white hover:bg-red-700 hover:text-white"
                     >
-                      Mark Legal
+                      Close
                     </button>
-                  ) : (
-                    <span className="rounded-full border border-red-300 bg-red-600 px-2 py-1 text-[8px] font-black uppercase tracking-[0.16em] text-white">
-                      Illegal
-                    </span>
-                  )}
+
+                    {!readOnly ? (
+                      <button
+                        type="button"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          onMarkPointLegal(point.key);
+                        }}
+                        className="rounded-full border border-zinc-500 bg-[#111418] px-2 py-1 text-[8px] font-black uppercase tracking-[0.16em] text-zinc-100 transition hover:border-green-400 hover:bg-green-950 hover:text-green-100"
+                      >
+                        Mark Legal
+                      </button>
+                    ) : (
+                      <span className="rounded-full border border-red-300 bg-red-600 px-2 py-1 text-[8px] font-black uppercase tracking-[0.16em] text-white">
+                        Illegal
+                      </span>
+                    )}
+                  </div>
                 </div>
 
                 <textarea
@@ -731,7 +764,7 @@ function LegalityCarOverview({
                   placeholder="Enter what is illegal..."
                   className="mt-3 min-h-20 w-full resize-y rounded-xl border border-red-500 bg-red-950/60 px-3 py-2 text-xs font-semibold text-red-50 outline-none transition placeholder:text-red-200/70 focus:border-red-300 disabled:cursor-not-allowed disabled:border-zinc-700 disabled:bg-zinc-900 disabled:text-zinc-400"
                 />
-              </label>
+              </div>
             )}
           </div>
         );
@@ -755,6 +788,7 @@ export default function LegalityPage() {
   const [userRole, setUserRole] = useState<UserRole>("unknown");
   const [assignedCar, setAssignedCar] = useState<number | null>(null);
   const [readOnly, setReadOnly] = useState(true);
+  const [canEditLayout, setCanEditLayout] = useState(false);
 
   const [cars, setCars] = useState<DashboardCar[]>(DEFAULT_CARS);
   const [selectedCarId, setSelectedCarId] = useState(1);
@@ -974,12 +1008,13 @@ export default function LegalityPage() {
 
         if (!mounted) return;
 
+        const resolvedPageRole = resolvedRole === "unknown" ? "guest" : resolvedRole;
+
         setUserEmail(resolvedEmail);
-        setUserRole(resolvedRole === "unknown" ? "guest" : resolvedRole);
+        setUserRole(resolvedPageRole);
         setAssignedCar(resolvedAssignedCar);
-        setReadOnly(
-          isReadOnlyUser(resolvedEmail) || !canEditLegality(resolvedEmail),
-        );
+        setReadOnly(!canEditLegalitySheetForUser(resolvedEmail, resolvedPageRole));
+        setCanEditLayout(canEditLegalityLayoutForUser(resolvedEmail));
 
         await withTimeout(loadCars(), 2500, DEFAULT_CARS);
         layoutForHistory = await withTimeout(
@@ -996,6 +1031,7 @@ export default function LegalityPage() {
           setUserRole("guest");
           setAssignedCar(null);
           setReadOnly(true);
+          setCanEditLayout(false);
           setCars(DEFAULT_CARS);
           setSelectedCarId(1);
           setDriver(DEFAULT_CARS[0].name);
@@ -1149,8 +1185,8 @@ export default function LegalityPage() {
   }
 
   async function saveLayout() {
-    if (readOnly) {
-      setErrorMessage("Guest/read-only users cannot edit the legality layout.");
+    if (!canEditLayout) {
+      setErrorMessage("Only authorised users can edit the legality measurement layout.");
       return;
     }
 
@@ -1794,7 +1830,7 @@ export default function LegalityPage() {
             )}
           </div>
 
-          {!readOnly && (
+          {canEditLayout && (
             <div className="mt-5 rounded-2xl border border-zinc-700 bg-[#0d0f12] p-4">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
@@ -1802,7 +1838,7 @@ export default function LegalityPage() {
                     Measurement Layout
                   </p>
                   <p className="mt-2 text-sm leading-6 text-zinc-400">
-                    Chief mechanic can edit the box names and drag their positions on the car overview.
+                    Authorised users can edit the box names and drag their positions on the car overview.
                   </p>
                 </div>
 
@@ -2182,6 +2218,7 @@ export default function LegalityPage() {
                 onTogglePointStatus={togglePointStatus}
                 onOpenInlineNote={setActiveInlineNoteKey}
                 onMarkPointLegal={markPointLegal}
+                onCloseInlineNote={() => setActiveInlineNoteKey(null)}
                 onNoteChange={updatePointNote}
               />
             </div>
