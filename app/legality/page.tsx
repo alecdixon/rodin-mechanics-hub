@@ -1686,7 +1686,7 @@ export default function LegalityPage() {
       label: baseLabel,
       shortLabel: "NEW",
       side: "Centre",
-      position: "New legality measurement point",
+      position: "New surface table measurement point",
       x: 50,
       y: 50,
       sort_order:
@@ -1730,7 +1730,7 @@ export default function LegalityPage() {
 
   async function saveLayout() {
     if (!canEditLayout) {
-      setErrorMessage("Only authorised users can edit the legality measurement layout.");
+      setErrorMessage("Only authorised users can edit the surface table measurement layout.");
       return;
     }
 
@@ -1797,13 +1797,13 @@ export default function LegalityPage() {
         ...current,
       }));
       setLayoutEditMode(false);
-      setMessage("Legality layout saved. New sheets will use the updated measurement box positions.");
+      setMessage("Surface table layout saved. New sheets will use the updated measurement box positions.");
       await loadHistory(cleanPoints);
     } catch (error) {
       setErrorMessage(
         error instanceof Error
           ? error.message
-          : "Failed to save legality layout.",
+          : "Failed to save surface table layout.",
       );
     } finally {
       setSavingLayout(false);
@@ -1867,7 +1867,7 @@ export default function LegalityPage() {
       check.items.find((item) => item.status === "illegal")?.item_key ?? null,
     );
     setItemStates(nextState);
-    setMessage(`Opened legality check for Car ${check.car_id} on ${niceDate(check.check_date)}.`);
+    setMessage(`Opened surface table check for Car ${check.car_id} on ${niceDate(check.check_date)}.`);
     setErrorMessage("");
   }
 
@@ -1970,7 +1970,7 @@ export default function LegalityPage() {
         .join("\n\n");
 
       throw new Error(
-        readableError || "Legality check saved, but the PDF email failed.",
+        readableError || "Surface table check saved, but the PDF email failed.",
       );
     }
 
@@ -1996,7 +1996,7 @@ export default function LegalityPage() {
   async function saveCheck() {
     if (readOnly) {
       setMessage("");
-      setErrorMessage("Guest/read-only users can view legality checks but cannot edit, save or email them.");
+      setErrorMessage("Guest/read-only users can view surface table checks but cannot edit, save or email them.");
       return;
     }
 
@@ -2090,7 +2090,7 @@ export default function LegalityPage() {
       }
 
       if (!savedCheckId) {
-        throw new Error("The legality sheet was saved without returning an ID. Please reload and try again.");
+        throw new Error("The surface table sheet was saved without returning an ID. Please reload and try again.");
       }
 
       const itemPayload = createItemPayload();
@@ -2123,13 +2123,13 @@ export default function LegalityPage() {
       try {
         const notifyResult = await sendLegalityPdf(savedCheckId, itemPayload);
         setMessage(
-          `${existingCheckId ? "Legality check updated" : "Legality check saved"}. PDF sent to ${notifyResult.sent_to}.`,
+          `${existingCheckId ? "Surface table check updated" : "Surface table check saved"}. PDF sent to ${notifyResult.sent_to}.`,
         );
       } catch (error) {
         setErrorMessage(
           error instanceof Error
-            ? `Legality check saved, but the engineer PDF was not sent.\n\n${error.message}`
-            : "Legality check saved, but the engineer PDF was not sent.",
+            ? `Surface table check saved, but the engineer PDF was not sent.\n\n${error.message}`
+            : "Surface table check saved, but the engineer PDF was not sent.",
         );
       }
 
@@ -2138,7 +2138,7 @@ export default function LegalityPage() {
       setErrorMessage(
         error instanceof Error
           ? error.message
-          : "Failed to save legality check.",
+          : "Failed to save surface table check.",
       );
     } finally {
       setSaving(false);
@@ -2147,12 +2147,12 @@ export default function LegalityPage() {
 
   async function resendCurrentPdf() {
     if (readOnly) {
-      setErrorMessage("Guest/read-only users cannot send legality PDFs.");
+      setErrorMessage("Guest/read-only users cannot send surface table PDFs.");
       return;
     }
 
     if (!activeCheckId) {
-      setErrorMessage("Save the legality check before sending the PDF.");
+      setErrorMessage("Save the surface table check before sending the PDF.");
       return;
     }
 
@@ -2170,13 +2170,13 @@ export default function LegalityPage() {
 
     try {
       const notifyResult = await sendLegalityPdf(activeCheckId, createItemPayload());
-      setMessage(`Legality PDF sent to ${notifyResult.sent_to}.`);
+      setMessage(`Surface table PDF sent to ${notifyResult.sent_to}.`);
       await loadHistory(activeLayoutPoints);
     } catch (error) {
       setErrorMessage(
         error instanceof Error
           ? error.message
-          : "Failed to send legality PDF.",
+          : "Failed to send surface table PDF.",
       );
     } finally {
       setSending(false);
@@ -2186,7 +2186,7 @@ export default function LegalityPage() {
   if (loading) {
     return (
       <main className="flex min-h-screen items-center justify-center bg-[#0d0f12] text-zinc-400">
-        Loading legality...
+        Loading surface table checks...
       </main>
     );
   }
@@ -2222,7 +2222,7 @@ export default function LegalityPage() {
               </p>
 
               <h1 className="mt-4 text-4xl font-semibold tracking-tight text-white md:text-5xl">
-                Legality Check
+                Surface Table Checks
               </h1>
 
               <p className="mt-3 max-w-3xl text-sm leading-6 text-zinc-400">
@@ -2245,7 +2245,7 @@ export default function LegalityPage() {
 
       {readOnly && (
         <div className="mb-6 rounded-2xl border border-amber-800 bg-amber-950/25 p-4 text-sm text-amber-200">
-          Guest/read-only mode is enabled. You can open and view previous legality checks, but editing, saving and PDF sending are disabled.
+          Guest/read-only mode is enabled. You can open and view previous surface table checks, but editing, saving and PDF sending are disabled.
         </div>
       )}
 
@@ -2269,7 +2269,7 @@ export default function LegalityPage() {
                 Active Sheet
               </p>
               <h2 className="mt-3 text-2xl font-semibold text-zinc-100">
-                {activeCheckId ? "Editing saved check" : "New legality check"}
+                {activeCheckId ? "Editing saved check" : "New surface table check"}
               </h2>
               <p className="mt-2 max-w-3xl text-sm leading-6 text-zinc-400">
                 Car, driver and engineer allocation are handled from the selected car. Chassis number is not required.
@@ -2605,7 +2605,7 @@ export default function LegalityPage() {
 
           {activeExistingCheckForCarDateCircuit && !activeCheckId && !readOnly && (
             <div className="mt-4 rounded-2xl border border-amber-800 bg-amber-950/25 p-4 text-sm text-amber-200">
-              A saved legality check already exists for this car/date/circuit. Pressing save will update that sheet rather than creating a duplicate.
+              A saved surface table check already exists for this car/date/circuit. Pressing save will update that sheet rather than creating a duplicate.
             </div>
           )}
 
@@ -2660,7 +2660,7 @@ export default function LegalityPage() {
           <div className="mt-5 max-h-[500px] space-y-3 overflow-y-auto pr-1">
             {history.length === 0 ? (
               <div className="rounded-2xl border border-dashed border-zinc-700 bg-[#0d0f12] p-4 text-sm text-zinc-500">
-                No previous legality checks found.
+                No previous surface table checks found.
               </div>
             ) : (
               history.map((check) => {
@@ -2748,7 +2748,7 @@ export default function LegalityPage() {
                       Corner Weight Measurements
                     </p>
                     <p className="mt-1 text-xs leading-5 text-zinc-400">
-                      Manual entry for the legality sheet. Total weight is not auto-calculated.
+                      Manual entry for the surface table sheet. Total weight is not auto-calculated.
                     </p>
                   </div>
                   <span className="rounded-full border border-zinc-700 bg-[#0b0f14] px-3 py-1 text-[10px] font-black uppercase tracking-[0.2em] text-zinc-300">
@@ -2809,7 +2809,7 @@ export default function LegalityPage() {
                       Camber Measurements
                     </p>
                     <p className="mt-1 text-xs leading-5 text-zinc-400">
-                      Manual entry for setup/legality reference. Negative values are allowed.
+                      Manual entry for setup/surface table reference. Negative values are allowed.
                     </p>
                   </div>
                   <span className="rounded-full border border-zinc-700 bg-[#0b0f14] px-3 py-1 text-[10px] font-black uppercase tracking-[0.2em] text-zinc-300">
@@ -2921,7 +2921,7 @@ export default function LegalityPage() {
                       Spare Front Wing
                     </p>
                     <p className="mt-1 text-xs leading-5 text-zinc-500">
-                      Three legality boxes for the spare wing: LFWEP, FW and RFWEP, shown over the spare front wing image.
+                      Three surface table boxes for the spare wing: LFWEP, FW and RFWEP, shown over the spare front wing image.
                     </p>
                   </div>
                   <span className="rounded-full border border-zinc-700 bg-[#0b0f14] px-3 py-1 text-[10px] font-black uppercase tracking-[0.2em] text-zinc-300">
@@ -2954,7 +2954,7 @@ export default function LegalityPage() {
                       Total Car
                     </p>
                     <p className="mt-1 text-xs leading-5 text-zinc-500">
-                      Full-car legality points and any illegal notes for the current check.
+                      Full-car surface table points and any illegal notes for the current check.
                     </p>
                   </div>
                   <span className={`rounded-full border px-3 py-1 text-[10px] font-black uppercase tracking-[0.2em] ${dirtyStatus.className}`}>

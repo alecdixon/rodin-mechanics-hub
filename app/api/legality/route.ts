@@ -295,7 +295,7 @@ function buildFriendlyEmailError(rawMessage: string) {
   }
 
   return {
-    error: "Legality PDF notification failed while sending the engineer email.",
+    error: "Surface table check PDF notification failed while sending the engineer email.",
     likely_cause:
       "The legality report may have saved, but the PDF email notification failed.",
     fix: "Check the technical_error value, then verify Gmail/Vercel environment variables.",
@@ -395,23 +395,25 @@ async function buildLegalityPdf(payload: NormalisedLegalityEmailPayload) {
   const rodinLogo = await tryEmbedPng(pdfDoc, "rodin-logo.png");
   const gb3Logo = await tryEmbedPng(pdfDoc, "gb3-logo.png");
   const carOverview = await tryEmbedPng(pdfDoc, "legality-car-overview-inverted.png");
-  const spareFrontWing = await tryEmbedPng(pdfDoc, "legality-spare-front-wing.png");
-
-  const green = rgb(0, 0.78, 0.32);
-  const red = rgb(1, 0.12, 0.18);
-  const white = rgb(0.93, 0.94, 0.96);
-  const grey = rgb(0.58, 0.61, 0.68);
-  const muted = rgb(0.42, 0.45, 0.52);
-  const borderGrey = rgb(0.25, 0.27, 0.32);
-  const sheetBlack = rgb(0.015, 0.02, 0.03);
-  const panelBlack = rgb(0.035, 0.045, 0.06);
-  const cellBlack = rgb(0.02, 0.028, 0.04);
-  const gridGrey = rgb(0.16, 0.17, 0.2);
+  const spareFrontWing =
+    (await tryEmbedPng(pdfDoc, "legality-spare-front-wing.png")) ||
+    (await tryEmbedPng(pdfDoc, "legality-spare-fron-wing.png"));
 
   const pageSize: [number, number] = [595.28, 841.89];
-  let page = pdfDoc.addPage(pageSize);
   const pageWidth = pageSize[0];
   const pageHeight = pageSize[1];
+  let page = pdfDoc.addPage(pageSize);
+
+  const green = rgb(0.0, 0.78, 0.32);
+  const red = rgb(1.0, 0.12, 0.18);
+  const white = rgb(0.94, 0.95, 0.97);
+  const grey = rgb(0.58, 0.61, 0.68);
+  const muted = rgb(0.40, 0.43, 0.50);
+  const borderGrey = rgb(0.25, 0.27, 0.32);
+  const sheetBlack = rgb(0.012, 0.016, 0.024);
+  const panelBlack = rgb(0.035, 0.045, 0.060);
+  const cellBlack = rgb(0.020, 0.026, 0.038);
+  const gridGrey = rgb(0.16, 0.17, 0.20);
 
   const illegalItems = payload.items.filter((item) => item.status === "illegal");
   const spareWingItems = payload.items.filter(isSpareWingItem);
@@ -419,7 +421,7 @@ async function buildLegalityPdf(payload: NormalisedLegalityEmailPayload) {
   const summary =
     illegalItems.length === 0
       ? `${payload.items.length}/${payload.items.length} legal`
-      : `${illegalItems.length} illegal · ${payload.items.length - illegalItems.length} legal`;
+      : `${illegalItems.length} illegal - ${payload.items.length - illegalItems.length} legal`;
 
   function drawText(
     text: string,
@@ -429,13 +431,7 @@ async function buildLegalityPdf(payload: NormalisedLegalityEmailPayload) {
     font: PDFFont = normalFont,
     color = white,
   ) {
-    page.drawText(text, {
-      x,
-      y,
-      size,
-      font,
-      color,
-    });
+    page.drawText(text, { x, y, size, font, color });
   }
 
   function fontWidth(text: string, font: PDFFont, size: number) {
@@ -454,47 +450,100 @@ async function buildLegalityPdf(payload: NormalisedLegalityEmailPayload) {
     drawText(text, x + width / 2 - fontWidth(text, font, size) / 2, y, size, font, color);
   }
 
-  function drawHeaderInfo(
-    label: string,
-    value: string,
+  function drawWrappedText(
+    text: string,
     x: number,
     y: number,
     width: number,
-    height = 34,
+    size: number,
+    font: PDFFont = normalFont,
+    color = white,
+    maxLines = 2,
+    lineHeight = size + 2,
   ) {
-    drawOutlinedBox(page, x, y, width, height, borderGrey, panelBlack);
-    drawText(label.toUpperCase(), x + 8, y + height - 12, 6.2, boldFont, grey);
-    const valueLines = wrapTextByWidth(value || "—", boldFont, 8.2, width - 16).slice(0, 2);
-    valueLines.forEach((line, index) => {
-      drawText(line, x + 8, y + height - 24 - index * 9, 8.2, boldFont, white);
+    const lines = wrapTextByWidth(text || "-", font, size, width).slice(0, maxLines);
+    lines.forEach((line, index) => drawText(line, x, y - index * lineHeight, size, font, color));
+  }
+
+  function addBackground() {
+    page.drawRectangle({ x: 0, y: 0, width: pageWidth, height: pageHeight, color: sheetBlack });
+  }
+
+  function newPage() {
+    page = pdfDoc.addPage(pageSize);
+    addBackground();
+  }
+
+  function drawPanel(x: number, y: number, width: number, height: number, fill = panelBlack) {
+    page.drawRectangle({
+      x,
+      y,
+      width,
+      height,
+      color: fill,
+      borderColor: borderGrey,
+      borderWidth: 0.85,
     });
   }
 
-  function drawSectionTitle(title: string, subtitle: string, unit: string, x: number, y: number, width: number) {
-    drawText(title.toUpperCase(), x, y, 7.2, boldFont, red);
-    drawText(subtitle, x, y - 11, 6.2, normalFont, grey);
+  function drawReportHeader() {
+    page.drawRectangle({ x: 0, y: pageHeight - 92, width: pageWidth, height: 92, color: sheetBlack });
+    page.drawLine({
+      start: { x: 0, y: pageHeight - 92 },
+      end: { x: pageWidth, y: pageHeight - 92 },
+      thickness: 0.8,
+      color: borderGrey,
+    });
 
+    if (rodinLogo) {
+      drawFittedImage(page, rodinLogo, 18, pageHeight - 66, 86, 42);
+    } else {
+      drawText("RODIN", 20, pageHeight - 40, 18, boldFont, white);
+      drawText("MOTORSPORT", 21, pageHeight - 54, 7, boldFont, grey);
+    }
+
+    if (gb3Logo) {
+      drawFittedImage(page, gb3Logo, 22, pageHeight - 88, 58, 16);
+    }
+
+    drawText("SURFACE TABLE CHECKS", 126, pageHeight - 37, 17.5, boldFont, white);
+    drawText(summary, 128, pageHeight - 54, 8.5, boldFont, illegalItems.length ? red : green);
+
+    const infoX = 370;
+    const infoY = pageHeight - 31;
+    const boxW = 68;
+    const boxH = 26;
+    const gap = 5;
+
+    function infoBox(label: string, value: string, x: number, y: number, width: number, height = boxH) {
+      drawPanel(x, y - height, width, height, cellBlack);
+      drawText(label.toUpperCase(), x + 5, y - 9, 5.4, boldFont, grey);
+      drawWrappedText(value || "-", x + 5, y - 19, width - 10, 6.5, boldFont, white, 1, 7);
+    }
+
+    infoBox("Date", formatReportDate(payload.check_date), infoX, infoY, boxW);
+    infoBox("Circuit", payload.circuit, infoX + boxW + gap, infoY, boxW + 8);
+    infoBox("Car", payload.car_name || `Car ${payload.car_id}`, infoX + boxW * 2 + gap * 2 + 8, infoY, 98);
+    infoBox("Driver", payload.driver, infoX, infoY - 32, 116);
+    infoBox("Engineer", `${payload.engineer_name} / ${payload.engineer_email}`, infoX + 121, infoY - 32, 167);
+  }
+
+  function drawSectionTitle(title: string, subtitle: string, unit: string, x: number, y: number, width: number) {
+    drawText(title.toUpperCase(), x, y, 7.4, boldFont, red);
+    drawWrappedText(subtitle, x, y - 11, width - 56, 6.2, normalFont, grey, 1, 7);
     page.drawRectangle({
-      x: x + width - 42,
+      x: x + width - 44,
       y: y - 4,
-      width: 42,
-      height: 14,
+      width: 44,
+      height: 15,
       color: cellBlack,
       borderColor: borderGrey,
       borderWidth: 0.65,
     });
-    drawCenteredText(unit.toUpperCase(), x + width - 42, y + 0.5, 42, 5.8, boldFont, grey);
+    drawCenteredText(unit.toUpperCase(), x + width - 44, y + 1.2, 44, 5.8, boldFont, grey);
   }
 
-  function drawMeasurementCell(
-    label: string,
-    helper: string,
-    value: string,
-    x: number,
-    y: number,
-    width: number,
-    height: number,
-  ) {
+  function drawMeasurementCell(label: string, helper: string, value: string, x: number, y: number, width: number, height: number) {
     page.drawRectangle({
       x,
       y,
@@ -504,36 +553,17 @@ async function buildLegalityPdf(payload: NormalisedLegalityEmailPayload) {
       borderColor: borderGrey,
       borderWidth: 0.65,
     });
-
-    drawText(label.toUpperCase(), x + 7, y + height - 12, 6.1, boldFont, grey);
-    drawText(helper, x + 7, y + height - 22, 5.3, normalFont, muted);
-
-    const valueSize = value.length > 10 ? 8.5 : 10.5;
-    const safeValue = wrapTextByWidth(value, boldFont, valueSize, width - 14).slice(0, 1)[0] || "—";
-    drawText(safeValue, x + 7, y + 7, valueSize, boldFont, white);
+    drawText(label.toUpperCase(), x + 8, y + height - 12, 6.5, boldFont, grey);
+    drawText(helper, x + 8, y + height - 22, 5.7, normalFont, muted);
+    const valueSize = value.length > 12 ? 8.5 : 12.4;
+    drawWrappedText(value || "-", x + 8, y + 9, width - 16, valueSize, boldFont, white, 1, valueSize + 2);
   }
 
-  function drawMeasurementPanel({
-    title,
-    subtitle,
-    unit,
-    values,
-    formatter,
-    x,
-    y,
-    width,
-    height,
-    total,
-  }: {
+  function drawMeasurementPanel(args: {
     title: string;
     subtitle: string;
     unit: string;
-    values: {
-      fl: string;
-      fr: string;
-      rl: string;
-      rr: string;
-    };
+    values: { fl: string; fr: string; rl: string; rr: string };
     formatter: (value: string) => string;
     x: number;
     y: number;
@@ -541,38 +571,32 @@ async function buildLegalityPdf(payload: NormalisedLegalityEmailPayload) {
     height: number;
     total?: string;
   }) {
-    page.drawRectangle({
-      x,
-      y,
-      width,
-      height,
-      color: panelBlack,
-      borderColor: borderGrey,
-      borderWidth: 0.85,
-    });
-
-    const padding = 12;
-    drawSectionTitle(title, subtitle, unit, x + padding, y + height - 15, width - padding * 2);
+    const { title, subtitle, unit, values, formatter, x, y, width, height, total } = args;
+    drawPanel(x, y, width, height);
+    const padding = 14;
+    drawSectionTitle(title, subtitle, unit, x + padding, y + height - 17, width - padding * 2);
 
     const gridX = x + padding;
     const gridW = width - padding * 2;
-    const gap = 8;
+    const gap = 10;
     const cellW = (gridW - gap) / 2;
-    const cellH = total !== undefined ? 24 : 25;
-    const topRowY = y + height - 52;
-    const bottomRowY = topRowY - cellH - gap;
+    const totalHeight = total !== undefined ? 29 : 0;
+    const rowGap = 8;
+    const cellH = total !== undefined ? 38 : 40;
+    const topY = y + height - 64;
+    const rearY = topY - cellH - rowGap;
 
-    drawMeasurementCell("FL", "Front Left", formatter(values.fl), gridX, topRowY, cellW, cellH);
-    drawMeasurementCell("FR", "Front Right", formatter(values.fr), gridX + cellW + gap, topRowY, cellW, cellH);
-    drawMeasurementCell("RL", "Rear Left", formatter(values.rl), gridX, bottomRowY, cellW, cellH);
-    drawMeasurementCell("RR", "Rear Right", formatter(values.rr), gridX + cellW + gap, bottomRowY, cellW, cellH);
+    drawMeasurementCell("FL", "Front Left", formatter(values.fl), gridX, topY, cellW, cellH);
+    drawMeasurementCell("FR", "Front Right", formatter(values.fr), gridX + cellW + gap, topY, cellW, cellH);
+    drawMeasurementCell("RL", "Rear Left", formatter(values.rl), gridX, rearY, cellW, cellH);
+    drawMeasurementCell("RR", "Rear Right", formatter(values.rr), gridX + cellW + gap, rearY, cellW, cellH);
 
     if (total !== undefined) {
-      drawMeasurementCell("TOTAL", "Total Weight", formatter(total), gridX, y + padding, gridW, 22);
+      drawMeasurementCell("TOTAL", "Total Weight", formatter(total), gridX, y + padding, gridW, totalHeight);
     }
   }
 
-  function drawShimCell(label: string, value: string, x: number, y: number, width: number, height: number) {
+  function drawShimValue(label: string, value: string, x: number, y: number, width: number, height: number) {
     page.drawRectangle({
       x,
       y,
@@ -582,98 +606,79 @@ async function buildLegalityPdf(payload: NormalisedLegalityEmailPayload) {
       borderColor: borderGrey,
       borderWidth: 0.65,
     });
-
-    drawText(label.toUpperCase(), x + 7, y + height - 12, 6.1, boldFont, grey);
-    drawText(formatShim(value), x + 7, y + 7, value.length > 14 ? 8 : 9.6, boldFont, white);
+    drawText(label.toUpperCase(), x + 8, y + height - 12, 6.3, boldFont, grey);
+    drawWrappedText(formatShim(value), x + 8, y + 9, width - 16, 10, boldFont, white, 1, 11);
   }
 
   function drawWingShimPanel(x: number, y: number, width: number, height: number) {
-    page.drawRectangle({
-      x,
-      y,
-      width,
-      height,
-      color: panelBlack,
-      borderColor: borderGrey,
-      borderWidth: 0.85,
-    });
-
+    drawPanel(x, y, width, height);
     drawSectionTitle(
       "Front Wing Shim Record",
-      "Main and spare front wing shim values recorded by the chief mechanic.",
+      "Chief mechanic record for main and spare front wing shim packs.",
       "shims",
-      x + 12,
-      y + height - 15,
-      width - 24,
+      x + 14,
+      y + height - 18,
+      width - 28,
     );
 
-    const padding = 12;
-    const sectionGap = 12;
-    const sectionW = (width - padding * 2 - sectionGap) / 2;
+    const padding = 14;
+    const halfGap = 14;
+    const sectionW = (width - padding * 2 - halfGap) / 2;
     const cellGap = 8;
     const cellW = (sectionW - cellGap) / 2;
-    const cellH = 26;
-    const sectionY = y + 10;
+    const cellH = 32;
+    const cellY = y + 15;
 
-    [
-      ["MAIN FRONT WING", payload.wing_shims.main_lh, payload.wing_shims.main_rh, x + padding],
-      ["SPARE FRONT WING", payload.wing_shims.spare_lh, payload.wing_shims.spare_rh, x + padding + sectionW + sectionGap],
-    ].forEach(([title, lh, rh, sectionX]) => {
-      const sx = Number(sectionX);
-      drawText(String(title), sx, sectionY + cellH + 6, 6.4, boldFont, red);
-      drawShimCell("LH", String(lh), sx, sectionY, cellW, cellH);
-      drawShimCell("RH", String(rh), sx + cellW + cellGap, sectionY, cellW, cellH);
+    const sections: Array<[string, string, string, number]> = [
+      ["Main Front Wing", payload.wing_shims.main_lh, payload.wing_shims.main_rh, x + padding],
+      ["Spare Front Wing", payload.wing_shims.spare_lh, payload.wing_shims.spare_rh, x + padding + sectionW + halfGap],
+    ];
+
+    sections.forEach(([title, lh, rh, sectionX]) => {
+      drawText(title.toUpperCase(), sectionX, cellY + cellH + 8, 6.8, boldFont, red);
+      drawShimValue("LH", lh, sectionX, cellY, cellW, cellH);
+      drawShimValue("RH", rh, sectionX + cellW + cellGap, cellY, cellW, cellH);
     });
   }
 
   function drawStatusPill(text: string, x: number, y: number, width: number, isIllegal: boolean) {
-    const fill = isIllegal ? rgb(0.2, 0.035, 0.045) : rgb(0.025, 0.16, 0.08);
+    const fill = isIllegal ? rgb(0.20, 0.035, 0.045) : rgb(0.025, 0.16, 0.08);
     const color = isIllegal ? red : green;
+    page.drawRectangle({ x, y, width, height: 14, color: fill, borderColor: color, borderWidth: 0.85 });
+    drawCenteredText(text.toUpperCase(), x, y + 4.2, width, 5.9, boldFont, color);
+  }
 
-    page.drawRectangle({
-      x,
-      y,
-      width,
-      height: 14,
-      color: fill,
-      borderColor: color,
-      borderWidth: 0.85,
-    });
-    drawCenteredText(text.toUpperCase(), x, y + 4.4, width, 6.1, boldFont, color);
+  function shortItemName(item: LegalityPdfItem) {
+    const withoutSide = item.item_name.replace(/\s+(LH|RH)$/i, "").trim();
+    const name = withoutSide
+      .replace(/spare front wing/gi, "Spare FW")
+      .replace(/endplate/gi, "EP")
+      .replace(/front wing/gi, "FW")
+      .trim();
+    return name || withoutSide || item.item_name;
   }
 
   function drawStatusTag(item: LegalityPdfItem, x: number, y: number, width: number) {
     const isIllegal = item.status === "illegal";
-    const shortName = item.item_name
-      .replace(/spare front wing/gi, "")
-      .replace(/endplate/gi, "EP")
-      .replace(/\s+(LH|RH)$/i, "")
-      .trim() || item.item_name;
-
     page.drawRectangle({
       x,
       y,
       width,
-      height: 24,
+      height: 27,
       color: panelBlack,
       borderColor: isIllegal ? red : green,
       borderWidth: 1.1,
     });
-
-    const safeName = wrapTextByWidth(shortName.toUpperCase(), boldFont, 6.6, width - 38).slice(0, 1)[0] || shortName.toUpperCase();
-    drawText(safeName, x + 6, y + 12, 6.6, boldFont, white);
-
+    drawWrappedText(shortItemName(item).toUpperCase(), x + 6, y + 15, width - 44, 6.5, boldFont, white, 1, 7);
     const heightText = formatHeightNotation(item);
     if (heightText) {
-      drawText(heightText.toUpperCase(), x + 6, y + 4.5, 5.2, boldFont, grey);
+      drawWrappedText(heightText.toUpperCase(), x + 6, y + 6, width - 44, 5.2, boldFont, grey, 1, 6);
     }
-
-    drawStatusPill(isIllegal ? "Red" : "Legal", x + width - 34, y + 5, 28, isIllegal);
+    drawStatusPill(isIllegal ? "Red" : "Legal", x + width - 38, y + 6.5, 32, isIllegal);
   }
 
   function drawImagePanelBackground(x: number, y: number, width: number, height: number) {
     drawOutlinedBox(page, x, y, width, height, borderGrey, sheetBlack);
-
     for (let gridX = x + 28; gridX < x + width; gridX += 36) {
       page.drawLine({
         start: { x: gridX, y: y + 10 },
@@ -682,7 +687,6 @@ async function buildLegalityPdf(payload: NormalisedLegalityEmailPayload) {
         color: gridGrey,
       });
     }
-
     for (let gridY = y + 28; gridY < y + height; gridY += 36) {
       page.drawLine({
         start: { x: x + 10, y: gridY },
@@ -693,13 +697,26 @@ async function buildLegalityPdf(payload: NormalisedLegalityEmailPayload) {
     }
   }
 
+  function drawFallbackSpareWing(x: number, y: number, width: number, height: number) {
+    const cx = x + width / 2;
+    const cy = y + height / 2;
+    page.drawLine({ start: { x: x + 70, y: cy }, end: { x: x + width - 70, y: cy }, thickness: 1.1, color: white });
+    page.drawLine({ start: { x: x + 70, y: cy }, end: { x: cx - 55, y: cy + 35 }, thickness: 1.0, color: white });
+    page.drawLine({ start: { x: x + width - 70, y: cy }, end: { x: cx + 55, y: cy + 35 }, thickness: 1.0, color: white });
+    page.drawLine({ start: { x: x + 70, y: cy - 22 }, end: { x: cx - 45, y: cy - 5 }, thickness: 1.0, color: white });
+    page.drawLine({ start: { x: x + width - 70, y: cy - 22 }, end: { x: cx + 45, y: cy - 5 }, thickness: 1.0, color: white });
+    page.drawRectangle({ x: x + 58, y: cy - 30, width: 5, height: 65, borderColor: white, borderWidth: 1.0 });
+    page.drawRectangle({ x: x + width - 63, y: cy - 30, width: 5, height: 65, borderColor: white, borderWidth: 1.0 });
+    page.drawRectangle({ x: cx - 26, y: cy - 42, width: 52, height: 84, borderColor: white, borderWidth: 1.0 });
+  }
+
   function sortSpareWingItems(items: LegalityPdfItem[]) {
     return [...items].sort((a, b) => {
       const aKey = `${a.item_key} ${a.item_name}`.toLowerCase();
       const bKey = `${b.item_key} ${b.item_name}`.toLowerCase();
       const score = (value: string) => {
         if (value.includes("lh") || value.includes("lfwep")) return 0;
-        if (value.includes("fw")) return 1;
+        if (value.includes("spare_fw") || value.includes("centre")) return 1;
         if (value.includes("rh") || value.includes("rfwep")) return 2;
         return 3;
       };
@@ -709,37 +726,24 @@ async function buildLegalityPdf(payload: NormalisedLegalityEmailPayload) {
 
   function drawSpareWingPanel(x: number, y: number, width: number, height: number) {
     drawImagePanelBackground(x, y, width, height);
-    drawText("SPARE FRONT WING", x + 12, y + height - 16, 7.2, boldFont, red);
-    drawText("LFWEP · FW · RFWEP", x + 12, y + height - 28, 6.2, normalFont, grey);
+    drawText("SPARE FRONT WING", x + 14, y + height - 18, 8, boldFont, red);
+    drawText("LFWEP / FW / RFWEP", x + 14, y + height - 31, 6.3, normalFont, grey);
 
     if (spareFrontWing) {
-      drawFittedImage(page, spareFrontWing, x + 66, y + 20, width - 132, height - 36);
+      drawFittedImage(page, spareFrontWing, x + 92, y + 26, width - 184, height - 50);
     } else {
-      drawText("SPARE FRONT WING IMAGE MISSING", x + 170, y + height / 2, 8, boldFont, red);
+      drawFallbackSpareWing(x + 90, y + 26, width - 180, height - 50);
     }
 
     const orderedItems = sortSpareWingItems(spareWingItems).slice(0, 3);
-    const tagW = 88;
-    const tagY = y + 44;
-    const tagPositions = [x + 18, x + width / 2 - tagW / 2, x + width - tagW - 18];
-
-    orderedItems.forEach((item, index) => {
-      drawStatusTag(item, tagPositions[index] ?? tagPositions[1], tagY, tagW);
-    });
+    const tagW = 100;
+    const tagY = y + 42;
+    const positions = [x + 20, x + width / 2 - tagW / 2, x + width - tagW - 20];
+    orderedItems.forEach((item, index) => drawStatusTag(item, positions[index] ?? positions[1], tagY, tagW));
   }
 
   function sortForSheet(items: LegalityPdfItem[]) {
-    const order = [
-      "spare",
-      "fw",
-      "fwep",
-      "front",
-      "mid",
-      "rear",
-      "diffuser",
-      "rw",
-    ];
-
+    const order = ["spare", "fw", "fwep", "front", "mid", "rear", "diffuser", "rw"];
     return [...items].sort((a, b) => {
       const aName = `${a.item_key} ${a.item_name}`.toLowerCase();
       const bName = `${b.item_key} ${b.item_name}`.toLowerCase();
@@ -747,93 +751,62 @@ async function buildLegalityPdf(payload: NormalisedLegalityEmailPayload) {
       const bSide = b.item_side === "LH" ? 0 : b.item_side === "RH" ? 2 : 1;
       const aOrder = order.findIndex((key) => aName.includes(key));
       const bOrder = order.findIndex((key) => bName.includes(key));
-
-      return (
-        aSide - bSide ||
-        (aOrder < 0 ? 99 : aOrder) - (bOrder < 0 ? 99 : bOrder) ||
-        a.item_name.localeCompare(b.item_name)
-      );
+      return aSide - bSide || (aOrder < 0 ? 99 : aOrder) - (bOrder < 0 ? 99 : bOrder) || a.item_name.localeCompare(b.item_name);
     });
   }
 
   function drawTotalCarPanel(x: number, y: number, width: number, height: number) {
     drawImagePanelBackground(x, y, width, height);
-    drawText("TOTAL CAR", x + 12, y + height - 16, 7.2, boldFont, red);
-    drawText("Full-car legality points", x + 12, y + height - 28, 6.2, normalFont, grey);
-    drawStatusPill(summary, x + width - 112, y + height - 24, 96, illegalItems.length > 0);
+    drawText("TOTAL CAR", x + 14, y + height - 18, 8, boldFont, red);
+    drawText("Full-car surface table points", x + 14, y + height - 31, 6.3, normalFont, grey);
+    drawStatusPill(summary, x + width - 126, y + height - 26, 108, illegalItems.length > 0);
 
-    const imageX = x + 128;
-    const imageY = y + 24;
-    const imageW = width - 256;
-    const imageH = height - 50;
-
+    const imageX = x + 136;
+    const imageY = y + 34;
+    const imageW = width - 272;
+    const imageH = height - 72;
     if (carOverview) {
       drawFittedImage(page, carOverview, imageX, imageY, imageW, imageH);
     } else {
-      drawText("CAR OVERVIEW IMAGE MISSING", imageX + 18, imageY + imageH / 2, 9, boldFont, red);
+      drawText("CAR OVERVIEW IMAGE MISSING", imageX + 16, imageY + imageH / 2, 8.5, boldFont, red);
     }
 
     const sortedCarItems = sortForSheet(carItems);
     const leftItems = sortedCarItems.filter((item) => item.item_side === "LH").slice(0, 6);
     const rightItems = sortedCarItems.filter((item) => item.item_side === "RH").slice(0, 6);
     const centreItems = sortedCarItems.filter((item) => item.item_side !== "LH" && item.item_side !== "RH").slice(0, 2);
-    const tagW = 100;
-    const startY = y + height - 64;
-    const step = 34;
+    const tagW = 106;
+    const startY = y + height - 80;
+    const step = 44;
 
-    leftItems.forEach((item, index) => {
-      drawStatusTag(item, x + 14, startY - index * step, tagW);
+    leftItems.forEach((item, index) => drawStatusTag(item, x + 18, startY - index * step, tagW));
+    rightItems.forEach((item, index) => drawStatusTag(item, x + width - tagW - 18, startY - index * step, tagW));
+    centreItems.forEach((item, index) => drawStatusTag(item, x + width / 2 - tagW / 2, y + 24 + index * 34, tagW));
+  }
+
+  function drawSummaryPanel(x: number, y: number, width: number, height: number) {
+    drawPanel(x, y, width, height);
+    drawText("CHECK SUMMARY", x + 14, y + height - 18, 7.4, boldFont, red);
+    drawText(summary.toUpperCase(), x + 14, y + height - 36, 14, boldFont, illegalItems.length ? red : green);
+    const note = illegalItems.length
+      ? "Illegal notes are listed on the component list page."
+      : "All recorded surface table check items are legal.";
+    drawWrappedText(note, x + 14, y + height - 54, width - 28, 8, normalFont, grey, 2, 10);
+
+    const preview = illegalItems.slice(0, 4);
+    preview.forEach((item, index) => {
+      const rowY = y + height - 84 - index * 22;
+      page.drawRectangle({ x: x + 14, y: rowY, width: width - 28, height: 17, color: rgb(0.16, 0.035, 0.045), borderColor: red, borderWidth: 0.5 });
+      drawWrappedText(`${shortItemName(item)} - ${item.illegal_note || "Missing note"}`, x + 22, rowY + 5, width - 44, 6.6, normalFont, white, 1, 7);
     });
-
-    rightItems.forEach((item, index) => {
-      drawStatusTag(item, x + width - tagW - 14, startY - index * step, tagW);
-    });
-
-    centreItems.forEach((item, index) => {
-      drawStatusTag(item, x + width / 2 - tagW / 2, y + 18 + index * 30, tagW);
-    });
   }
 
-  function drawFooter(text = "PDF layout: legality-v11-height-notation-shims") {
-    drawText(text, pageWidth - 154, 18, 5.5, normalFont, grey);
+  function drawFooter(text = "PDF layout: surface-table-v12") {
+    drawText(text, pageWidth - 120, 18, 5.3, normalFont, grey);
   }
 
-  page.drawRectangle({ x: 0, y: 0, width: pageWidth, height: pageHeight, color: sheetBlack });
-
-  // Header
-  page.drawRectangle({ x: 0, y: pageHeight - 96, width: pageWidth, height: 96, color: sheetBlack });
-  page.drawLine({
-    start: { x: 0, y: pageHeight - 96 },
-    end: { x: pageWidth, y: pageHeight - 96 },
-    thickness: 0.8,
-    color: borderGrey,
-  });
-
-  if (rodinLogo) {
-    drawFittedImage(page, rodinLogo, 16, pageHeight - 70, 92, 46);
-  } else {
-    drawText("RODIN", 18, pageHeight - 40, 20, boldFont, white);
-    drawText("MOTORSPORT", 20, pageHeight - 54, 8, boldFont, grey);
-  }
-
-  if (gb3Logo) {
-    drawFittedImage(page, gb3Logo, 18, pageHeight - 92, 70, 20);
-  }
-
-  drawText("LEGALITY CHECK", 126, pageHeight - 38, 18, boldFont, white);
-  drawText(summary, 128, pageHeight - 55, 9, boldFont, illegalItems.length ? red : green);
-
-  const headerGap = 6;
-  const topBoxW = 92;
-  const topBoxH = 34;
-  const startX = pageWidth - (topBoxW * 3 + headerGap * 2) - 14;
-  drawHeaderInfo("Date", formatReportDate(payload.check_date), startX, pageHeight - 42, topBoxW, topBoxH);
-  drawHeaderInfo("Circuit", payload.circuit, startX + topBoxW + headerGap, pageHeight - 42, topBoxW, topBoxH);
-  drawHeaderInfo("Car", payload.car_name || `Car ${payload.car_id}`, startX + (topBoxW + headerGap) * 2, pageHeight - 42, topBoxW, topBoxH);
-  drawHeaderInfo("Driver", payload.driver, startX, pageHeight - 82, 134, topBoxH);
-  drawHeaderInfo("Engineer", `${payload.engineer_name} ${payload.engineer_email}`, startX + 134 + headerGap, pageHeight - 82, pageWidth - (startX + 134 + headerGap) - 14, topBoxH);
-
-  // Measurements are stacked, and each panel is front axle over rear axle.
+  addBackground();
+  drawReportHeader();
   drawMeasurementPanel({
     title: "Corner Weight Measurements",
     subtitle: "Front axle over rear axle, matching the input sheet.",
@@ -841,157 +814,83 @@ async function buildLegalityPdf(payload: NormalisedLegalityEmailPayload) {
     values: payload.corner_weights,
     total: payload.corner_weights.total,
     formatter: formatWeight,
-    x: 18,
-    y: 600,
-    width: pageWidth - 36,
-    height: 128,
+    x: 22,
+    y: 548,
+    width: pageWidth - 44,
+    height: 174,
   });
-
   drawMeasurementPanel({
     title: "Camber Measurements",
     subtitle: "Front axle over rear axle. Negative values are shown as entered.",
     unit: "deg",
     values: payload.camber_measurements,
     formatter: formatCamber,
-    x: 18,
-    y: 486,
-    width: pageWidth - 36,
-    height: 98,
+    x: 22,
+    y: 394,
+    width: pageWidth - 44,
+    height: 132,
   });
-
-  drawWingShimPanel(18, 398, pageWidth - 36, 74);
-
-  if (spareWingItems.length > 0) {
-    drawSpareWingPanel(18, 276, pageWidth - 36, 106);
-    drawTotalCarPanel(18, 42, pageWidth - 36, 214);
-  } else {
-    drawTotalCarPanel(18, 42, pageWidth - 36, 340);
-  }
-
-  drawText(`Summary: ${summary}`, 18, 24, 9, boldFont, illegalItems.length ? red : green);
+  drawWingShimPanel(22, 268, pageWidth - 44, 104);
+  drawSummaryPanel(22, 112, pageWidth - 44, 128);
   drawFooter();
 
-  // Component list pages
+  newPage();
+  drawReportHeader();
+  drawSpareWingPanel(22, 520, pageWidth - 44, 172);
+  drawTotalCarPanel(22, 58, pageWidth - 44, 430);
+  drawFooter("PDF layout: surface-table-v12 - visual checks");
+
   const sortedItems = sortForSheet(payload.items);
-  page = pdfDoc.addPage(pageSize);
-  page.drawRectangle({ x: 0, y: 0, width: pageSize[0], height: pageSize[1], color: sheetBlack });
-  let y = 796;
+  newPage();
+  let y = 786;
   const margin = 34;
-  const usableWidth = pageSize[0] - margin * 2;
+  const usableWidth = pageWidth - margin * 2;
 
-  function drawListText(text: string, x: number, size = 8, font: PDFFont = normalFont, color = white) {
-    page.drawText(text, { x, y, size, font, color });
-  }
-
-  function drawCompactMeasurementLine(
-    title: string,
-    values: Array<[string, string]>,
-    formatter: (value: string) => string,
-  ) {
-    page.drawRectangle({
-      x: margin,
-      y: y - 28,
-      width: usableWidth,
-      height: 25,
-      color: panelBlack,
-      borderColor: borderGrey,
-      borderWidth: 0.55,
-    });
-
-    page.drawText(title.toUpperCase(), {
-      x: margin + 8,
-      y: y - 13,
-      size: 7,
-      font: boldFont,
-      color: grey,
-    });
-
+  function drawCompactMeasurementLine(title: string, values: Array<[string, string]>, formatter: (value: string) => string) {
+    page.drawRectangle({ x: margin, y: y - 28, width: usableWidth, height: 25, color: panelBlack, borderColor: borderGrey, borderWidth: 0.55 });
+    drawText(title.toUpperCase(), margin + 8, y - 13, 6.8, boldFont, grey);
     values.forEach(([label, value], index) => {
       const cellX = margin + 142 + index * 72;
-      page.drawText(label, {
-        x: cellX,
-        y: y - 10,
-        size: 6,
-        font: boldFont,
-        color: grey,
-      });
-      page.drawText(formatter(value), {
-        x: cellX,
-        y: y - 22,
-        size: 7.5,
-        font: boldFont,
-        color: white,
-      });
+      drawText(label.toUpperCase(), cellX, y - 10, 5.8, boldFont, grey);
+      drawText(formatter(value), cellX, y - 22, 7.4, boldFont, white);
     });
-
     y -= 31;
   }
 
   function drawListHeader() {
-    page.drawText("RODIN MOTORSPORT · LEGALITY COMPONENT LIST", {
-      x: margin,
-      y,
-      size: 9,
-      font: boldFont,
-      color: red,
-    });
+    drawText("RODIN MOTORSPORT - SURFACE TABLE COMPONENT LIST", margin, y, 9, boldFont, red);
     y -= 18;
-
-    page.drawText(`${payload.car_name} · ${payload.driver} · ${payload.circuit} · ${formatReportDate(payload.check_date)}`, {
-      x: margin,
-      y,
-      size: 14,
-      font: boldFont,
-      color: white,
-    });
-    y -= 22;
+    drawWrappedText(`${payload.car_name} - ${payload.driver} - ${payload.circuit} - ${formatReportDate(payload.check_date)}`, margin, y, usableWidth, 13, boldFont, white, 2, 15);
+    y -= 36;
 
     drawCompactMeasurementLine(
       "Corner weights",
-      [
-        ["FL", payload.corner_weights.fl],
-        ["FR", payload.corner_weights.fr],
-        ["RL", payload.corner_weights.rl],
-        ["RR", payload.corner_weights.rr],
-        ["TOTAL", payload.corner_weights.total],
-      ],
+      [["FL", payload.corner_weights.fl], ["FR", payload.corner_weights.fr], ["RL", payload.corner_weights.rl], ["RR", payload.corner_weights.rr], ["TOTAL", payload.corner_weights.total]],
       formatWeight,
     );
-
     drawCompactMeasurementLine(
       "Camber",
-      [
-        ["FL", payload.camber_measurements.fl],
-        ["FR", payload.camber_measurements.fr],
-        ["RL", payload.camber_measurements.rl],
-        ["RR", payload.camber_measurements.rr],
-      ],
+      [["FL", payload.camber_measurements.fl], ["FR", payload.camber_measurements.fr], ["RL", payload.camber_measurements.rl], ["RR", payload.camber_measurements.rr]],
       formatCamber,
     );
-
     drawCompactMeasurementLine(
       "Wing shims",
-      [
-        ["Main LH", payload.wing_shims.main_lh],
-        ["Main RH", payload.wing_shims.main_rh],
-        ["Spare LH", payload.wing_shims.spare_lh],
-        ["Spare RH", payload.wing_shims.spare_rh],
-      ],
+      [["Main LH", payload.wing_shims.main_lh], ["Main RH", payload.wing_shims.main_rh], ["Spare LH", payload.wing_shims.spare_lh], ["Spare RH", payload.wing_shims.spare_rh]],
       formatShim,
     );
 
-    page.drawRectangle({ x: margin, y: y - 7, width: usableWidth, height: 18, color: panelBlack });
-    drawListText("COMPONENT", margin + 6, 7, boldFont, white);
-    drawListText("SIDE", margin + 126, 7, boldFont, white);
-    drawListText("STATUS", margin + 166, 7, boldFont, white);
-    drawListText("POSITION / ILLEGAL NOTE", margin + 230, 7, boldFont, white);
+    page.drawRectangle({ x: margin, y: y - 7, width: usableWidth, height: 18, color: panelBlack, borderColor: borderGrey, borderWidth: 0.45 });
+    drawText("COMPONENT", margin + 7, y, 6.7, boldFont, white);
+    drawText("SIDE", margin + 164, y, 6.7, boldFont, white);
+    drawText("STATUS", margin + 205, y, 6.7, boldFont, white);
+    drawText("HEIGHT", margin + 262, y, 6.7, boldFont, white);
+    drawText("POSITION / ILLEGAL NOTE", margin + 318, y, 6.7, boldFont, white);
     y -= 20;
   }
 
   function newListPage() {
-    page = pdfDoc.addPage(pageSize);
-    page.drawRectangle({ x: 0, y: 0, width: pageSize[0], height: pageSize[1], color: sheetBlack });
-    y = 796;
+    newPage();
+    y = 786;
     drawListHeader();
   }
 
@@ -999,16 +898,12 @@ async function buildLegalityPdf(payload: NormalisedLegalityEmailPayload) {
 
   sortedItems.forEach((item) => {
     const isIllegal = item.status === "illegal";
-    const legalHeightText = formatHeightNotation(item);
-    const noteText = isIllegal
-      ? item.illegal_note || "Missing note"
-      : [item.item_position || "—", legalHeightText].filter(Boolean).join(" · ");
-    const noteLines = wrapTextByWidth(noteText, normalFont, 8, 290);
-    const rowHeight = Math.max(28, noteLines.length * 10 + 14);
+    const heightText = formatHeightNotation(item).replace("Height ", "");
+    const noteText = isIllegal ? item.illegal_note || "Missing note" : item.item_position || "-";
+    const noteLines = wrapTextByWidth(noteText, normalFont, 7.6, usableWidth - 330);
+    const rowHeight = Math.max(30, noteLines.length * 9 + 15);
 
-    if (y - rowHeight < 42) {
-      newListPage();
-    }
+    if (y - rowHeight < 44) newListPage();
 
     page.drawRectangle({
       x: margin,
@@ -1020,78 +915,42 @@ async function buildLegalityPdf(payload: NormalisedLegalityEmailPayload) {
       borderWidth: isIllegal ? 0.75 : 0.45,
     });
 
-    drawListText(item.item_name, margin + 6, 8.5, boldFont, white);
-    drawListText(item.item_side || "—", margin + 126, 8, normalFont, white);
-    drawListText(item.status.toUpperCase(), margin + 166, 8, boldFont, isIllegal ? red : green);
+    drawWrappedText(shortItemName(item), margin + 7, y, 148, 7.7, boldFont, white, 2, 9);
+    drawText(item.item_side || "-", margin + 164, y, 7.3, normalFont, white);
+    drawText(item.status.toUpperCase(), margin + 205, y, 7.3, boldFont, isIllegal ? red : green);
+    drawText(heightText || "-", margin + 262, y, 7.3, boldFont, heightText ? white : grey);
 
     let noteY = y;
     noteLines.forEach((line) => {
-      page.drawText(line, {
-        x: margin + 230,
-        y: noteY,
-        size: 8,
-        font: normalFont,
-        color: white,
-      });
-      noteY -= 10;
+      drawText(line, margin + 318, noteY, 7.6, normalFont, white);
+      noteY -= 9;
     });
 
     y -= rowHeight + 4;
   });
 
   if (illegalItems.length > 0) {
-    if (y < 135) {
-      newListPage();
-    }
-
+    if (y < 128) newListPage();
     y -= 12;
-    page.drawText("Illegal Item Notes Summary", {
-      x: margin,
-      y,
-      size: 13,
-      font: boldFont,
-      color: red,
-    });
-    y -= 18;
+    drawText("Illegal Item Notes Summary", margin, y, 13, boldFont, red);
+    y -= 20;
 
     illegalItems.forEach((item) => {
-      const lines = wrapTextByWidth(item.illegal_note || "Missing note", normalFont, 8.5, usableWidth - 26);
-      const blockHeight = Math.max(30, lines.length * 10 + 20);
-
-      if (y - blockHeight < 42) {
-        newListPage();
-      }
-
-      page.drawRectangle({
-        x: margin,
-        y: y - blockHeight + 8,
-        width: usableWidth,
-        height: blockHeight,
-        color: rgb(0.16, 0.035, 0.045),
-        borderColor: red,
-        borderWidth: 0.55,
-      });
-      page.drawText(item.item_name, {
-        x: margin + 8,
-        y,
-        size: 9,
-        font: boldFont,
-        color: red,
-      });
-      let lineY = y - 12;
+      const lines = wrapTextByWidth(item.illegal_note || "Missing note", normalFont, 8.4, usableWidth - 28);
+      const blockHeight = Math.max(34, lines.length * 10 + 24);
+      if (y - blockHeight < 44) newListPage();
+      page.drawRectangle({ x: margin, y: y - blockHeight + 8, width: usableWidth, height: blockHeight, color: rgb(0.16, 0.035, 0.045), borderColor: red, borderWidth: 0.55 });
+      drawText(shortItemName(item), margin + 10, y, 8.8, boldFont, red);
+      let lineY = y - 13;
       lines.forEach((line) => {
-        page.drawText(line, {
-          x: margin + 16,
-          y: lineY,
-          size: 8.5,
-          font: normalFont,
-          color: white,
-        });
+        drawText(line, margin + 18, lineY, 8.4, normalFont, white);
         lineY -= 10;
       });
       y -= blockHeight + 6;
     });
   }
+
+  drawFooter("PDF layout: surface-table-v12 - component list");
 
   return Buffer.from(await pdfDoc.save());
 }
@@ -1182,7 +1041,7 @@ export async function POST(request: NextRequest) {
         : `${illegalCount} illegal · ${payload.items.length - illegalCount} legal`;
 
     const pdfBuffer = await buildLegalityPdf(payload);
-    const safeFileName = `Legality_${payload.circuit.replace(/[^a-z0-9]+/gi, "_")}_Car_${payload.car_id}_${payload.check_date}.pdf`;
+    const safeFileName = `Surface_Table_Checks_${payload.circuit.replace(/[^a-z0-9]+/gi, "_")}_Car_${payload.car_id}_${payload.check_date}.pdf`;
 
     if (downloadOnly) {
       return new NextResponse(pdfBuffer, {
@@ -1225,11 +1084,11 @@ export async function POST(request: NextRequest) {
     });
 
     await transporter.sendMail({
-      from: `"Legality Reports" <${gmailUser}>`,
+      from: `"Surface Table Checks" <${gmailUser}>`,
       to,
-      subject: `Legality - ${payload.circuit} - ${payload.car_name} - ${summary}`,
+      subject: `Surface Table Checks - ${payload.circuit} - ${payload.car_name} - ${summary}`,
       text: [
-        "Legality Check Report",
+        "Surface Table Checks Report",
         "",
         `Sent to: ${payload.engineer_name} <${to}>`,
         "",
@@ -1252,7 +1111,7 @@ export async function POST(request: NextRequest) {
           <div style="max-width:760px;margin:0 auto;border:1px solid #ddd;border-radius:14px;overflow:hidden;background:#ffffff">
             <div style="background:#111827;color:white;padding:20px 24px">
               <p style="margin:0 0 6px;color:#f87171;font-size:12px;letter-spacing:0.18em;text-transform:uppercase;font-weight:bold">
-                Legality Check Report
+                Surface Table Checks Report
               </p>
 
               <h2 style="margin:0;font-size:24px">
