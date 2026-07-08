@@ -80,6 +80,10 @@ type LegalityCheckRecord = {
   corner_weight_rl: number | string | null;
   corner_weight_rr: number | string | null;
   corner_weight_total: number | string | null;
+  camber_fl: number | string | null;
+  camber_fr: number | string | null;
+  camber_rl: number | string | null;
+  camber_rr: number | string | null;
   sent_to_engineer_at: string | null;
   created_by: string | null;
   created_at: string | null;
@@ -127,6 +131,13 @@ type CornerWeights = {
   total: string;
 };
 
+type CamberMeasurements = {
+  fl: string;
+  fr: string;
+  rl: string;
+  rr: string;
+};
+
 const DEFAULT_CAR_COLOUR = "#b91c1c";
 
 const EMPTY_CORNER_WEIGHTS: CornerWeights = {
@@ -135,6 +146,13 @@ const EMPTY_CORNER_WEIGHTS: CornerWeights = {
   rl: "",
   rr: "",
   total: "",
+};
+
+const EMPTY_CAMBER_MEASUREMENTS: CamberMeasurements = {
+  fl: "",
+  fr: "",
+  rl: "",
+  rr: "",
 };
 
 const DEFAULT_CARS: DashboardCar[] = [
@@ -196,6 +214,39 @@ const CIRCUIT_OPTIONS = [
 ] as const;
 
 const DEFAULT_LEGALITY_POINTS: LegalityPoint[] = [
+  {
+    key: "spare_fwep_lh",
+    label: "Spare Front Wing Endplate LH",
+    shortLabel: "LFWEP",
+    side: "LH",
+    position: "Spare front wing left endplate",
+    x: 14,
+    y: 58,
+    sort_order: 1,
+    active: true,
+  },
+  {
+    key: "spare_fw",
+    label: "Spare Front Wing",
+    shortLabel: "FW",
+    side: "Centre",
+    position: "Spare front wing main plane",
+    x: 50,
+    y: 28,
+    sort_order: 2,
+    active: true,
+  },
+  {
+    key: "spare_fwep_rh",
+    label: "Spare Front Wing Endplate RH",
+    shortLabel: "RFWEP",
+    side: "RH",
+    position: "Spare front wing right endplate",
+    x: 86,
+    y: 58,
+    sort_order: 3,
+    active: true,
+  },
   {
     key: "fw_lh",
     label: "FW LH",
@@ -354,6 +405,19 @@ function cleanWeightInput(value: string) {
   return value.replace(/[^0-9.]/g, "");
 }
 
+function cleanCamberInput(value: string) {
+  const cleanValue = value.replace(/[^0-9.-]/g, "");
+  const withoutExtraMinus = cleanValue.replace(/(?!^)-/g, "");
+  const firstDecimalIndex = withoutExtraMinus.indexOf(".");
+
+  if (firstDecimalIndex === -1) return withoutExtraMinus;
+
+  return (
+    withoutExtraMinus.slice(0, firstDecimalIndex + 1) +
+    withoutExtraMinus.slice(firstDecimalIndex + 1).replace(/\./g, "")
+  );
+}
+
 function weightValueForDatabase(value: string) {
   const cleanValue = value.trim();
   if (!cleanValue) return null;
@@ -374,6 +438,15 @@ function cornerWeightsFromCheck(check: LegalityCheckRecord): CornerWeights {
     rl: weightValueFromDatabase(check.corner_weight_rl),
     rr: weightValueFromDatabase(check.corner_weight_rr),
     total: weightValueFromDatabase(check.corner_weight_total),
+  };
+}
+
+function camberMeasurementsFromCheck(check: LegalityCheckRecord): CamberMeasurements {
+  return {
+    fl: weightValueFromDatabase(check.camber_fl),
+    fr: weightValueFromDatabase(check.camber_fr),
+    rl: weightValueFromDatabase(check.camber_rl),
+    rr: weightValueFromDatabase(check.camber_rr),
   };
 }
 
@@ -407,6 +480,19 @@ function sortLayoutPoints(points: LegalityPoint[]) {
   return [...points]
     .filter((point) => point.active)
     .sort((a, b) => a.sort_order - b.sort_order || a.label.localeCompare(b.label));
+}
+
+function mergeWithDefaultLayoutPoints(points: LegalityPoint[]) {
+  const existingKeys = new Set(points.map((point) => point.key));
+  const missingDefaultPoints = DEFAULT_LEGALITY_POINTS.filter(
+    (point) => !existingKeys.has(point.key),
+  );
+
+  return sortLayoutPoints([...points, ...missingDefaultPoints]);
+}
+
+function isSpareWingPoint(point: LegalityPoint) {
+  return point.key.startsWith("spare_");
 }
 
 function slugFromLabel(label: string) {
@@ -780,6 +866,228 @@ function LegalityCarOverview({
   );
 }
 
+
+function LegalitySpareWingOverview({
+  points,
+  itemStates,
+  readOnly,
+  layoutEditMode,
+  selectedLayoutKey,
+  activeInlineNoteKey,
+  onSelectLayoutPoint,
+  onMoveLayoutPoint,
+  onTogglePointStatus,
+  onOpenInlineNote,
+  onMarkPointLegal,
+  onCloseInlineNote,
+  onNoteChange,
+}: {
+  points: LegalityPoint[];
+  itemStates: Record<string, LegalityItemState>;
+  readOnly: boolean;
+  layoutEditMode: boolean;
+  selectedLayoutKey: string | null;
+  activeInlineNoteKey: string | null;
+  onSelectLayoutPoint: (key: string) => void;
+  onMoveLayoutPoint: (key: string, x: number, y: number) => void;
+  onTogglePointStatus: (key: string) => void;
+  onOpenInlineNote: (key: string) => void;
+  onMarkPointLegal: (key: string) => void;
+  onCloseInlineNote: () => void;
+  onNoteChange: (key: string, note: string) => void;
+}) {
+  const canvasRef = useRef<HTMLDivElement>(null);
+
+  function movePointFromPointer(
+    key: string,
+    event: PointerEvent<HTMLButtonElement>,
+  ) {
+    if (!layoutEditMode || readOnly) return;
+
+    const rect = canvasRef.current?.getBoundingClientRect();
+    if (!rect) return;
+
+    const x = clampPercent(((event.clientX - rect.left) / rect.width) * 100);
+    const y = clampPercent(((event.clientY - rect.top) / rect.height) * 100);
+
+    onMoveLayoutPoint(key, x, y);
+  }
+
+  if (points.length === 0) return null;
+
+  return (
+    <div
+      ref={canvasRef}
+      className="relative mx-auto min-h-[210px] w-full overflow-visible rounded-[2rem] border border-zinc-700 bg-[#030507] shadow-inner shadow-black/40"
+    >
+      <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(to_right,rgba(82,82,91,0.34)_1px,transparent_1px),linear-gradient(to_bottom,rgba(82,82,91,0.34)_1px,transparent_1px)] bg-[size:28px_28px]" />
+      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(239,68,68,0.12),transparent_58%)]" />
+
+      <div className="pointer-events-none absolute left-[23%] right-[23%] top-[48%] h-px bg-zinc-100/80 shadow-[0_0_10px_rgba(255,255,255,0.25)]" />
+      <div className="pointer-events-none absolute left-[23%] top-[48%] h-px w-[25%] origin-right -rotate-[16deg] bg-zinc-100/80 shadow-[0_0_10px_rgba(255,255,255,0.2)]" />
+      <div className="pointer-events-none absolute right-[23%] top-[48%] h-px w-[25%] origin-left rotate-[16deg] bg-zinc-100/80 shadow-[0_0_10px_rgba(255,255,255,0.2)]" />
+      <div className="pointer-events-none absolute left-[21%] top-[40%] h-[28%] w-[4px] rounded-full border border-zinc-100/70" />
+      <div className="pointer-events-none absolute right-[21%] top-[40%] h-[28%] w-[4px] rounded-full border border-zinc-100/70" />
+      <div className="pointer-events-none absolute left-1/2 top-[35%] h-[42%] w-[9%] -translate-x-1/2 rounded-t-full border-x border-t border-zinc-100/70" />
+      <div className="pointer-events-none absolute inset-x-[18%] top-[18%] h-[64%] border-x border-zinc-600/70" />
+
+      {points.map((point) => {
+        const state = getPointState(itemStates, point.key);
+        const isIllegal = state.status === "illegal";
+        const isSelected = selectedLayoutKey === point.key;
+        const statusClasses = isIllegal
+          ? "border-red-500 bg-red-950/80 text-red-100 shadow-red-950/30"
+          : "border-green-500 bg-green-950/70 text-green-100 shadow-green-950/25";
+        const editClasses = isSelected
+          ? "ring-4 ring-red-500/30"
+          : "ring-0";
+        const noteVerticalClass = point.y > 70
+          ? "bottom-[calc(100%+0.65rem)]"
+          : "top-[calc(100%+0.65rem)]";
+        const noteHorizontalClass =
+          point.x < 30
+            ? "left-0"
+            : point.x > 70
+              ? "right-0"
+              : "left-1/2 -translate-x-1/2";
+
+        return (
+          <div
+            key={point.key}
+            style={{
+              left: `${point.x}%`,
+              top: `${point.y}%`,
+            }}
+            className="absolute z-20 -translate-x-1/2 -translate-y-1/2"
+          >
+            <button
+              type="button"
+              disabled={layoutEditMode && readOnly}
+              onClick={() => {
+                if (layoutEditMode) {
+                  onSelectLayoutPoint(point.key);
+                  return;
+                }
+
+                if (readOnly) {
+                  if (isIllegal) {
+                    onOpenInlineNote(point.key);
+                  }
+                  return;
+                }
+
+                onTogglePointStatus(point.key);
+              }}
+              onPointerDown={(event) => {
+                if (!layoutEditMode || readOnly) return;
+                event.currentTarget.setPointerCapture(event.pointerId);
+                onSelectLayoutPoint(point.key);
+                movePointFromPointer(point.key, event);
+              }}
+              onPointerMove={(event) => {
+                if (event.buttons !== 1) return;
+                movePointFromPointer(point.key, event);
+              }}
+              className={`min-w-[126px] rounded-xl border px-3 py-2 text-left shadow-lg backdrop-blur-sm transition hover:scale-[1.03] ${
+                layoutEditMode && !readOnly ? "cursor-move border-red-500 bg-[#070a0f]/95" : statusClasses
+              } ${editClasses}`}
+              title={
+                layoutEditMode
+                  ? `Drag ${point.label} to reposition it`
+                  : `${point.label} · click to toggle legal/illegal`
+              }
+            >
+              <div className="flex items-center justify-between gap-3">
+                <span className="text-[10px] font-black uppercase tracking-[0.18em] text-zinc-100">
+                  {point.shortLabel}
+                </span>
+                <span
+                  className={`rounded-full border px-2 py-1 text-[8px] font-black uppercase tracking-[0.16em] ${
+                    isIllegal
+                      ? "border-red-300 bg-red-600 text-white"
+                      : "border-green-300 bg-green-600 text-white"
+                  }`}
+                >
+                  {isIllegal ? "Red" : "Legal"}
+                </span>
+              </div>
+              {layoutEditMode && (
+                <div className="mt-1 text-[9px] font-semibold uppercase tracking-[0.16em] text-red-300">
+                  X {point.x.toFixed(1)} · Y {point.y.toFixed(1)}
+                </div>
+              )}
+            </button>
+
+            {isIllegal && activeInlineNoteKey === point.key && !layoutEditMode && (
+              <div
+                className={`absolute ${noteVerticalClass} ${noteHorizontalClass} z-40 block w-[280px] rounded-2xl border border-red-600 bg-red-950/95 p-3 text-left shadow-2xl shadow-red-950/60 backdrop-blur-md`}
+                onClick={(event) => event.stopPropagation()}
+                onPointerDown={(event) => event.stopPropagation()}
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <div className="text-[10px] font-black uppercase tracking-[0.22em] text-red-100">
+                      {point.label}
+                    </div>
+                    <div className="mt-1 text-[10px] leading-4 text-red-100/70">
+                      {point.position || "Illegal note required"}
+                    </div>
+                  </div>
+
+                  <div className="flex shrink-0 flex-col items-end gap-2">
+                    <button
+                      type="button"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        onCloseInlineNote();
+                      }}
+                      className="rounded-full border border-red-300/70 bg-red-950/80 px-2 py-1 text-[8px] font-black uppercase tracking-[0.16em] text-red-100 transition hover:border-white hover:bg-red-700 hover:text-white"
+                    >
+                      Close
+                    </button>
+
+                    {!readOnly ? (
+                      <button
+                        type="button"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          onMarkPointLegal(point.key);
+                        }}
+                        className="rounded-full border border-zinc-500 bg-[#111418] px-2 py-1 text-[8px] font-black uppercase tracking-[0.16em] text-zinc-100 transition hover:border-green-400 hover:bg-green-950 hover:text-green-100"
+                      >
+                        Mark Legal
+                      </button>
+                    ) : (
+                      <span className="rounded-full border border-red-300 bg-red-600 px-2 py-1 text-[8px] font-black uppercase tracking-[0.16em] text-white">
+                        Illegal
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                <textarea
+                  disabled={readOnly}
+                  value={state.illegal_note}
+                  onChange={(event) => onNoteChange(point.key, event.target.value)}
+                  placeholder="Enter what is illegal..."
+                  className="mt-3 min-h-20 w-full resize-y rounded-xl border border-red-500 bg-red-950/60 px-3 py-2 text-xs font-semibold text-red-50 outline-none transition placeholder:text-red-200/70 focus:border-red-300 disabled:cursor-not-allowed disabled:border-zinc-700 disabled:bg-zinc-900 disabled:text-zinc-400"
+                />
+              </div>
+            )}
+          </div>
+        );
+      })}
+
+      {layoutEditMode && !readOnly && (
+        <div className="absolute bottom-4 left-4 right-4 rounded-2xl border border-red-800 bg-[#070a0f]/95 p-3 text-xs text-zinc-300 shadow-lg">
+          Drag the spare wing boxes, then use the layout editor above to rename,
+          change side/position, add or remove points.
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function LegalityPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -797,6 +1105,7 @@ export default function LegalityPage() {
   const [customCircuit, setCustomCircuit] = useState("");
   const [driver, setDriver] = useState(DEFAULT_CARS[0].name);
   const [cornerWeights, setCornerWeights] = useState<CornerWeights>(EMPTY_CORNER_WEIGHTS);
+  const [camberMeasurements, setCamberMeasurements] = useState<CamberMeasurements>(EMPTY_CAMBER_MEASUREMENTS);
   const [activeCheckId, setActiveCheckId] = useState<string | null>(null);
   const [lastSentToEngineerAt, setLastSentToEngineerAt] = useState<string | null>(null);
   const [layoutPoints, setLayoutPoints] = useState<LegalityPoint[]>(
@@ -824,6 +1133,13 @@ export default function LegalityPage() {
     return sortLayoutPoints(layoutPoints);
   }, [layoutPoints]);
 
+  const spareWingLayoutPoints = useMemo(() => {
+    return activeLayoutPoints.filter(isSpareWingPoint);
+  }, [activeLayoutPoints]);
+
+  const carLayoutPoints = useMemo(() => {
+    return activeLayoutPoints.filter((point) => !isSpareWingPoint(point));
+  }, [activeLayoutPoints]);
 
   const selectedLayoutPoint = useMemo(() => {
     return (
@@ -894,7 +1210,7 @@ export default function LegalityPage() {
       return DEFAULT_LEGALITY_POINTS;
     }
 
-    const nextLayout = sortLayoutPoints(
+    const nextLayout = mergeWithDefaultLayoutPoints(
       (data as LegalityLayoutPointRecord[]).map((point, index) =>
         normaliseLayoutPoint(point, index),
       ),
@@ -1062,6 +1378,13 @@ export default function LegalityPage() {
     setCornerWeights((current) => ({
       ...current,
       [key]: cleanWeightInput(value),
+    }));
+  }
+
+  function updateCamberMeasurement(key: keyof CamberMeasurements, value: string) {
+    setCamberMeasurements((current) => ({
+      ...current,
+      [key]: cleanCamberInput(value),
     }));
   }
 
@@ -1275,6 +1598,7 @@ export default function LegalityPage() {
     setCustomCircuit("");
     setDriver(car?.name ?? "");
     setCornerWeights(EMPTY_CORNER_WEIGHTS);
+    setCamberMeasurements(EMPTY_CAMBER_MEASUREMENTS);
     setLastSentToEngineerAt(null);
     setActiveInlineNoteKey(null);
     setItemStates(createDefaultItemState(activeLayoutPoints));
@@ -1312,6 +1636,7 @@ export default function LegalityPage() {
     applyCircuitFromSavedValue(check.circuit);
     setDriver(check.driver ?? "");
     setCornerWeights(cornerWeightsFromCheck(check));
+    setCamberMeasurements(camberMeasurementsFromCheck(check));
     setLastSentToEngineerAt(check.sent_to_engineer_at ?? null);
     setActiveInlineNoteKey(
       check.items.find((item) => item.status === "illegal")?.item_key ?? null,
@@ -1394,6 +1719,7 @@ export default function LegalityPage() {
         engineer_name: selectedEngineer.engineerName,
         engineer_email: selectedEngineer.engineerEmail,
         corner_weights: cornerWeights,
+        camber_measurements: camberMeasurements,
         created_by: userEmail,
         items,
       }),
@@ -1477,6 +1803,10 @@ export default function LegalityPage() {
             corner_weight_rl: weightValueForDatabase(cornerWeights.rl),
             corner_weight_rr: weightValueForDatabase(cornerWeights.rr),
             corner_weight_total: weightValueForDatabase(cornerWeights.total),
+            camber_fl: weightValueForDatabase(camberMeasurements.fl),
+            camber_fr: weightValueForDatabase(camberMeasurements.fr),
+            camber_rl: weightValueForDatabase(camberMeasurements.rl),
+            camber_rr: weightValueForDatabase(camberMeasurements.rr),
             updated_by: userEmail,
             updated_at: now,
           })
@@ -1501,6 +1831,10 @@ export default function LegalityPage() {
             corner_weight_rl: weightValueForDatabase(cornerWeights.rl),
             corner_weight_rr: weightValueForDatabase(cornerWeights.rr),
             corner_weight_total: weightValueForDatabase(cornerWeights.total),
+            camber_fl: weightValueForDatabase(camberMeasurements.fl),
+            camber_fr: weightValueForDatabase(camberMeasurements.fr),
+            camber_rl: weightValueForDatabase(camberMeasurements.rl),
+            camber_rr: weightValueForDatabase(camberMeasurements.rr),
             created_by: userEmail,
             updated_by: userEmail,
             updated_at: now,
@@ -2142,85 +2476,195 @@ export default function LegalityPage() {
           </div>
 
           <div className="border-b border-zinc-700 bg-[#05070b] px-5 py-4">
-            <div className="mx-auto max-w-4xl">
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div>
-                  <p className="text-[10px] font-black uppercase tracking-[0.28em] text-zinc-400">
-                    Corner Weight Measurements
-                  </p>
-                  <p className="mt-1 text-xs leading-5 text-zinc-400">
-                    Manual entry for the legality sheet. Total weight is not auto-calculated.
-                  </p>
+            <div className="mx-auto max-w-4xl space-y-6">
+              <div>
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <p className="text-[10px] font-black uppercase tracking-[0.28em] text-zinc-400">
+                      Corner Weight Measurements
+                    </p>
+                    <p className="mt-1 text-xs leading-5 text-zinc-400">
+                      Manual entry for the legality sheet. Total weight is not auto-calculated.
+                    </p>
+                  </div>
+                  <span className="rounded-full border border-zinc-700 bg-[#0b0f14] px-3 py-1 text-[10px] font-black uppercase tracking-[0.2em] text-zinc-300">
+                    kg
+                  </span>
                 </div>
-                <span className="rounded-full border border-zinc-700 bg-[#0b0f14] px-3 py-1 text-[10px] font-black uppercase tracking-[0.2em] text-zinc-300">
-                  kg
-                </span>
+
+                <div className="mt-3 grid gap-x-3 gap-y-4 md:grid-cols-3">
+                  {([
+                    ["fl", "FL", "Front Left"],
+                    ["fr", "FR", "Front Right"],
+                  ] as const).map(([key, label, helper]) => (
+                    <label key={key}>
+                      <span className="text-[10px] font-black uppercase tracking-[0.24em] text-zinc-500">
+                        {label}
+                      </span>
+                      <input
+                        disabled={readOnly}
+                        inputMode="decimal"
+                        value={cornerWeights[key]}
+                        onChange={(event) => updateCornerWeight(key, event.target.value)}
+                        placeholder="0.0"
+                        className="mt-2 w-full rounded-xl border border-zinc-700 bg-[#0b0f14] px-4 py-3 text-sm font-bold text-zinc-100 outline-none transition placeholder:text-zinc-500 focus:border-red-500 disabled:cursor-not-allowed disabled:bg-zinc-900 disabled:text-zinc-500"
+                      />
+                      <div className="mt-1 text-[11px] text-zinc-500">{helper}</div>
+                    </label>
+                  ))}
+
+                  <div className="hidden md:block" aria-hidden="true" />
+
+                  {([
+                    ["rl", "RL", "Rear Left"],
+                    ["rr", "RR", "Rear Right"],
+                    ["total", "Total", "Total Weight"],
+                  ] as const).map(([key, label, helper]) => (
+                    <label key={key}>
+                      <span className="text-[10px] font-black uppercase tracking-[0.24em] text-zinc-500">
+                        {label}
+                      </span>
+                      <input
+                        disabled={readOnly}
+                        inputMode="decimal"
+                        value={cornerWeights[key]}
+                        onChange={(event) => updateCornerWeight(key, event.target.value)}
+                        placeholder="0.0"
+                        className="mt-2 w-full rounded-xl border border-zinc-700 bg-[#0b0f14] px-4 py-3 text-sm font-bold text-zinc-100 outline-none transition placeholder:text-zinc-500 focus:border-red-500 disabled:cursor-not-allowed disabled:bg-zinc-900 disabled:text-zinc-500"
+                      />
+                      <div className="mt-1 text-[11px] text-zinc-500">{helper}</div>
+                    </label>
+                  ))}
+                </div>
               </div>
 
-              <div className="mt-3 grid gap-x-3 gap-y-4 md:grid-cols-3">
-                {([
-                  ["fl", "FL", "Front Left"],
-                  ["fr", "FR", "Front Right"],
-                ] as const).map(([key, label, helper]) => (
-                  <label key={key}>
-                    <span className="text-[10px] font-black uppercase tracking-[0.24em] text-zinc-500">
-                      {label}
-                    </span>
-                    <input
-                      disabled={readOnly}
-                      inputMode="decimal"
-                      value={cornerWeights[key]}
-                      onChange={(event) => updateCornerWeight(key, event.target.value)}
-                      placeholder="0.0"
-                      className="mt-2 w-full rounded-xl border border-zinc-700 bg-[#0b0f14] px-4 py-3 text-sm font-bold text-zinc-100 outline-none transition placeholder:text-zinc-500 focus:border-red-500 disabled:cursor-not-allowed disabled:bg-zinc-900 disabled:text-zinc-500"
-                    />
-                    <div className="mt-1 text-[11px] text-zinc-500">{helper}</div>
-                  </label>
-                ))}
+              <div className="border-t border-zinc-800 pt-5">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <p className="text-[10px] font-black uppercase tracking-[0.28em] text-zinc-400">
+                      Camber Measurements
+                    </p>
+                    <p className="mt-1 text-xs leading-5 text-zinc-400">
+                      Manual entry for setup/legality reference. Negative values are allowed.
+                    </p>
+                  </div>
+                  <span className="rounded-full border border-zinc-700 bg-[#0b0f14] px-3 py-1 text-[10px] font-black uppercase tracking-[0.2em] text-zinc-300">
+                    deg
+                  </span>
+                </div>
 
-                <div className="hidden md:block" aria-hidden="true" />
+                <div className="mt-3 grid gap-x-3 gap-y-4 md:grid-cols-3">
+                  {([
+                    ["fl", "FL", "Front Left"],
+                    ["fr", "FR", "Front Right"],
+                  ] as const).map(([key, label, helper]) => (
+                    <label key={key}>
+                      <span className="text-[10px] font-black uppercase tracking-[0.24em] text-zinc-500">
+                        {label}
+                      </span>
+                      <input
+                        disabled={readOnly}
+                        inputMode="decimal"
+                        value={camberMeasurements[key]}
+                        onChange={(event) => updateCamberMeasurement(key, event.target.value)}
+                        placeholder="-0.0"
+                        className="mt-2 w-full rounded-xl border border-zinc-700 bg-[#0b0f14] px-4 py-3 text-sm font-bold text-zinc-100 outline-none transition placeholder:text-zinc-500 focus:border-red-500 disabled:cursor-not-allowed disabled:bg-zinc-900 disabled:text-zinc-500"
+                      />
+                      <div className="mt-1 text-[11px] text-zinc-500">{helper}</div>
+                    </label>
+                  ))}
 
-                {([
-                  ["rl", "RL", "Rear Left"],
-                  ["rr", "RR", "Rear Right"],
-                  ["total", "Total", "Total Weight"],
-                ] as const).map(([key, label, helper]) => (
-                  <label key={key}>
-                    <span className="text-[10px] font-black uppercase tracking-[0.24em] text-zinc-500">
-                      {label}
-                    </span>
-                    <input
-                      disabled={readOnly}
-                      inputMode="decimal"
-                      value={cornerWeights[key]}
-                      onChange={(event) => updateCornerWeight(key, event.target.value)}
-                      placeholder="0.0"
-                      className="mt-2 w-full rounded-xl border border-zinc-700 bg-[#0b0f14] px-4 py-3 text-sm font-bold text-zinc-100 outline-none transition placeholder:text-zinc-500 focus:border-red-500 disabled:cursor-not-allowed disabled:bg-zinc-900 disabled:text-zinc-500"
-                    />
-                    <div className="mt-1 text-[11px] text-zinc-500">{helper}</div>
-                  </label>
-                ))}
+                  <div className="hidden md:block" aria-hidden="true" />
+
+                  {([
+                    ["rl", "RL", "Rear Left"],
+                    ["rr", "RR", "Rear Right"],
+                  ] as const).map(([key, label, helper]) => (
+                    <label key={key}>
+                      <span className="text-[10px] font-black uppercase tracking-[0.24em] text-zinc-500">
+                        {label}
+                      </span>
+                      <input
+                        disabled={readOnly}
+                        inputMode="decimal"
+                        value={camberMeasurements[key]}
+                        onChange={(event) => updateCamberMeasurement(key, event.target.value)}
+                        placeholder="-0.0"
+                        className="mt-2 w-full rounded-xl border border-zinc-700 bg-[#0b0f14] px-4 py-3 text-sm font-bold text-zinc-100 outline-none transition placeholder:text-zinc-500 focus:border-red-500 disabled:cursor-not-allowed disabled:bg-zinc-900 disabled:text-zinc-500"
+                      />
+                      <div className="mt-1 text-[11px] text-zinc-500">{helper}</div>
+                    </label>
+                  ))}
+                </div>
               </div>
             </div>
           </div>
 
           <div className="p-4">
-            <div className="mx-auto w-full max-w-[760px]">
-              <LegalityCarOverview
-                points={activeLayoutPoints}
-                itemStates={itemStates}
-                readOnly={readOnly}
-                layoutEditMode={layoutEditMode}
-                selectedLayoutKey={selectedLayoutKey}
-                activeInlineNoteKey={activeInlineNoteKey}
-                onSelectLayoutPoint={setSelectedLayoutKey}
-                onMoveLayoutPoint={(key, x, y) => updateLayoutPoint(key, { x, y })}
-                onTogglePointStatus={togglePointStatus}
-                onOpenInlineNote={setActiveInlineNoteKey}
-                onMarkPointLegal={markPointLegal}
-                onCloseInlineNote={() => setActiveInlineNoteKey(null)}
-                onNoteChange={updatePointNote}
-              />
+            <div className="mx-auto w-full max-w-[760px] space-y-5">
+              <section>
+                <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <p className="text-[10px] font-black uppercase tracking-[0.28em] text-zinc-400">
+                      Spare Front Wing
+                    </p>
+                    <p className="mt-1 text-xs leading-5 text-zinc-500">
+                      Three legality boxes for the spare wing: LFWEP, FW and RFWEP.
+                    </p>
+                  </div>
+                  <span className="rounded-full border border-zinc-700 bg-[#0b0f14] px-3 py-1 text-[10px] font-black uppercase tracking-[0.2em] text-zinc-300">
+                    Spare
+                  </span>
+                </div>
+
+                <LegalitySpareWingOverview
+                  points={spareWingLayoutPoints}
+                  itemStates={itemStates}
+                  readOnly={readOnly}
+                  layoutEditMode={layoutEditMode}
+                  selectedLayoutKey={selectedLayoutKey}
+                  activeInlineNoteKey={activeInlineNoteKey}
+                  onSelectLayoutPoint={setSelectedLayoutKey}
+                  onMoveLayoutPoint={(key, x, y) => updateLayoutPoint(key, { x, y })}
+                  onTogglePointStatus={togglePointStatus}
+                  onOpenInlineNote={setActiveInlineNoteKey}
+                  onMarkPointLegal={markPointLegal}
+                  onCloseInlineNote={() => setActiveInlineNoteKey(null)}
+                  onNoteChange={updatePointNote}
+                />
+              </section>
+
+              <section>
+                <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <p className="text-[10px] font-black uppercase tracking-[0.28em] text-zinc-400">
+                      Total Car
+                    </p>
+                    <p className="mt-1 text-xs leading-5 text-zinc-500">
+                      Full-car legality points and any illegal notes for the current check.
+                    </p>
+                  </div>
+                  <span className={`rounded-full border px-3 py-1 text-[10px] font-black uppercase tracking-[0.2em] ${dirtyStatus.className}`}>
+                    {dirtyStatus.label}
+                  </span>
+                </div>
+
+                <LegalityCarOverview
+                  points={carLayoutPoints}
+                  itemStates={itemStates}
+                  readOnly={readOnly}
+                  layoutEditMode={layoutEditMode}
+                  selectedLayoutKey={selectedLayoutKey}
+                  activeInlineNoteKey={activeInlineNoteKey}
+                  onSelectLayoutPoint={setSelectedLayoutKey}
+                  onMoveLayoutPoint={(key, x, y) => updateLayoutPoint(key, { x, y })}
+                  onTogglePointStatus={togglePointStatus}
+                  onOpenInlineNote={setActiveInlineNoteKey}
+                  onMarkPointLegal={markPointLegal}
+                  onCloseInlineNote={() => setActiveInlineNoteKey(null)}
+                  onNoteChange={updatePointNote}
+                />
+              </section>
             </div>
           </div>
         </div>
