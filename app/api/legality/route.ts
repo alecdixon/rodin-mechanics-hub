@@ -23,6 +23,8 @@ type LegalityPdfItem = {
   item_position: string;
   status: LegalityStatus;
   illegal_note: string | null;
+  height_notation_enabled?: boolean | null;
+  height_notation?: string | number | null;
 };
 
 type CornerWeights = {
@@ -55,6 +57,20 @@ type NormalisedCamberMeasurements = {
   rr: string;
 };
 
+type WingShims = {
+  main_lh: string | number | null;
+  main_rh: string | number | null;
+  spare_lh: string | number | null;
+  spare_rh: string | number | null;
+};
+
+type NormalisedWingShims = {
+  main_lh: string;
+  main_rh: string;
+  spare_lh: string;
+  spare_rh: string;
+};
+
 type LegalityEmailPayload = {
   check_id?: string | null;
   car_id: number;
@@ -67,6 +83,7 @@ type LegalityEmailPayload = {
   created_by?: string | null;
   corner_weights?: Partial<CornerWeights> | null;
   camber_measurements?: Partial<CamberMeasurements> | null;
+  wing_shims?: Partial<WingShims> | null;
   download_only?: boolean | null;
   items?: LegalityPdfItem[];
 };
@@ -83,6 +100,7 @@ type NormalisedLegalityEmailPayload = {
   created_by: string;
   corner_weights: NormalisedCornerWeights;
   camber_measurements: NormalisedCamberMeasurements;
+  wing_shims: NormalisedWingShims;
   items: LegalityPdfItem[];
 };
 
@@ -140,6 +158,31 @@ function normaliseCamberMeasurements(
     rl: cleanDecimalValue(measurements?.rl),
     rr: cleanDecimalValue(measurements?.rr),
   };
+}
+
+function normaliseWingShims(shims: Partial<WingShims> | null | undefined): NormalisedWingShims {
+  return {
+    main_lh: clean(shims?.main_lh),
+    main_rh: clean(shims?.main_rh),
+    spare_lh: clean(shims?.spare_lh),
+    spare_rh: clean(shims?.spare_rh),
+  };
+}
+
+function formatShim(value: string) {
+  return value ? value : "—";
+}
+
+function cleanHeightNotation(value: string | number | null | undefined) {
+  const cleanValue = clean(value);
+  return /^[0-5]$/.test(cleanValue) ? cleanValue : "";
+}
+
+function formatHeightNotation(item: LegalityPdfItem) {
+  if (!item.height_notation_enabled || item.status !== "legal") return "";
+
+  const notation = cleanHeightNotation(item.height_notation);
+  return notation ? `Height ${notation}/5` : "Height not recorded";
 }
 
 function formatWeight(value: string) {
@@ -529,6 +572,60 @@ async function buildLegalityPdf(payload: NormalisedLegalityEmailPayload) {
     }
   }
 
+  function drawShimCell(label: string, value: string, x: number, y: number, width: number, height: number) {
+    page.drawRectangle({
+      x,
+      y,
+      width,
+      height,
+      color: cellBlack,
+      borderColor: borderGrey,
+      borderWidth: 0.65,
+    });
+
+    drawText(label.toUpperCase(), x + 7, y + height - 12, 6.1, boldFont, grey);
+    drawText(formatShim(value), x + 7, y + 7, value.length > 14 ? 8 : 9.6, boldFont, white);
+  }
+
+  function drawWingShimPanel(x: number, y: number, width: number, height: number) {
+    page.drawRectangle({
+      x,
+      y,
+      width,
+      height,
+      color: panelBlack,
+      borderColor: borderGrey,
+      borderWidth: 0.85,
+    });
+
+    drawSectionTitle(
+      "Front Wing Shim Record",
+      "Main and spare front wing shim values recorded by the chief mechanic.",
+      "shims",
+      x + 12,
+      y + height - 15,
+      width - 24,
+    );
+
+    const padding = 12;
+    const sectionGap = 12;
+    const sectionW = (width - padding * 2 - sectionGap) / 2;
+    const cellGap = 8;
+    const cellW = (sectionW - cellGap) / 2;
+    const cellH = 26;
+    const sectionY = y + 10;
+
+    [
+      ["MAIN FRONT WING", payload.wing_shims.main_lh, payload.wing_shims.main_rh, x + padding],
+      ["SPARE FRONT WING", payload.wing_shims.spare_lh, payload.wing_shims.spare_rh, x + padding + sectionW + sectionGap],
+    ].forEach(([title, lh, rh, sectionX]) => {
+      const sx = Number(sectionX);
+      drawText(String(title), sx, sectionY + cellH + 6, 6.4, boldFont, red);
+      drawShimCell("LH", String(lh), sx, sectionY, cellW, cellH);
+      drawShimCell("RH", String(rh), sx + cellW + cellGap, sectionY, cellW, cellH);
+    });
+  }
+
   function drawStatusPill(text: string, x: number, y: number, width: number, isIllegal: boolean) {
     const fill = isIllegal ? rgb(0.2, 0.035, 0.045) : rgb(0.025, 0.16, 0.08);
     const color = isIllegal ? red : green;
@@ -564,7 +661,13 @@ async function buildLegalityPdf(payload: NormalisedLegalityEmailPayload) {
     });
 
     const safeName = wrapTextByWidth(shortName.toUpperCase(), boldFont, 6.6, width - 38).slice(0, 1)[0] || shortName.toUpperCase();
-    drawText(safeName, x + 6, y + 9, 6.6, boldFont, white);
+    drawText(safeName, x + 6, y + 12, 6.6, boldFont, white);
+
+    const heightText = formatHeightNotation(item);
+    if (heightText) {
+      drawText(heightText.toUpperCase(), x + 6, y + 4.5, 5.2, boldFont, grey);
+    }
+
     drawStatusPill(isIllegal ? "Red" : "Legal", x + width - 34, y + 5, 28, isIllegal);
   }
 
@@ -691,7 +794,7 @@ async function buildLegalityPdf(payload: NormalisedLegalityEmailPayload) {
     });
   }
 
-  function drawFooter(text = "PDF layout: legality-v10-camber-spare-wing") {
+  function drawFooter(text = "PDF layout: legality-v11-height-notation-shims") {
     drawText(text, pageWidth - 154, 18, 5.5, normalFont, grey);
   }
 
@@ -756,11 +859,13 @@ async function buildLegalityPdf(payload: NormalisedLegalityEmailPayload) {
     height: 98,
   });
 
+  drawWingShimPanel(18, 398, pageWidth - 36, 74);
+
   if (spareWingItems.length > 0) {
-    drawSpareWingPanel(18, 350, pageWidth - 36, 116);
-    drawTotalCarPanel(18, 42, pageWidth - 36, 288);
+    drawSpareWingPanel(18, 276, pageWidth - 36, 106);
+    drawTotalCarPanel(18, 42, pageWidth - 36, 214);
   } else {
-    drawTotalCarPanel(18, 42, pageWidth - 36, 424);
+    drawTotalCarPanel(18, 42, pageWidth - 36, 340);
   }
 
   drawText(`Summary: ${summary}`, 18, 24, 9, boldFont, illegalItems.length ? red : green);
@@ -864,6 +969,17 @@ async function buildLegalityPdf(payload: NormalisedLegalityEmailPayload) {
       formatCamber,
     );
 
+    drawCompactMeasurementLine(
+      "Wing shims",
+      [
+        ["Main LH", payload.wing_shims.main_lh],
+        ["Main RH", payload.wing_shims.main_rh],
+        ["Spare LH", payload.wing_shims.spare_lh],
+        ["Spare RH", payload.wing_shims.spare_rh],
+      ],
+      formatShim,
+    );
+
     page.drawRectangle({ x: margin, y: y - 7, width: usableWidth, height: 18, color: panelBlack });
     drawListText("COMPONENT", margin + 6, 7, boldFont, white);
     drawListText("SIDE", margin + 126, 7, boldFont, white);
@@ -883,7 +999,10 @@ async function buildLegalityPdf(payload: NormalisedLegalityEmailPayload) {
 
   sortedItems.forEach((item) => {
     const isIllegal = item.status === "illegal";
-    const noteText = isIllegal ? item.illegal_note || "Missing note" : item.item_position || "—";
+    const legalHeightText = formatHeightNotation(item);
+    const noteText = isIllegal
+      ? item.illegal_note || "Missing note"
+      : [item.item_position || "—", legalHeightText].filter(Boolean).join(" · ");
     const noteLines = wrapTextByWidth(noteText, normalFont, 8, 290);
     const rowHeight = Math.max(28, noteLines.length * 10 + 14);
 
@@ -1052,6 +1171,7 @@ export async function POST(request: NextRequest) {
       created_by: clean(rawPayload.created_by) || getRequestUserEmail(request) || "Unknown",
       corner_weights: normaliseCornerWeights(rawPayload.corner_weights),
       camber_measurements: normaliseCamberMeasurements(rawPayload.camber_measurements),
+      wing_shims: normaliseWingShims(rawPayload.wing_shims),
       items,
     };
 
@@ -1120,6 +1240,7 @@ export async function POST(request: NextRequest) {
         `Driver: ${payload.driver}`,
         `Corner weights: FL ${formatWeight(payload.corner_weights.fl)} · FR ${formatWeight(payload.corner_weights.fr)} · RL ${formatWeight(payload.corner_weights.rl)} · RR ${formatWeight(payload.corner_weights.rr)} · Total ${formatWeight(payload.corner_weights.total)}`,
         `Camber: FL ${formatCamber(payload.camber_measurements.fl)} · FR ${formatCamber(payload.camber_measurements.fr)} · RL ${formatCamber(payload.camber_measurements.rl)} · RR ${formatCamber(payload.camber_measurements.rr)}`,
+        `Wing shims: Main LH ${formatShim(payload.wing_shims.main_lh)} · Main RH ${formatShim(payload.wing_shims.main_rh)} · Spare LH ${formatShim(payload.wing_shims.spare_lh)} · Spare RH ${formatShim(payload.wing_shims.spare_rh)}`,
         "",
         "Status Summary",
         summary,
@@ -1170,6 +1291,15 @@ export async function POST(request: NextRequest) {
                     FR ${escapeHtml(formatCamber(payload.camber_measurements.fr))}<br />
                     RL ${escapeHtml(formatCamber(payload.camber_measurements.rl))} ·
                     RR ${escapeHtml(formatCamber(payload.camber_measurements.rr))}
+                  </td>
+                </tr>
+                <tr>
+                  <td style="padding:9px 10px;font-weight:bold;border-bottom:1px solid #eee">Wing Shims</td>
+                  <td style="padding:9px 10px;border-bottom:1px solid #eee">
+                    Main LH ${escapeHtml(formatShim(payload.wing_shims.main_lh))} ·
+                    Main RH ${escapeHtml(formatShim(payload.wing_shims.main_rh))}<br />
+                    Spare LH ${escapeHtml(formatShim(payload.wing_shims.spare_lh))} ·
+                    Spare RH ${escapeHtml(formatShim(payload.wing_shims.spare_rh))}
                   </td>
                 </tr>
                 <tr>

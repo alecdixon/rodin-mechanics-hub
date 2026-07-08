@@ -42,6 +42,7 @@ type LegalityPoint = {
   y: number;
   sort_order: number;
   active: boolean;
+  heightNotationEnabled: boolean;
 };
 
 type LegalityLayoutPointRecord = {
@@ -55,6 +56,7 @@ type LegalityLayoutPointRecord = {
   y_percent: number | string | null;
   sort_order: number | null;
   active: boolean | null;
+  height_notation_enabled: boolean | null;
   created_by: string | null;
   created_at: string | null;
   updated_by: string | null;
@@ -64,6 +66,7 @@ type LegalityLayoutPointRecord = {
 type LegalityItemState = {
   status: LegalityStatus;
   illegal_note: string;
+  height_notation: string;
 };
 
 type LegalityCheckRecord = {
@@ -84,6 +87,10 @@ type LegalityCheckRecord = {
   camber_fr: number | string | null;
   camber_rl: number | string | null;
   camber_rr: number | string | null;
+  main_front_wing_shim_lh: string | null;
+  main_front_wing_shim_rh: string | null;
+  spare_front_wing_shim_lh: string | null;
+  spare_front_wing_shim_rh: string | null;
   sent_to_engineer_at: string | null;
   created_by: string | null;
   created_at: string | null;
@@ -100,6 +107,7 @@ type LegalityCheckItemRecord = {
   item_position: string | null;
   status: LegalityStatus;
   illegal_note: string | null;
+  height_notation: number | string | null;
   created_at: string | null;
   updated_at: string | null;
 };
@@ -121,6 +129,8 @@ type PdfItemPayload = {
   item_position: string;
   status: LegalityStatus;
   illegal_note: string | null;
+  height_notation_enabled: boolean;
+  height_notation: number | null;
 };
 
 type CornerWeights = {
@@ -138,6 +148,13 @@ type CamberMeasurements = {
   rr: string;
 };
 
+type WingShimSettings = {
+  main_lh: string;
+  main_rh: string;
+  spare_lh: string;
+  spare_rh: string;
+};
+
 const DEFAULT_CAR_COLOUR = "#b91c1c";
 
 const EMPTY_CORNER_WEIGHTS: CornerWeights = {
@@ -153,6 +170,13 @@ const EMPTY_CAMBER_MEASUREMENTS: CamberMeasurements = {
   fr: "",
   rl: "",
   rr: "",
+};
+
+const EMPTY_WING_SHIM_SETTINGS: WingShimSettings = {
+  main_lh: "",
+  main_rh: "",
+  spare_lh: "",
+  spare_rh: "",
 };
 
 const DEFAULT_CARS: DashboardCar[] = [
@@ -224,6 +248,7 @@ const DEFAULT_LEGALITY_POINTS: LegalityPoint[] = [
     y: 58,
     sort_order: 1,
     active: true,
+    heightNotationEnabled: true,
   },
   {
     key: "spare_fw",
@@ -235,6 +260,7 @@ const DEFAULT_LEGALITY_POINTS: LegalityPoint[] = [
     y: 28,
     sort_order: 2,
     active: true,
+    heightNotationEnabled: false,
   },
   {
     key: "spare_fwep_rh",
@@ -246,6 +272,7 @@ const DEFAULT_LEGALITY_POINTS: LegalityPoint[] = [
     y: 58,
     sort_order: 3,
     active: true,
+    heightNotationEnabled: true,
   },
   {
     key: "fw_lh",
@@ -257,6 +284,7 @@ const DEFAULT_LEGALITY_POINTS: LegalityPoint[] = [
     y: 18,
     sort_order: 10,
     active: true,
+    heightNotationEnabled: false,
   },
   {
     key: "fwep_lh",
@@ -268,6 +296,7 @@ const DEFAULT_LEGALITY_POINTS: LegalityPoint[] = [
     y: 26,
     sort_order: 20,
     active: true,
+    heightNotationEnabled: true,
   },
   {
     key: "front_lh",
@@ -279,6 +308,7 @@ const DEFAULT_LEGALITY_POINTS: LegalityPoint[] = [
     y: 43,
     sort_order: 30,
     active: true,
+    heightNotationEnabled: false,
   },
   {
     key: "mid_lh",
@@ -290,6 +320,7 @@ const DEFAULT_LEGALITY_POINTS: LegalityPoint[] = [
     y: 58,
     sort_order: 40,
     active: true,
+    heightNotationEnabled: false,
   },
   {
     key: "rear_lh",
@@ -301,6 +332,7 @@ const DEFAULT_LEGALITY_POINTS: LegalityPoint[] = [
     y: 74,
     sort_order: 50,
     active: true,
+    heightNotationEnabled: false,
   },
   {
     key: "diffuser_lh",
@@ -312,6 +344,7 @@ const DEFAULT_LEGALITY_POINTS: LegalityPoint[] = [
     y: 85,
     sort_order: 60,
     active: true,
+    heightNotationEnabled: false,
   },
   {
     key: "fw_rh",
@@ -323,6 +356,7 @@ const DEFAULT_LEGALITY_POINTS: LegalityPoint[] = [
     y: 18,
     sort_order: 70,
     active: true,
+    heightNotationEnabled: false,
   },
   {
     key: "fwep_rh",
@@ -334,6 +368,7 @@ const DEFAULT_LEGALITY_POINTS: LegalityPoint[] = [
     y: 26,
     sort_order: 80,
     active: true,
+    heightNotationEnabled: true,
   },
   {
     key: "front_rh",
@@ -345,6 +380,7 @@ const DEFAULT_LEGALITY_POINTS: LegalityPoint[] = [
     y: 43,
     sort_order: 90,
     active: true,
+    heightNotationEnabled: false,
   },
   {
     key: "mid_rh",
@@ -356,6 +392,7 @@ const DEFAULT_LEGALITY_POINTS: LegalityPoint[] = [
     y: 58,
     sort_order: 100,
     active: true,
+    heightNotationEnabled: false,
   },
   {
     key: "rear_rh",
@@ -367,6 +404,7 @@ const DEFAULT_LEGALITY_POINTS: LegalityPoint[] = [
     y: 74,
     sort_order: 110,
     active: true,
+    heightNotationEnabled: false,
   },
   {
     key: "diffuser_rh",
@@ -378,6 +416,7 @@ const DEFAULT_LEGALITY_POINTS: LegalityPoint[] = [
     y: 85,
     sort_order: 120,
     active: true,
+    heightNotationEnabled: false,
   },
   {
     key: "rw_gap",
@@ -389,6 +428,7 @@ const DEFAULT_LEGALITY_POINTS: LegalityPoint[] = [
     y: 95,
     sort_order: 130,
     active: true,
+    heightNotationEnabled: false,
   },
 ];
 
@@ -416,6 +456,42 @@ function cleanCamberInput(value: string) {
     withoutExtraMinus.slice(0, firstDecimalIndex + 1) +
     withoutExtraMinus.slice(firstDecimalIndex + 1).replace(/\./g, "")
   );
+}
+
+function cleanShimInput(value: string) {
+  return value.replace(/[^a-zA-Z0-9 .+\-_/]/g, "").slice(0, 32);
+}
+
+function shimValueForDatabase(value: string) {
+  const cleanValue = value.trim();
+  return cleanValue || null;
+}
+
+function shimValueFromDatabase(value: string | number | null | undefined) {
+  if (value === null || value === undefined) return "";
+  return String(value);
+}
+
+function cleanHeightNotationValue(value: string) {
+  if (value === "") return "";
+
+  const numericValue = Number(value);
+  if (!Number.isFinite(numericValue)) return "";
+
+  return String(Math.min(5, Math.max(0, Math.round(numericValue))));
+}
+
+function heightNotationValueForDatabase(value: string) {
+  const cleanValue = cleanHeightNotationValue(value);
+  if (!cleanValue) return null;
+
+  const numericValue = Number(cleanValue);
+  return Number.isFinite(numericValue) ? numericValue : null;
+}
+
+function heightNotationValueFromDatabase(value: number | string | null | undefined) {
+  if (value === null || value === undefined) return "";
+  return cleanHeightNotationValue(String(value));
 }
 
 function weightValueForDatabase(value: string) {
@@ -450,6 +526,15 @@ function camberMeasurementsFromCheck(check: LegalityCheckRecord): CamberMeasurem
   };
 }
 
+function wingShimSettingsFromCheck(check: LegalityCheckRecord): WingShimSettings {
+  return {
+    main_lh: shimValueFromDatabase(check.main_front_wing_shim_lh),
+    main_rh: shimValueFromDatabase(check.main_front_wing_shim_rh),
+    spare_lh: shimValueFromDatabase(check.spare_front_wing_shim_lh),
+    spare_rh: shimValueFromDatabase(check.spare_front_wing_shim_rh),
+  };
+}
+
 function withTimeout<T>(promise: Promise<T>, timeoutMs: number, fallback: T) {
   return Promise.race<T>([
     promise,
@@ -473,6 +558,7 @@ function normaliseLayoutPoint(
     y: clampPercent(Number(point.y_percent ?? 50)),
     sort_order: point.sort_order ?? fallbackIndex + 1,
     active: point.active ?? true,
+    heightNotationEnabled: point.height_notation_enabled ?? false,
   };
 }
 
@@ -512,6 +598,7 @@ function createDefaultItemState(
     state[point.key] = {
       status: "legal",
       illegal_note: "",
+      height_notation: "",
     };
 
     return state;
@@ -614,6 +701,7 @@ function getPointState(
     itemStates[key] ?? {
       status: "legal",
       illegal_note: "",
+      height_notation: "",
     }
   );
 }
@@ -642,8 +730,8 @@ function canEditLegalitySheetForUser(email: string, role: UserRole) {
   return canEditLegality(email) || LEGALITY_SHEET_EDITOR_ROLES.has(role);
 }
 
-function canEditLegalityLayoutForUser(email: string) {
-  return !isReadOnlyUser(email) && canEditLegality(email);
+function canEditLegalityLayoutForUser(email: string, role: UserRole) {
+  return !isReadOnlyUser(email) && (role === "chief_mechanic" || canEditLegality(email));
 }
 
 function LegalityCarOverview({
@@ -660,6 +748,7 @@ function LegalityCarOverview({
   onMarkPointLegal,
   onCloseInlineNote,
   onNoteChange,
+  onHeightNotationChange,
 }: {
   points: LegalityPoint[];
   itemStates: Record<string, LegalityItemState>;
@@ -674,6 +763,7 @@ function LegalityCarOverview({
   onMarkPointLegal: (key: string) => void;
   onCloseInlineNote: () => void;
   onNoteChange: (key: string, note: string) => void;
+  onHeightNotationChange: (key: string, value: string) => void;
 }) {
   const canvasRef = useRef<HTMLDivElement>(null);
 
@@ -690,6 +780,57 @@ function LegalityCarOverview({
     const y = clampPercent(((event.clientY - rect.top) / rect.height) * 100);
 
     onMoveLayoutPoint(key, x, y);
+  }
+
+  function renderHeightNotationSelector(point: LegalityPoint, state: LegalityItemState) {
+    if (!point.heightNotationEnabled || layoutEditMode || state.status !== "legal") {
+      return null;
+    }
+
+    return (
+      <div
+        className="mt-2 rounded-xl border border-zinc-700 bg-[#070a0f]/95 p-2 shadow-xl backdrop-blur-sm"
+        onClick={(event) => event.stopPropagation()}
+        onPointerDown={(event) => event.stopPropagation()}
+      >
+        <div className="mb-1 flex items-center justify-between gap-2">
+          <span className="text-[8px] font-black uppercase tracking-[0.18em] text-zinc-400">
+            Height
+          </span>
+          <span className="text-[8px] font-semibold uppercase tracking-[0.12em] text-zinc-500">
+            0 Low · 5 High
+          </span>
+        </div>
+        <div className="grid grid-cols-6 gap-1">
+          {["0", "1", "2", "3", "4", "5"].map((value) => {
+            const active = state.height_notation === value;
+
+            return (
+              <button
+                key={value}
+                type="button"
+                disabled={readOnly}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onHeightNotationChange(
+                    point.key,
+                    active ? "" : value,
+                  );
+                }}
+                className={`rounded-lg border px-1.5 py-1 text-[9px] font-black transition ${
+                  active
+                    ? "border-green-300 bg-green-600 text-white"
+                    : "border-zinc-700 bg-[#111418] text-zinc-300 hover:border-green-500 hover:text-green-100"
+                } disabled:cursor-not-allowed disabled:opacity-70`}
+                title={value === "0" ? "Low touching" : value === "5" ? "High touching" : `Height notation ${value}`}
+              >
+                {value}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+    );
   }
 
   return (
@@ -796,6 +937,8 @@ function LegalityCarOverview({
               )}
             </button>
 
+            {renderHeightNotationSelector(point, state)}
+
             {isIllegal && activeInlineNoteKey === point.key && !layoutEditMode && (
               <div
                 className={`absolute ${noteVerticalClass} ${noteHorizontalClass} z-40 block w-[280px] rounded-2xl border border-red-600 bg-red-950/95 p-3 text-left shadow-2xl shadow-red-950/60 backdrop-blur-md`}
@@ -881,6 +1024,7 @@ function LegalitySpareWingOverview({
   onMarkPointLegal,
   onCloseInlineNote,
   onNoteChange,
+  onHeightNotationChange,
 }: {
   points: LegalityPoint[];
   itemStates: Record<string, LegalityItemState>;
@@ -895,6 +1039,7 @@ function LegalitySpareWingOverview({
   onMarkPointLegal: (key: string) => void;
   onCloseInlineNote: () => void;
   onNoteChange: (key: string, note: string) => void;
+  onHeightNotationChange: (key: string, value: string) => void;
 }) {
   const canvasRef = useRef<HTMLDivElement>(null);
 
@@ -913,23 +1058,72 @@ function LegalitySpareWingOverview({
     onMoveLayoutPoint(key, x, y);
   }
 
+  function renderHeightNotationSelector(point: LegalityPoint, state: LegalityItemState) {
+    if (!point.heightNotationEnabled || layoutEditMode || state.status !== "legal") {
+      return null;
+    }
+
+    return (
+      <div
+        className="mt-2 rounded-xl border border-zinc-700 bg-[#070a0f]/95 p-2 shadow-xl backdrop-blur-sm"
+        onClick={(event) => event.stopPropagation()}
+        onPointerDown={(event) => event.stopPropagation()}
+      >
+        <div className="mb-1 flex items-center justify-between gap-2">
+          <span className="text-[8px] font-black uppercase tracking-[0.18em] text-zinc-400">
+            Height
+          </span>
+          <span className="text-[8px] font-semibold uppercase tracking-[0.12em] text-zinc-500">
+            0 Low · 5 High
+          </span>
+        </div>
+        <div className="grid grid-cols-6 gap-1">
+          {["0", "1", "2", "3", "4", "5"].map((value) => {
+            const active = state.height_notation === value;
+
+            return (
+              <button
+                key={value}
+                type="button"
+                disabled={readOnly}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onHeightNotationChange(
+                    point.key,
+                    active ? "" : value,
+                  );
+                }}
+                className={`rounded-lg border px-1.5 py-1 text-[9px] font-black transition ${
+                  active
+                    ? "border-green-300 bg-green-600 text-white"
+                    : "border-zinc-700 bg-[#111418] text-zinc-300 hover:border-green-500 hover:text-green-100"
+                } disabled:cursor-not-allowed disabled:opacity-70`}
+                title={value === "0" ? "Low touching" : value === "5" ? "High touching" : `Height notation ${value}`}
+              >
+                {value}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+    );
+  }
+
   if (points.length === 0) return null;
 
   return (
     <div
       ref={canvasRef}
-      className="relative mx-auto min-h-[210px] w-full overflow-visible rounded-[2rem] border border-zinc-700 bg-[#030507] shadow-inner shadow-black/40"
+      className="relative mx-auto aspect-[12/7] min-h-[220px] w-full overflow-visible rounded-[2rem] border border-zinc-700 bg-[#030507] shadow-inner shadow-black/40"
     >
       <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(to_right,rgba(82,82,91,0.34)_1px,transparent_1px),linear-gradient(to_bottom,rgba(82,82,91,0.34)_1px,transparent_1px)] bg-[size:28px_28px]" />
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(239,68,68,0.12),transparent_58%)]" />
 
-      <div className="pointer-events-none absolute left-[23%] right-[23%] top-[48%] h-px bg-zinc-100/80 shadow-[0_0_10px_rgba(255,255,255,0.25)]" />
-      <div className="pointer-events-none absolute left-[23%] top-[48%] h-px w-[25%] origin-right -rotate-[16deg] bg-zinc-100/80 shadow-[0_0_10px_rgba(255,255,255,0.2)]" />
-      <div className="pointer-events-none absolute right-[23%] top-[48%] h-px w-[25%] origin-left rotate-[16deg] bg-zinc-100/80 shadow-[0_0_10px_rgba(255,255,255,0.2)]" />
-      <div className="pointer-events-none absolute left-[21%] top-[40%] h-[28%] w-[4px] rounded-full border border-zinc-100/70" />
-      <div className="pointer-events-none absolute right-[21%] top-[40%] h-[28%] w-[4px] rounded-full border border-zinc-100/70" />
-      <div className="pointer-events-none absolute left-1/2 top-[35%] h-[42%] w-[9%] -translate-x-1/2 rounded-t-full border-x border-t border-zinc-100/70" />
-      <div className="pointer-events-none absolute inset-x-[18%] top-[18%] h-[64%] border-x border-zinc-600/70" />
+      <img
+        src="/legality-spare-front-wing.png"
+        alt="Top-down spare front wing legality overview"
+        className="pointer-events-none absolute inset-[6%] h-[88%] w-[88%] object-contain opacity-95 [filter:contrast(1.08)_drop-shadow(0_0_10px_rgba(255,255,255,0.10))]"
+      />
 
       {points.map((point) => {
         const state = getPointState(itemStates, point.key);
@@ -1017,6 +1211,8 @@ function LegalitySpareWingOverview({
                 </div>
               )}
             </button>
+
+            {renderHeightNotationSelector(point, state)}
 
             {isIllegal && activeInlineNoteKey === point.key && !layoutEditMode && (
               <div
@@ -1106,6 +1302,7 @@ export default function LegalityPage() {
   const [driver, setDriver] = useState(DEFAULT_CARS[0].name);
   const [cornerWeights, setCornerWeights] = useState<CornerWeights>(EMPTY_CORNER_WEIGHTS);
   const [camberMeasurements, setCamberMeasurements] = useState<CamberMeasurements>(EMPTY_CAMBER_MEASUREMENTS);
+  const [wingShimSettings, setWingShimSettings] = useState<WingShimSettings>(EMPTY_WING_SHIM_SETTINGS);
   const [activeCheckId, setActiveCheckId] = useState<string | null>(null);
   const [lastSentToEngineerAt, setLastSentToEngineerAt] = useState<string | null>(null);
   const [layoutPoints, setLayoutPoints] = useState<LegalityPoint[]>(
@@ -1158,6 +1355,7 @@ export default function LegalityPage() {
   }, [customCircuit, selectedCircuit]);
 
   const selectedCarHasEmail = Boolean(selectedEngineer.engineerEmail.trim());
+  const canEditWingShims = !readOnly && (userRole === "chief_mechanic" || canEditLayout);
 
   const dirtyStatus = useMemo(() => {
     const illegalItems = activeLayoutPoints.filter(
@@ -1195,7 +1393,7 @@ export default function LegalityPage() {
     const { data, error } = await supabase
       .from("legality_layout_points")
       .select(
-        "id,point_key,label,short_label,side,position,x_percent,y_percent,sort_order,active,created_by,created_at,updated_by,updated_at",
+        "id,point_key,label,short_label,side,position,x_percent,y_percent,sort_order,active,height_notation_enabled,created_by,created_at,updated_by,updated_at",
       )
       .eq("active", true)
       .order("sort_order", { ascending: true });
@@ -1330,7 +1528,7 @@ export default function LegalityPage() {
         setUserRole(resolvedPageRole);
         setAssignedCar(resolvedAssignedCar);
         setReadOnly(!canEditLegalitySheetForUser(resolvedEmail, resolvedPageRole));
-        setCanEditLayout(canEditLegalityLayoutForUser(resolvedEmail));
+        setCanEditLayout(canEditLegalityLayoutForUser(resolvedEmail, resolvedPageRole));
 
         await withTimeout(loadCars(), 2500, DEFAULT_CARS);
         layoutForHistory = await withTimeout(
@@ -1388,6 +1586,25 @@ export default function LegalityPage() {
     }));
   }
 
+  function updateWingShimSetting(key: keyof WingShimSettings, value: string) {
+    if (!canEditWingShims) return;
+
+    setWingShimSettings((current) => ({
+      ...current,
+      [key]: cleanShimInput(value),
+    }));
+  }
+
+  function updateHeightNotation(key: string, value: string) {
+    setItemStates((current) => ({
+      ...current,
+      [key]: {
+        ...getPointState(current, key),
+        height_notation: cleanHeightNotationValue(value),
+      },
+    }));
+  }
+
   function updatePointStatus(key: string, status: LegalityStatus) {
     setItemStates((current) => ({
       ...current,
@@ -1396,6 +1613,8 @@ export default function LegalityPage() {
         status,
         illegal_note:
           status === "legal" ? "" : getPointState(current, key).illegal_note,
+        height_notation:
+          status === "legal" ? getPointState(current, key).height_notation : "",
       },
     }));
 
@@ -1473,6 +1692,7 @@ export default function LegalityPage() {
       sort_order:
         Math.max(0, ...layoutPoints.map((point) => point.sort_order)) + 10,
       active: true,
+      heightNotationEnabled: false,
     };
 
     setLayoutPoints((current) => sortLayoutPoints([...current, nextPoint]));
@@ -1482,6 +1702,7 @@ export default function LegalityPage() {
       [key]: {
         status: "legal",
         illegal_note: "",
+        height_notation: "",
       },
     }));
   }
@@ -1542,6 +1763,7 @@ export default function LegalityPage() {
             y_percent: point.y,
             sort_order: point.sort_order,
             active: true,
+            height_notation_enabled: point.heightNotationEnabled,
             updated_by: userEmail,
           })),
           {
@@ -1599,6 +1821,7 @@ export default function LegalityPage() {
     setDriver(car?.name ?? "");
     setCornerWeights(EMPTY_CORNER_WEIGHTS);
     setCamberMeasurements(EMPTY_CAMBER_MEASUREMENTS);
+    setWingShimSettings(EMPTY_WING_SHIM_SETTINGS);
     setLastSentToEngineerAt(null);
     setActiveInlineNoteKey(null);
     setItemStates(createDefaultItemState(activeLayoutPoints));
@@ -1627,6 +1850,7 @@ export default function LegalityPage() {
       nextState[item.item_key] = {
         status: item.status,
         illegal_note: item.illegal_note ?? "",
+        height_notation: heightNotationValueFromDatabase(item.height_notation),
       };
     });
 
@@ -1637,6 +1861,7 @@ export default function LegalityPage() {
     setDriver(check.driver ?? "");
     setCornerWeights(cornerWeightsFromCheck(check));
     setCamberMeasurements(camberMeasurementsFromCheck(check));
+    setWingShimSettings(wingShimSettingsFromCheck(check));
     setLastSentToEngineerAt(check.sent_to_engineer_at ?? null);
     setActiveInlineNoteKey(
       check.items.find((item) => item.status === "illegal")?.item_key ?? null,
@@ -1689,6 +1914,10 @@ export default function LegalityPage() {
     return activeLayoutPoints.map((point) => {
       const state = getPointState(itemStates, point.key);
       const illegalNote = state.status === "illegal" ? state.illegal_note.trim() : null;
+      const heightNotation =
+        point.heightNotationEnabled && state.status === "legal"
+          ? heightNotationValueForDatabase(state.height_notation)
+          : null;
 
       return {
         item_key: point.key,
@@ -1697,6 +1926,8 @@ export default function LegalityPage() {
         item_position: point.position,
         status: state.status,
         illegal_note: illegalNote,
+        height_notation_enabled: point.heightNotationEnabled,
+        height_notation: heightNotation,
       };
     });
   }
@@ -1720,6 +1951,7 @@ export default function LegalityPage() {
         engineer_email: selectedEngineer.engineerEmail,
         corner_weights: cornerWeights,
         camber_measurements: camberMeasurements,
+        wing_shims: wingShimSettings,
         created_by: userEmail,
         items,
       }),
@@ -1807,6 +2039,10 @@ export default function LegalityPage() {
             camber_fr: weightValueForDatabase(camberMeasurements.fr),
             camber_rl: weightValueForDatabase(camberMeasurements.rl),
             camber_rr: weightValueForDatabase(camberMeasurements.rr),
+            main_front_wing_shim_lh: shimValueForDatabase(wingShimSettings.main_lh),
+            main_front_wing_shim_rh: shimValueForDatabase(wingShimSettings.main_rh),
+            spare_front_wing_shim_lh: shimValueForDatabase(wingShimSettings.spare_lh),
+            spare_front_wing_shim_rh: shimValueForDatabase(wingShimSettings.spare_rh),
             updated_by: userEmail,
             updated_at: now,
           })
@@ -1835,6 +2071,10 @@ export default function LegalityPage() {
             camber_fr: weightValueForDatabase(camberMeasurements.fr),
             camber_rl: weightValueForDatabase(camberMeasurements.rl),
             camber_rr: weightValueForDatabase(camberMeasurements.rr),
+            main_front_wing_shim_lh: shimValueForDatabase(wingShimSettings.main_lh),
+            main_front_wing_shim_rh: shimValueForDatabase(wingShimSettings.main_rh),
+            spare_front_wing_shim_lh: shimValueForDatabase(wingShimSettings.spare_lh),
+            spare_front_wing_shim_rh: shimValueForDatabase(wingShimSettings.spare_rh),
             created_by: userEmail,
             updated_by: userEmail,
             updated_at: now,
@@ -1866,6 +2106,7 @@ export default function LegalityPage() {
             item_position: item.item_position,
             status: item.status,
             illegal_note: item.illegal_note,
+            height_notation: item.height_notation,
             updated_at: now,
           })),
           {
@@ -2278,6 +2519,29 @@ export default function LegalityPage() {
                     />
                   </label>
 
+                  <label className="rounded-2xl border border-zinc-700 bg-[#111418] p-4">
+                    <div className="flex items-start gap-3">
+                      <input
+                        type="checkbox"
+                        checked={selectedLayoutPoint.heightNotationEnabled}
+                        onChange={(event) =>
+                          updateLayoutPoint(selectedLayoutPoint.key, {
+                            heightNotationEnabled: event.target.checked,
+                          })
+                        }
+                        className="mt-1 h-4 w-4 accent-red-600"
+                      />
+                      <div>
+                        <span className="text-xs font-semibold uppercase tracking-[0.24em] text-zinc-500">
+                          Height Notation
+                        </span>
+                        <p className="mt-2 text-xs leading-5 text-zinc-400">
+                          Adds a 0-5 selector to this legality box when the item is legal. 0 = low touching, 5 = high touching.
+                        </p>
+                      </div>
+                    </div>
+                  </label>
+
                   <label>
                     <span className="text-xs font-semibold uppercase tracking-[0.24em] text-zinc-500">
                       Horizontal Position
@@ -2597,6 +2861,54 @@ export default function LegalityPage() {
                   ))}
                 </div>
               </div>
+
+              <div className="border-t border-zinc-800 pt-5">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <p className="text-[10px] font-black uppercase tracking-[0.28em] text-zinc-400">
+                      Front Wing Shim Record
+                    </p>
+                    <p className="mt-1 text-xs leading-5 text-zinc-400">
+                      Chief mechanic record of the shims currently fitted to the main and spare front wings.
+                    </p>
+                  </div>
+                  <span className={`rounded-full border px-3 py-1 text-[10px] font-black uppercase tracking-[0.2em] ${canEditWingShims ? "border-red-800 bg-red-950/30 text-red-200" : "border-zinc-700 bg-[#0b0f14] text-zinc-400"}`}>
+                    {canEditWingShims ? "Chief Edit" : "Read Only"}
+                  </span>
+                </div>
+
+                <div className="mt-3 grid gap-4 md:grid-cols-2">
+                  {[
+                    ["Main Front Wing", "main_lh", "main_rh"],
+                    ["Spare Front Wing", "spare_lh", "spare_rh"],
+                  ].map(([title, lhKey, rhKey]) => (
+                    <div key={title} className="rounded-2xl border border-zinc-700 bg-[#0b0f14] p-4">
+                      <p className="text-[10px] font-black uppercase tracking-[0.24em] text-zinc-500">
+                        {title}
+                      </p>
+                      <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                        {([
+                          [lhKey, "LH Shim"],
+                          [rhKey, "RH Shim"],
+                        ] as const).map(([key, label]) => (
+                          <label key={key}>
+                            <span className="text-[10px] font-black uppercase tracking-[0.2em] text-zinc-500">
+                              {label}
+                            </span>
+                            <input
+                              disabled={!canEditWingShims}
+                              value={wingShimSettings[key as keyof WingShimSettings]}
+                              onChange={(event) => updateWingShimSetting(key as keyof WingShimSettings, event.target.value)}
+                              placeholder="e.g. 1.0 mm"
+                              className="mt-2 w-full rounded-xl border border-zinc-700 bg-[#111418] px-4 py-3 text-sm font-bold text-zinc-100 outline-none transition placeholder:text-zinc-500 focus:border-red-500 disabled:cursor-not-allowed disabled:bg-zinc-900 disabled:text-zinc-500"
+                            />
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
             </div>
           </div>
 
@@ -2609,7 +2921,7 @@ export default function LegalityPage() {
                       Spare Front Wing
                     </p>
                     <p className="mt-1 text-xs leading-5 text-zinc-500">
-                      Three legality boxes for the spare wing: LFWEP, FW and RFWEP.
+                      Three legality boxes for the spare wing: LFWEP, FW and RFWEP, shown over the spare front wing image.
                     </p>
                   </div>
                   <span className="rounded-full border border-zinc-700 bg-[#0b0f14] px-3 py-1 text-[10px] font-black uppercase tracking-[0.2em] text-zinc-300">
@@ -2631,6 +2943,7 @@ export default function LegalityPage() {
                   onMarkPointLegal={markPointLegal}
                   onCloseInlineNote={() => setActiveInlineNoteKey(null)}
                   onNoteChange={updatePointNote}
+                  onHeightNotationChange={updateHeightNotation}
                 />
               </section>
 
@@ -2663,6 +2976,7 @@ export default function LegalityPage() {
                   onMarkPointLegal={markPointLegal}
                   onCloseInlineNote={() => setActiveInlineNoteKey(null)}
                   onNoteChange={updatePointNote}
+                  onHeightNotationChange={updateHeightNotation}
                 />
               </section>
             </div>
