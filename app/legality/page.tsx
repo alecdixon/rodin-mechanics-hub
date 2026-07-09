@@ -1354,6 +1354,10 @@ export default function LegalityPage() {
     return selectedCircuit === "Other" ? customCircuit.trim() : selectedCircuit;
   }, [customCircuit, selectedCircuit]);
 
+  const pdfDriverName = useMemo(() => {
+    return driver.trim() || selectedCar?.name || `Car ${selectedCarId}`;
+  }, [driver, selectedCar, selectedCarId]);
+
   const selectedCarHasEmail = Boolean(selectedEngineer.engineerEmail.trim());
   const canEditWingShims = !readOnly && (userRole === "chief_mechanic" || canEditLayout);
 
@@ -1872,8 +1876,6 @@ export default function LegalityPage() {
   }
 
   function validateSheet() {
-    const cleanDriver = driver.trim();
-
     if (!selectedCarId) {
       return "Select a car.";
     }
@@ -1884,10 +1886,6 @@ export default function LegalityPage() {
 
     if (!finalCircuit) {
       return "Select a circuit. Use Other if the circuit is not in the list.";
-    }
-
-    if (!cleanDriver) {
-      return "Driver is missing. Select the car again or enter the driver manually.";
     }
 
     if (!selectedCarHasEmail) {
@@ -1944,7 +1942,7 @@ export default function LegalityPage() {
         check_id: checkId,
         car_id: selectedCarId,
         car_name: carLabel,
-        driver: driver.trim(),
+        driver: pdfDriverName,
         circuit: finalCircuit,
         check_date: checkDate,
         engineer_name: selectedEngineer.engineerName,
@@ -2013,7 +2011,7 @@ export default function LegalityPage() {
     setSaving(true);
 
     try {
-      const cleanDriver = driver.trim();
+      const cleanDriver = pdfDriverName;
       const now = new Date().toISOString();
       const existingCheckId = activeCheckId ?? activeExistingCheckForCarDateCircuit?.id ?? null;
 
