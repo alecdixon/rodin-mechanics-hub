@@ -449,7 +449,7 @@ export default function DashboardPage() {
   }, [activeClutches]);
 
   // The dashboard route is already protected above. Keep these main menu buttons visible
-  // so Legality and Plank Legality remain separate pages in the chief dashboard menu.
+  // so Surface Table Checks and Plank Legality remain separate pages in the chief dashboard menu.
 
   const totalJobs = useMemo(() => {
     return activeCars.reduce((sum, car) => sum + car.total, 0);
@@ -876,8 +876,8 @@ export default function DashboardPage() {
 
             <QuickLink
               href="/legality"
-              title="Legality"
-              description="Race car legality checks and sign-off sheet"
+              title="Surface Table Checks"
+              description="Surface table checks and sign-off sheet"
             />
 
             <QuickLink
