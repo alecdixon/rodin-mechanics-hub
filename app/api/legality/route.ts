@@ -7,6 +7,8 @@ import { canEditLegality } from "@/lib/userAccess";
 
 export const runtime = "nodejs";
 
+// SURFACE TABLE CHECKS API ROUTE - sends the completed report as HTML email body, not as a PDF.
+
 type LegalityStatus = "legal" | "illegal";
 
 type LegalityReportItem = {
@@ -1221,7 +1223,7 @@ export async function POST(request: NextRequest) {
       },
     });
 
-    await transporter.sendMail({
+    const mailResult = await transporter.sendMail({
       from: `"Surface Table Checks" <${gmailUser}>`,
       to,
       subject: `Surface Table Checks - ${payload.circuit} - ${payload.car_name} - ${summary}`,
@@ -1242,62 +1244,30 @@ export async function POST(request: NextRequest) {
         "Status Summary",
         summary,
         "",
-        "The completed surface table check is attached as an HTML file.",
+        "The completed surface table check is included in the HTML email body.",
       ].join("\n"),
-      html: `
-        <div style="font-family:Arial,sans-serif;line-height:1.5;color:#111;background:#f6f7f9;padding:24px">
-          <div style="max-width:760px;margin:0 auto;border:1px solid #ddd;border-radius:14px;overflow:hidden;background:#ffffff">
-            <div style="background:#111827;color:white;padding:20px 24px">
-              <p style="margin:0 0 6px;color:#f87171;font-size:12px;letter-spacing:0.18em;text-transform:uppercase;font-weight:bold">
-                Surface Table Checks Report
-              </p>
-
-              <h2 style="margin:0;font-size:24px">
-                ${escapeHtml(payload.car_name)}
-              </h2>
-
-              <p style="margin:8px 0 0;color:#d1d5db">
-                ${escapeHtml(payload.circuit)} · ${escapeHtml(formatReportDate(payload.check_date))} · ${escapeHtml(payload.driver)}
-              </p>
-            </div>
-
-            <div style="padding:22px 24px">
-              <table style="border-collapse:collapse;width:100%;font-size:14px;margin-bottom:20px">
-                <tr>
-                  <td style="padding:9px 10px;font-weight:bold;border-bottom:1px solid #eee;width:180px">Engineer</td>
-                  <td style="padding:9px 10px;border-bottom:1px solid #eee">${escapeHtml(payload.engineer_name)}</td>
-                </tr>
-                <tr>
-                  <td style="padding:9px 10px;font-weight:bold;border-bottom:1px solid #eee">Engineer Email</td>
-                  <td style="padding:9px 10px;border-bottom:1px solid #eee">${escapeHtml(to)}</td>
-                </tr>
-                <tr>
-                  <td style="padding:9px 10px;font-weight:bold;border-bottom:1px solid #eee">Summary</td>
-                  <td style="padding:9px 10px;border-bottom:1px solid #eee"><strong>${escapeHtml(summary)}</strong></td>
-                </tr>
-              </table>
-
-              <p style="margin:0 0 14px;font-size:14px;color:#374151">
-                A browser-openable HTML copy of the completed surface table check is attached.
-              </p>
-
-              ${
-                illegalCount > 0
-                  ? `<div style="border:1px solid #fecaca;background:#fef2f2;color:#991b1b;border-radius:10px;padding:12px 14px;font-size:14px"><strong>${escapeHtml(illegalCount)} illegal item(s)</strong> were recorded. Open the HTML attachment for the full notes.</div>`
-                  : `<div style="border:1px solid #bbf7d0;background:#f0fdf4;color:#166534;border-radius:10px;padding:12px 14px;font-size:14px"><strong>All checked items are legal.</strong></div>`
-              }
-            </div>
-          </div>
-        </div>
-      `,
-      attachments: [
-        {
-          filename: safeFileName,
-          content: htmlBuffer,
-          contentType: "text/html; charset=utf-8",
-        },
-      ],
+      html,
     });
+
+    const accepted = Array.isArray(mailResult.accepted)
+      ? mailResult.accepted.map(String)
+      : [];
+    const rejected = Array.isArray(mailResult.rejected)
+      ? mailResult.rejected.map(String)
+      : [];
+
+    if (rejected.length > 0 && accepted.length === 0) {
+      return NextResponse.json(
+        {
+          error: "Surface table check email was rejected by the mail server.",
+          sent_to: to,
+          accepted,
+          rejected,
+          message_id: mailResult.messageId ?? null,
+        },
+        { status: 502 },
+      );
+    }
 
     return NextResponse.json({
       ok: true,
@@ -1305,7 +1275,10 @@ export async function POST(request: NextRequest) {
       engineer_name: payload.engineer_name,
       circuit: payload.circuit,
       check_date: payload.check_date,
-      attachment_type: "html",
+      delivery_mode: "html_email_body",
+      accepted,
+      rejected,
+      message_id: mailResult.messageId ?? null,
     });
   } catch (error) {
     const rawMessage =
