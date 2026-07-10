@@ -293,7 +293,7 @@ export default function SurfaceTableReportPage() {
 
       try {
         const [{ data: checkData, error: checkError }, { data: itemData, error: itemError }, { data: layoutData }] = await Promise.all([
-          supabase.from("legality_checks").select("*").eq("id", checkId).single(),
+          supabase.from("legality_checks").select("*").eq("id", checkId).limit(1).maybeSingle(),
           supabase.from("legality_check_items").select("*").eq("legality_check_id", checkId),
           supabase.from("legality_layout_points").select("point_key, label, short_label, side, position, x_percent, y_percent, sort_order, active, height_notation_enabled").eq("active", true),
         ]);
@@ -438,3 +438,4 @@ export default function SurfaceTableReportPage() {
     </main>
   );
 }
+
