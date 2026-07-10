@@ -91,26 +91,26 @@ const DEFAULT_LEGALITY_POINTS: LegalityPoint[] = [
 ];
 
 function niceDate(value: string | null | undefined) {
-  if (!value) return "—";
+  if (!value) return "ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â";
   const date = new Date(`${value}T00:00:00`);
   if (Number.isNaN(date.getTime())) return value;
   return date.toLocaleDateString("en-GB", { day: "2-digit", month: "2-digit", year: "numeric" });
 }
 
 function niceDateTime(value: string | null | undefined) {
-  if (!value) return "—";
+  if (!value) return "ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â";
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
   return date.toLocaleString("en-GB", { day: "2-digit", month: "2-digit", year: "2-digit", hour: "2-digit", minute: "2-digit" });
 }
 
 function valueText(value: string | number | null | undefined, suffix = "") {
-  if (value === null || value === undefined || value === "") return "—";
+  if (value === null || value === undefined || value === "") return "ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â";
   return `${value}${suffix}`;
 }
 
 function heightText(item: LegalityCheckItemRecord) {
-  if (item.height_notation === null || item.height_notation === undefined || item.height_notation === "") return "—";
+  if (item.height_notation === null || item.height_notation === undefined || item.height_notation === "") return "ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â";
   return `${item.height_notation}/5`;
 }
 
@@ -255,11 +255,11 @@ function ItemTable({ title, items, points }: { title: string; items: LegalityChe
               return (
                 <tr key={item.id} className={`border-t border-zinc-800 ${isIllegal ? "bg-red-950/30" : "bg-[#0d0f12]"}`}>
                   <td className="px-4 py-3 font-semibold text-zinc-100">{item.item_name}</td>
-                  <td className="px-4 py-3 text-zinc-300">{item.item_side || "—"}</td>
-                  <td className="px-4 py-3 text-zinc-400">{item.item_position || "—"}</td>
+                  <td className="px-4 py-3 text-zinc-300">{item.item_side || "ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â"}</td>
+                  <td className="px-4 py-3 text-zinc-400">{item.item_position || "ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â"}</td>
                   <td className="px-4 py-3 text-zinc-300">{heightText(item)}</td>
                   <td className={`px-4 py-3 font-black uppercase ${isIllegal ? "text-red-300" : "text-green-300"}`}>{item.status}</td>
-                  <td className="px-4 py-3 text-zinc-300">{item.illegal_note || "—"}</td>
+                  <td className="px-4 py-3 text-zinc-300">{item.illegal_note || "ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â"}</td>
                 </tr>
               );
             })}
@@ -325,7 +325,7 @@ export default function SurfaceTableReportPage() {
   const sparePoints = useMemo(() => layoutPoints.filter((point) => isSpareWingPointKey(point.key)), [layoutPoints]);
   const carPoints = useMemo(() => layoutPoints.filter((point) => !isSpareWingPointKey(point.key)), [layoutPoints]);
   const illegalItems = useMemo(() => items.filter((item) => item.status === "illegal"), [items]);
-  const summary = items.length === 0 ? "No items saved" : illegalItems.length === 0 ? `${items.length}/${items.length} legal` : `${illegalItems.length} illegal · ${items.length - illegalItems.length} legal`;
+  const summary = items.length === 0 ? "No items saved" : illegalItems.length === 0 ? `${items.length}/${items.length} legal` : `${illegalItems.length} illegal Ãƒâ€šÃ‚Â· ${items.length - illegalItems.length} legal`;
 
   if (loading) {
     return <main className="flex min-h-screen items-center justify-center bg-[#0d0f12] text-zinc-400">Loading surface table report...</main>;
@@ -365,10 +365,10 @@ export default function SurfaceTableReportPage() {
 
         <section className="grid gap-4 md:grid-cols-5">
           <SummaryCard label="Date" value={niceDate(check.check_date)} />
-          <SummaryCard label="Circuit" value={check.circuit || "—"} />
+          <SummaryCard label="Circuit" value={check.circuit || "ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â"} />
           <SummaryCard label="Car" value={`Car ${check.car_id}`} />
-          <SummaryCard label="Driver" value={check.driver || "—"} />
-          <SummaryCard label="Engineer" value={check.engineer_name || "—"} />
+          <SummaryCard label="Driver" value={check.driver || "ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â"} />
+          <SummaryCard label="Engineer" value={check.engineer_name || "ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â"} />
         </section>
 
         <section className="grid gap-6 xl:grid-cols-[430px_1fr]">
@@ -388,10 +388,10 @@ export default function SurfaceTableReportPage() {
               title="Camber Measurements"
               unit="deg"
               values={[
-                ["FL", valueText(check.camber_fl, "°")],
-                ["FR", valueText(check.camber_fr, "°")],
-                ["RL", valueText(check.camber_rl, "°")],
-                ["RR", valueText(check.camber_rr, "°")],
+                ["FL", valueText(check.camber_fl, "Ãƒâ€šÃ‚Â°")],
+                ["FR", valueText(check.camber_fr, "Ãƒâ€šÃ‚Â°")],
+                ["RL", valueText(check.camber_rl, "Ãƒâ€šÃ‚Â°")],
+                ["RR", valueText(check.camber_rr, "Ãƒâ€šÃ‚Â°")],
               ]}
             />
             <MeasurementBlock
@@ -432,10 +432,11 @@ export default function SurfaceTableReportPage() {
         </section>
 
         <footer className="pb-8 text-xs text-zinc-500">
-          Report opened from link · Check ID {check.id} · Sent {niceDateTime(check.sent_to_engineer_at)}
+          Report opened from link Ãƒâ€šÃ‚Â· Check ID {check.id} Ãƒâ€šÃ‚Â· Sent {niceDateTime(check.sent_to_engineer_at)}
         </footer>
       </div>
     </main>
   );
 }
+
 

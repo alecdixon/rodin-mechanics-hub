@@ -165,7 +165,7 @@ function normaliseWingShims(shims: Partial<WingShims> | null | undefined): Norma
 }
 
 function formatShim(value: string) {
-  return value ? value : "—";
+  return value ? value : "â€”";
 }
 
 function cleanHeightNotation(value: string | number | null | undefined) {
@@ -182,15 +182,15 @@ function formatHeightNotation(item: LegalityReportItem) {
 
 function heightLabel(item: LegalityReportItem) {
   const height = formatHeightNotation(item).replace("Height ", "");
-  return height || "—";
+  return height || "â€”";
 }
 
 function formatWeight(value: string) {
-  return value ? `${value} kg` : "—";
+  return value ? `${value} kg` : "â€”";
 }
 
 function formatCamber(value: string) {
-  return value ? `${value}°` : "—";
+  return value ? `${value}Â°` : "â€”";
 }
 
 function getFallbackEngineerEmailForCar(carId: number) {
@@ -297,7 +297,7 @@ function buildFriendlyEmailError(rawMessage: string) {
   return {
     error: "Surface table check HTML notification failed while sending the engineer email.",
     likely_cause:
-      "The surface table check may have saved, but the HTML email attachment failed.",
+      "The surface table check may have saved, but the browser report link email failed.",
     fix: "Check the technical_error value, then verify Gmail/Vercel environment variables.",
   };
 }
@@ -397,7 +397,7 @@ function makeInfoCard(label: string, value: string) {
   return `
     <div class="info-card">
       <div class="label">${escapeHtml(label)}</div>
-      <div class="value">${escapeHtml(value || "—")}</div>
+      <div class="value">${escapeHtml(value || "â€”")}</div>
     </div>
   `;
 }
@@ -406,7 +406,7 @@ function makeMeasurementCard(label: string, value: string) {
   return `
     <div class="measurement-card">
       <div class="label">${escapeHtml(label)}</div>
-      <div class="measurement-value">${escapeHtml(value || "—")}</div>
+      <div class="measurement-value">${escapeHtml(value || "â€”")}</div>
     </div>
   `;
 }
@@ -425,7 +425,7 @@ function makeStatusCard(item: LegalityReportItem) {
     <div class="status-card ${statusClass(item)}">
       <div>
         <div class="status-title">${escapeHtml(shortItemName(item))}</div>
-        <div class="status-meta">${escapeHtml(item.item_side || "—")} · ${escapeHtml(heightLabel(item))}</div>
+        <div class="status-meta">${escapeHtml(item.item_side || "â€”")} Â· ${escapeHtml(heightLabel(item))}</div>
       </div>
       <div class="badge ${statusClass(item)}">${escapeHtml(statusText(item))}</div>
     </div>
@@ -436,11 +436,11 @@ function makeStatusRow(item: LegalityReportItem) {
   return `
     <tr class="${statusClass(item)}">
       <td>${escapeHtml(shortItemName(item))}</td>
-      <td>${escapeHtml(item.item_side || "—")}</td>
-      <td>${escapeHtml(item.item_position || "—")}</td>
+      <td>${escapeHtml(item.item_side || "â€”")}</td>
+      <td>${escapeHtml(item.item_position || "â€”")}</td>
       <td>${escapeHtml(heightLabel(item))}</td>
       <td><span class="badge ${statusClass(item)}">${escapeHtml(statusText(item))}</span></td>
-      <td>${item.status === "illegal" ? escapeHtml(item.illegal_note || "Missing note") : "—"}</td>
+      <td>${item.status === "illegal" ? escapeHtml(item.illegal_note || "Missing note") : "â€”"}</td>
     </tr>
   `;
 }
@@ -474,7 +474,7 @@ async function buildLegalityHtml(payload: NormalisedLegalityEmailPayload) {
   const summary =
     illegalItems.length === 0
       ? `${payload.items.length}/${payload.items.length} legal`
-      : `${illegalItems.length} illegal · ${legalCount} legal`;
+      : `${illegalItems.length} illegal Â· ${legalCount} legal`;
 
   const rodinLogo = await tryReadPublicImageDataUrl("rodin-logo.png");
   const gb3Logo = await tryReadPublicImageDataUrl("gb3-logo.png");
@@ -926,7 +926,7 @@ async function buildLegalityHtml(payload: NormalisedLegalityEmailPayload) {
         <div>
           <p class="eyebrow">Rodin Motorsport</p>
           <h1>Surface Table Checks</h1>
-          <p class="subtitle">Completed mechanic sheet copy · ${escapeHtml(formatReportDate(payload.check_date))} · ${escapeHtml(payload.circuit)}</p>
+          <p class="subtitle">Completed mechanic sheet copy Â· ${escapeHtml(formatReportDate(payload.check_date))} Â· ${escapeHtml(payload.circuit)}</p>
         </div>
         <div class="summary-pill ${illegalItems.length ? "illegal" : "legal"}">${escapeHtml(summary)}</div>
       </header>
@@ -1019,7 +1019,7 @@ async function buildLegalityHtml(payload: NormalisedLegalityEmailPayload) {
         <div>
           <p class="eyebrow">Individual Elements</p>
           <h1>Surface Point Results</h1>
-          <p class="subtitle">${escapeHtml(payload.car_name)} · ${escapeHtml(payload.circuit)} · ${escapeHtml(formatReportDate(payload.check_date))}</p>
+          <p class="subtitle">${escapeHtml(payload.car_name)} Â· ${escapeHtml(payload.circuit)} Â· ${escapeHtml(formatReportDate(payload.check_date))}</p>
         </div>
         <div class="summary-pill ${illegalItems.length ? "illegal" : "legal"}">${escapeHtml(summary)}</div>
       </header>
@@ -1123,7 +1123,7 @@ function buildReportLinkEmailHtml(args: {
           </table>
 
           <a href="${safeReportUrl}" style="display:inline-block;background:#dc2626;color:#ffffff;text-decoration:none;font-weight:800;border-radius:14px;padding:14px 20px">
-            Open Surface Table Report
+            Open Surface Table Check
           </a>
 
           <p style="margin:18px 0 0;color:#a1a1aa;font-size:12px">
@@ -1221,15 +1221,22 @@ export async function POST(request: NextRequest) {
     const summary =
       illegalCount === 0
         ? `${payload.items.length}/${payload.items.length} legal`
-        : `${illegalCount} illegal · ${payload.items.length - illegalCount} legal`;
+        : `${illegalCount} illegal Â· ${payload.items.length - illegalCount} legal`;
 
     const requestOrigin = new URL(request.url).origin;
     const configuredOrigin = process.env.NEXT_PUBLIC_SITE_URL?.trim() || process.env.NEXT_PUBLIC_APP_URL?.trim();
     const origin = configuredOrigin || requestOrigin;
-    const reportUrl = payload.check_id
-      ? `${origin}/legality/report/${encodeURIComponent(payload.check_id)}`
-      : `${origin}/legality`;
+    if (!payload.check_id) {
+      return NextResponse.json(
+        {
+          error: "No surface table check ID was supplied, so a browser report link could not be created.",
+          details: "Save the surface table check first, then send or resend the email.",
+        },
+        { status: 400 },
+      );
+    }
 
+    const reportUrl = `${origin}/legality/report/${encodeURIComponent(payload.check_id)}?v=${Date.now()}`;
     if (downloadOnly) {
       return NextResponse.redirect(reportUrl, 303);
     }
@@ -1279,9 +1286,9 @@ export async function POST(request: NextRequest) {
         `Circuit: ${payload.circuit}`,
         `Car: ${payload.car_name}`,
         `Driver: ${payload.driver}`,
-        `Corner weights: FL ${formatWeight(payload.corner_weights.fl)} · FR ${formatWeight(payload.corner_weights.fr)} · RL ${formatWeight(payload.corner_weights.rl)} · RR ${formatWeight(payload.corner_weights.rr)} · Total ${formatWeight(payload.corner_weights.total)}`,
-        `Camber: FL ${formatCamber(payload.camber_measurements.fl)} · FR ${formatCamber(payload.camber_measurements.fr)} · RL ${formatCamber(payload.camber_measurements.rl)} · RR ${formatCamber(payload.camber_measurements.rr)}`,
-        `Wing shims: Main LH ${formatShim(payload.wing_shims.main_lh)} · Main RH ${formatShim(payload.wing_shims.main_rh)} · Spare LH ${formatShim(payload.wing_shims.spare_lh)} · Spare RH ${formatShim(payload.wing_shims.spare_rh)}`,
+        `Corner weights: FL ${formatWeight(payload.corner_weights.fl)} Â· FR ${formatWeight(payload.corner_weights.fr)} Â· RL ${formatWeight(payload.corner_weights.rl)} Â· RR ${formatWeight(payload.corner_weights.rr)} Â· Total ${formatWeight(payload.corner_weights.total)}`,
+        `Camber: FL ${formatCamber(payload.camber_measurements.fl)} Â· FR ${formatCamber(payload.camber_measurements.fr)} Â· RL ${formatCamber(payload.camber_measurements.rl)} Â· RR ${formatCamber(payload.camber_measurements.rr)}`,
+        `Wing shims: Main LH ${formatShim(payload.wing_shims.main_lh)} Â· Main RH ${formatShim(payload.wing_shims.main_rh)} Â· Spare LH ${formatShim(payload.wing_shims.spare_lh)} Â· Spare RH ${formatShim(payload.wing_shims.spare_rh)}`,
         "",
         "Status Summary",
         summary,
