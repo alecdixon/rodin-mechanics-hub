@@ -1,23 +1,15 @@
-// SURFACE TABLE CHECKS API ROUTE - NOT DRIVER DEBRIEF - v17 no driver required
+// SURFACE TABLE CHECKS API ROUTE - HTML ATTACHMENT VERSION - v18 no PDF / no driver requirement
 import { NextRequest, NextResponse } from "next/server";
 import nodemailer from "nodemailer";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
-import {
-  PDFDocument,
-  StandardFonts,
-  rgb,
-  type PDFImage,
-  type PDFPage,
-  type PDFFont,
-} from "pdf-lib";
 import { canEditLegality } from "@/lib/userAccess";
 
 export const runtime = "nodejs";
 
 type LegalityStatus = "legal" | "illegal";
 
-type LegalityPdfItem = {
+type LegalityReportItem = {
   item_key: string;
   item_name: string;
   item_side: string;
@@ -86,7 +78,7 @@ type LegalityEmailPayload = {
   camber_measurements?: Partial<CamberMeasurements> | null;
   wing_shims?: Partial<WingShims> | null;
   download_only?: boolean | null;
-  items?: LegalityPdfItem[];
+  items?: LegalityReportItem[];
 };
 
 type NormalisedLegalityEmailPayload = {
@@ -102,7 +94,7 @@ type NormalisedLegalityEmailPayload = {
   corner_weights: NormalisedCornerWeights;
   camber_measurements: NormalisedCamberMeasurements;
   wing_shims: NormalisedWingShims;
-  items: LegalityPdfItem[];
+  items: LegalityReportItem[];
 };
 
 function getRequestUserEmail(request: NextRequest) {
@@ -115,7 +107,7 @@ function blockUnauthorisedUser(request: NextRequest) {
   if (!userEmail || !canEditLegality(userEmail)) {
     return NextResponse.json(
       {
-        error: "Only authorised users can send legality PDF emails.",
+        error: "Only authorised users can send surface table check emails.",
       },
       { status: 403 },
     );
@@ -179,11 +171,16 @@ function cleanHeightNotation(value: string | number | null | undefined) {
   return /^[0-5]$/.test(cleanValue) ? cleanValue : "";
 }
 
-function formatHeightNotation(item: LegalityPdfItem) {
+function formatHeightNotation(item: LegalityReportItem) {
   if (!item.height_notation_enabled || item.status !== "legal") return "";
 
   const notation = cleanHeightNotation(item.height_notation);
   return notation ? `Height ${notation}/5` : "Height not recorded";
+}
+
+function heightLabel(item: LegalityReportItem) {
+  const height = formatHeightNotation(item).replace("Height ", "");
+  return height || "—";
 }
 
 function formatWeight(value: string) {
@@ -296,699 +293,802 @@ function buildFriendlyEmailError(rawMessage: string) {
   }
 
   return {
-    error: "Surface table check PDF notification failed while sending the engineer email.",
+    error: "Surface table check HTML notification failed while sending the engineer email.",
     likely_cause:
-      "The legality report may have saved, but the PDF email notification failed.",
+      "The surface table check may have saved, but the HTML email attachment failed.",
     fix: "Check the technical_error value, then verify Gmail/Vercel environment variables.",
   };
 }
 
-function wrapTextByWidth(
-  text: string,
-  font: PDFFont,
-  fontSize: number,
-  maxWidth: number,
-) {
-  const words = text.split(/\s+/).filter(Boolean);
-  const lines: string[] = [];
-  let line = "";
-
-  words.forEach((word) => {
-    const nextLine = line ? `${line} ${word}` : word;
-    const width = font.widthOfTextAtSize(nextLine, fontSize);
-
-    if (width > maxWidth && line) {
-      lines.push(line);
-      line = word;
-      return;
-    }
-
-    line = nextLine;
-  });
-
-  if (line) lines.push(line);
-  return lines.length > 0 ? lines : [""];
-}
-
-async function tryEmbedPng(pdfDoc: PDFDocument, fileName: string) {
-  try {
-    const filePath = path.join(process.cwd(), "public", fileName);
-    const bytes = await readFile(filePath);
-    return await pdfDoc.embedPng(bytes);
-  } catch {
-    return null;
-  }
-}
-
-function drawFittedImage(
-  page: PDFPage,
-  image: PDFImage,
-  x: number,
-  y: number,
-  maxWidth: number,
-  maxHeight: number,
-) {
-  const imageRatio = image.width / image.height;
-  const boxRatio = maxWidth / maxHeight;
-  const width = imageRatio > boxRatio ? maxWidth : maxHeight * imageRatio;
-  const height = imageRatio > boxRatio ? maxWidth / imageRatio : maxHeight;
-
-  page.drawImage(image, {
-    x: x + (maxWidth - width) / 2,
-    y: y + (maxHeight - height) / 2,
-    width,
-    height,
-  });
-}
-
-function drawOutlinedBox(
-  page: PDFPage,
-  x: number,
-  y: number,
-  width: number,
-  height: number,
-  border = rgb(0.78, 0.78, 0.82),
-  fill = rgb(1, 1, 1),
-) {
-  page.drawRectangle({
-    x,
-    y,
-    width,
-    height,
-    color: fill,
-    borderColor: border,
-    borderWidth: 0.75,
-  });
-}
-
-function isSpareWingItem(item: LegalityPdfItem) {
+function isSpareWingItem(item: LegalityReportItem) {
   const key = item.item_key.toLowerCase();
   const name = item.item_name.toLowerCase();
 
   return key.startsWith("spare_") || name.includes("spare front wing");
 }
 
-async function buildLegalityPdf(payload: NormalisedLegalityEmailPayload) {
-  const pdfDoc = await PDFDocument.create();
-  const normalFont = await pdfDoc.embedFont(StandardFonts.Helvetica);
-  const boldFont = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
+function shortItemName(item: LegalityReportItem) {
+  const sidePattern =
+    item.item_side === "LH" || item.item_side === "RH"
+      ? new RegExp(`\\s+${item.item_side}$`, "i")
+      : null;
 
-  const rodinLogo = await tryEmbedPng(pdfDoc, "rodin-logo.png");
-  const gb3Logo = await tryEmbedPng(pdfDoc, "gb3-logo.png");
-  const carOverviewImage = await tryEmbedPng(pdfDoc, "legality-car-overview-inverted.png");
-  const spareWingOverviewImage = await tryEmbedPng(pdfDoc, "legality-spare-front-wing.png");
+  const withoutSide = sidePattern
+    ? item.item_name.replace(sidePattern, "").trim()
+    : item.item_name.trim();
 
-  // Landscape A4 is much closer to the wide mechanics screen than portrait A4.
-  const pageSize: [number, number] = [841.89, 595.28];
-  const pageWidth = pageSize[0];
-  const pageHeight = pageSize[1];
-  let page = pdfDoc.addPage(pageSize);
+  const name = withoutSide
+    .replace(/spare front wing/gi, "Spare FW")
+    .replace(/front wing endplate/gi, "FWEP")
+    .replace(/endplate/gi, "EP")
+    .replace(/front wing/gi, "FW")
+    .trim();
 
-  const green = rgb(0.06, 0.78, 0.34);
-  const greenDark = rgb(0.025, 0.16, 0.08);
-  const red = rgb(0.88, 0.03, 0.02);
-  const redDark = rgb(0.20, 0.035, 0.045);
-  const amber = rgb(0.93, 0.67, 0.13);
-  const white = rgb(0.94, 0.95, 0.97);
-  const grey = rgb(0.63, 0.66, 0.72);
-  const muted = rgb(0.42, 0.45, 0.52);
-  const borderGrey = rgb(0.22, 0.25, 0.30);
-  const sheetBlack = rgb(0.012, 0.016, 0.024);
-  const headerBlack = rgb(0.035, 0.041, 0.052);
-  const panelBlack = rgb(0.050, 0.060, 0.076);
-  const panelBlack2 = rgb(0.035, 0.045, 0.060);
-  const cellBlack = rgb(0.020, 0.026, 0.038);
+  return name || withoutSide || item.item_name;
+}
 
+function sortForSheet(items: LegalityReportItem[]) {
+  const order = [
+    "spare_fwep_lh",
+    "spare_fw",
+    "spare_fwep_rh",
+    "fw_lh",
+    "fwep_lh",
+    "front_lh",
+    "mid_lh",
+    "rear_lh",
+    "diffuser_lh",
+    "rw_gap",
+    "fw_rh",
+    "fwep_rh",
+    "front_rh",
+    "mid_rh",
+    "rear_rh",
+    "diffuser_rh",
+  ];
+
+  return [...items].sort((a, b) => {
+    const aIndex = order.indexOf(a.item_key);
+    const bIndex = order.indexOf(b.item_key);
+    if (aIndex !== -1 || bIndex !== -1) {
+      return (aIndex === -1 ? 999 : aIndex) - (bIndex === -1 ? 999 : bIndex);
+    }
+    const aSide = a.item_side === "LH" ? 0 : a.item_side === "RH" ? 2 : 1;
+    const bSide = b.item_side === "LH" ? 0 : b.item_side === "RH" ? 2 : 1;
+    return aSide - bSide || a.item_name.localeCompare(b.item_name);
+  });
+}
+
+function orderedSpareWingItems(items: LegalityReportItem[]) {
+  const order = ["spare_fwep_lh", "spare_fw", "spare_fwep_rh"];
+  return [...items].sort((a, b) => {
+    const aIndex = order.indexOf(a.item_key);
+    const bIndex = order.indexOf(b.item_key);
+    return (
+      (aIndex === -1 ? 99 : aIndex) - (bIndex === -1 ? 99 : bIndex) ||
+      a.item_name.localeCompare(b.item_name)
+    );
+  });
+}
+
+function statusText(item: LegalityReportItem) {
+  return item.status === "illegal" ? "Illegal" : "Legal";
+}
+
+function statusClass(item: LegalityReportItem) {
+  return item.status === "illegal" ? "illegal" : "legal";
+}
+
+async function tryReadPublicImageDataUrl(fileName: string) {
+  try {
+    const filePath = path.join(process.cwd(), "public", fileName);
+    const bytes = await readFile(filePath);
+    const lower = fileName.toLowerCase();
+    const contentType = lower.endsWith(".jpg") || lower.endsWith(".jpeg") ? "image/jpeg" : "image/png";
+    return `data:${contentType};base64,${Buffer.from(bytes).toString("base64")}`;
+  } catch {
+    return "";
+  }
+}
+
+function makeInfoCard(label: string, value: string) {
+  return `
+    <div class="info-card">
+      <div class="label">${escapeHtml(label)}</div>
+      <div class="value">${escapeHtml(value || "—")}</div>
+    </div>
+  `;
+}
+
+function makeMeasurementCard(label: string, value: string) {
+  return `
+    <div class="measurement-card">
+      <div class="label">${escapeHtml(label)}</div>
+      <div class="measurement-value">${escapeHtml(value || "—")}</div>
+    </div>
+  `;
+}
+
+function makeShimCard(label: string, value: string) {
+  return `
+    <div class="measurement-card compact">
+      <div class="label">${escapeHtml(label)}</div>
+      <div class="measurement-value small-value">${escapeHtml(formatShim(value))}</div>
+    </div>
+  `;
+}
+
+function makeStatusCard(item: LegalityReportItem) {
+  return `
+    <div class="status-card ${statusClass(item)}">
+      <div>
+        <div class="status-title">${escapeHtml(shortItemName(item))}</div>
+        <div class="status-meta">${escapeHtml(item.item_side || "—")} · ${escapeHtml(heightLabel(item))}</div>
+      </div>
+      <div class="badge ${statusClass(item)}">${escapeHtml(statusText(item))}</div>
+    </div>
+  `;
+}
+
+function makeStatusRow(item: LegalityReportItem) {
+  return `
+    <tr class="${statusClass(item)}">
+      <td>${escapeHtml(shortItemName(item))}</td>
+      <td>${escapeHtml(item.item_side || "—")}</td>
+      <td>${escapeHtml(item.item_position || "—")}</td>
+      <td>${escapeHtml(heightLabel(item))}</td>
+      <td><span class="badge ${statusClass(item)}">${escapeHtml(statusText(item))}</span></td>
+      <td>${item.status === "illegal" ? escapeHtml(item.illegal_note || "Missing note") : "—"}</td>
+    </tr>
+  `;
+}
+
+function makeImagePanel(title: string, subtitle: string, imageDataUrl: string, alt: string) {
+  return `
+    <section class="panel visual-panel">
+      <div class="section-heading">
+        <div>
+          <p class="eyebrow">Visual Reference</p>
+          <h2>${escapeHtml(title)}</h2>
+          <p>${escapeHtml(subtitle)}</p>
+        </div>
+      </div>
+      <div class="visual-box">
+        ${
+          imageDataUrl
+            ? `<img src="${imageDataUrl}" alt="${escapeHtml(alt)}" />`
+            : `<div class="missing-image">Image not found in public folder</div>`
+        }
+      </div>
+    </section>
+  `;
+}
+
+async function buildLegalityHtml(payload: NormalisedLegalityEmailPayload) {
   const illegalItems = payload.items.filter((item) => item.status === "illegal");
-  const spareWingItems = payload.items.filter(isSpareWingItem);
-  const carItems = payload.items.filter((item) => !isSpareWingItem(item));
+  const spareWingItems = orderedSpareWingItems(payload.items.filter(isSpareWingItem));
+  const carItems = sortForSheet(payload.items.filter((item) => !isSpareWingItem(item)));
+  const legalCount = payload.items.length - illegalItems.length;
   const summary =
     illegalItems.length === 0
       ? `${payload.items.length}/${payload.items.length} legal`
-      : `${illegalItems.length} illegal - ${payload.items.length - illegalItems.length} legal`;
+      : `${illegalItems.length} illegal · ${legalCount} legal`;
 
-  function addSheetPage() {
-    const nextPage = pdfDoc.addPage(pageSize);
-    nextPage.drawRectangle({ x: 0, y: 0, width: pageWidth, height: pageHeight, color: sheetBlack });
-    return nextPage;
-  }
+  const rodinLogo = await tryReadPublicImageDataUrl("rodin-logo.png");
+  const gb3Logo = await tryReadPublicImageDataUrl("gb3-logo.png");
+  const carOverviewImage = await tryReadPublicImageDataUrl("legality-car-overview-inverted.png");
+  const spareWingImage = await tryReadPublicImageDataUrl("legality-spare-front-wing.png");
 
-  page.drawRectangle({ x: 0, y: 0, width: pageWidth, height: pageHeight, color: sheetBlack });
+  const leftCarItems = carItems.filter((item) => item.item_side === "LH");
+  const rightCarItems = carItems.filter((item) => item.item_side === "RH");
+  const centreCarItems = carItems.filter((item) => item.item_side !== "LH" && item.item_side !== "RH");
 
-  function safePdfText(value: string | number | null | undefined) {
-    return String(value ?? "")
-      .replace(/[\u2018\u2019]/g, "'")
-      .replace(/[\u201C\u201D]/g, '"')
-      .replace(/[\u2013\u2014]/g, "-")
-      .replace(/[\u2022]/g, "-");
-  }
+  const illegalNotes = illegalItems.length
+    ? illegalItems
+        .map(
+          (item) => `
+            <div class="note-row">
+              <strong>${escapeHtml(shortItemName(item))}</strong>
+              <span>${escapeHtml(item.illegal_note || "Missing note")}</span>
+            </div>
+          `,
+        )
+        .join("")
+    : `<div class="all-clear">All recorded surface table check items are legal.</div>`;
 
-  function drawText(
-    text: string,
-    x: number,
-    y: number,
-    size = 9,
-    font: PDFFont = normalFont,
-    color = white,
-  ) {
-    page.drawText(safePdfText(text), { x, y, size, font, color });
-  }
-
-  function fontWidth(text: string, font: PDFFont, size: number) {
-    return font.widthOfTextAtSize(safePdfText(text), size);
-  }
-
-  function drawCenteredText(
-    text: string,
-    x: number,
-    y: number,
-    width: number,
-    size: number,
-    font: PDFFont,
-    color = white,
-  ) {
-    drawText(text, x + width / 2 - fontWidth(text, font, size) / 2, y, size, font, color);
-  }
-
-  function drawWrappedText(
-    text: string,
-    x: number,
-    y: number,
-    width: number,
-    size: number,
-    font: PDFFont = normalFont,
-    color = white,
-    maxLines = 2,
-    lineHeight = size + 2,
-  ) {
-    const lines = wrapTextByWidth(safePdfText(text || "-"), font, size, width).slice(0, maxLines);
-    lines.forEach((line, index) => drawText(line, x, y - index * lineHeight, size, font, color));
-  }
-
-  function drawPanel(x: number, y: number, width: number, height: number, fill = panelBlack2) {
-    page.drawRectangle({
-      x,
-      y,
-      width,
-      height,
-      color: fill,
-      borderColor: borderGrey,
-      borderWidth: 0.85,
-    });
-  }
-
-  function drawSectionHeader(
-    title: string,
-    subtitle: string,
-    unit: string,
-    x: number,
-    y: number,
-    width: number,
-  ) {
-    drawText(title.toUpperCase(), x, y, 7.4, boldFont, red);
-    if (subtitle) {
-      drawWrappedText(subtitle, x, y - 11, width - 54, 5.8, normalFont, grey, 1, 7);
+  return `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Surface Table Checks - ${escapeHtml(payload.car_name)} - ${escapeHtml(payload.circuit)}</title>
+  <style>
+    :root {
+      --bg: #0d0f12;
+      --sheet: #0a0e14;
+      --panel: #111418;
+      --panel2: #14181d;
+      --cell: #070a0f;
+      --border: #2a3441;
+      --muted: #9ca3af;
+      --soft: #d1d5db;
+      --white: #f9fafb;
+      --red: #ef4444;
+      --red-dark: rgba(127, 29, 29, 0.55);
+      --green: #22c55e;
+      --green-dark: rgba(20, 83, 45, 0.48);
     }
 
-    if (unit) {
-      page.drawRectangle({
-        x: x + width - 48,
-        y: y - 5,
-        width: 48,
-        height: 15,
-        color: cellBlack,
-        borderColor: borderGrey,
-        borderWidth: 0.55,
-      });
-      drawCenteredText(unit.toUpperCase(), x + width - 48, y - 0.5, 48, 5.5, boldFont, grey);
-    }
-  }
+    * { box-sizing: border-box; }
 
-  function drawStatusPill(text: string, x: number, y: number, width: number, isIllegal: boolean) {
-    const color = isIllegal ? red : green;
-    const fill = isIllegal ? redDark : greenDark;
-    page.drawRectangle({ x, y, width, height: 15, color: fill, borderColor: color, borderWidth: 0.8 });
-    drawCenteredText(text.toUpperCase(), x, y + 4.8, width, 5.7, boldFont, color);
-  }
-
-  function drawReportHeader() {
-    const headerH = 84;
-    page.drawRectangle({ x: 0, y: pageHeight - headerH, width: pageWidth, height: headerH, color: headerBlack });
-    page.drawRectangle({ x: 0, y: pageHeight - headerH, width: pageWidth, height: 1, color: borderGrey });
-
-    if (rodinLogo) {
-      drawFittedImage(page, rodinLogo, 18, pageHeight - 59, 92, 38);
-    } else {
-      drawText("RODIN", 22, pageHeight - 33, 17, boldFont, white);
-      drawText("MOTORSPORT", 23, pageHeight - 46, 6.8, boldFont, grey);
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--white);
+      font-family: Arial, Helvetica, sans-serif;
+      -webkit-font-smoothing: antialiased;
     }
 
-    if (gb3Logo) {
-      drawFittedImage(page, gb3Logo, 21, pageHeight - 78, 58, 15);
+    .report {
+      max-width: 1280px;
+      margin: 0 auto;
+      padding: 24px;
     }
 
-    drawText("RODIN MOTORSPORT", 126, pageHeight - 27, 6.8, boldFont, grey);
-    drawText("SURFACE TABLE CHECKS", 126, pageHeight - 47, 21, boldFont, white);
-    drawText("Completed mechanic sheet copy", 128, pageHeight - 63, 7.6, normalFont, grey);
-    drawStatusPill(summary, 128, pageHeight - 80, 134, illegalItems.length > 0);
-
-    const infoX = 326;
-    const infoTop = pageHeight - 23;
-    const infoH = 26;
-    const gap = 6;
-
-    function infoBox(label: string, value: string, x: number, y: number, width: number) {
-      page.drawRectangle({
-        x,
-        y: y - infoH,
-        width,
-        height: infoH,
-        color: cellBlack,
-        borderColor: borderGrey,
-        borderWidth: 0.6,
-      });
-      drawText(label.toUpperCase(), x + 7, y - 8.5, 5.4, boldFont, grey);
-      drawWrappedText(value || "-", x + 7, y - 19, width - 14, 6.8, boldFont, white, 1, 7);
+    .page {
+      min-height: 820px;
+      margin-bottom: 24px;
+      overflow: hidden;
+      border: 1px solid var(--border);
+      border-radius: 32px;
+      background:
+        radial-gradient(circle at top right, rgba(239, 68, 68, 0.12), transparent 38%),
+        linear-gradient(135deg, #05070a 0%, #0a0e14 48%, #111418 100%);
+      box-shadow: 0 24px 80px rgba(0, 0, 0, 0.35);
     }
 
-    infoBox("Date", formatReportDate(payload.check_date), infoX, infoTop, 70);
-    infoBox("Circuit", payload.circuit, infoX + 70 + gap, infoTop, 92);
-    infoBox("Car", payload.car_name || `Car ${payload.car_id}`, infoX + 168 + gap, infoTop, 76);
-    infoBox("Driver", payload.driver, infoX, infoTop - 34, 138);
-    infoBox("Engineer", `${payload.engineer_name} / ${payload.engineer_email}`, infoX + 138 + gap, infoTop - 34, 207);
-  }
-
-  function drawMeasurementCell(
-    label: string,
-    helper: string,
-    value: string,
-    x: number,
-    y: number,
-    width: number,
-    height: number,
-  ) {
-    page.drawRectangle({
-      x,
-      y,
-      width,
-      height,
-      color: cellBlack,
-      borderColor: borderGrey,
-      borderWidth: 0.65,
-    });
-
-    // Keep these cells deliberately simple. The earlier layout drew a helper
-    // label and the value in the same shallow box, which made the PDF look as
-    // if text had been printed on multiple layers.
-    void helper;
-    drawText(label.toUpperCase(), x + 8, y + height - 11.5, 5.8, boldFont, grey);
-
-    const displayValue = value || "-";
-    const valueSize = displayValue.length > 11 ? 8.8 : 11.0;
-    drawText(displayValue, x + 8, y + 8, valueSize, boldFont, white);
-  }
-
-  function drawMeasurementBlock(args: {
-    title: string;
-    subtitle: string;
-    unit: string;
-    values: { fl: string; fr: string; rl: string; rr: string };
-    formatter: (value: string) => string;
-    x: number;
-    y: number;
-    width: number;
-    height: number;
-    total?: string;
-  }) {
-    const { title, subtitle, unit, values, formatter, x, y, width, height, total } = args;
-    drawPanel(x, y, width, height, panelBlack);
-
-    const padding = 12;
-    drawSectionHeader(title, subtitle, unit, x + padding, y + height - 16, width - padding * 2);
-
-    const gridX = x + padding;
-    const gridW = width - padding * 2;
-    const gap = 7;
-    const cellW = (gridW - gap) / 2;
-    const cellH = total !== undefined ? 29 : 32;
-    const topY = y + height - 69;
-    const rearY = topY - cellH - 7;
-
-    drawMeasurementCell("FL", "Front Left", formatter(values.fl), gridX, topY, cellW, cellH);
-    drawMeasurementCell("FR", "Front Right", formatter(values.fr), gridX + cellW + gap, topY, cellW, cellH);
-    drawMeasurementCell("RL", "Rear Left", formatter(values.rl), gridX, rearY, cellW, cellH);
-    drawMeasurementCell("RR", "Rear Right", formatter(values.rr), gridX + cellW + gap, rearY, cellW, cellH);
-
-    if (total !== undefined) {
-      drawMeasurementCell("TOTAL", "Total Weight", formatter(total), gridX, y + padding, gridW, 25);
-    }
-  }
-
-  function drawShimCell(label: string, value: string, x: number, y: number, width: number, height: number) {
-    page.drawRectangle({
-      x,
-      y,
-      width,
-      height,
-      color: cellBlack,
-      borderColor: borderGrey,
-      borderWidth: 0.6,
-    });
-    drawText(label.toUpperCase(), x + 7, y + height - 10.5, 5.5, boldFont, grey);
-    drawWrappedText(formatShim(value), x + 7, y + 7.2, width - 14, 8.4, boldFont, white, 1, 10);
-  }
-
-  function drawWingShimPanel(x: number, y: number, width: number, height: number) {
-    drawPanel(x, y, width, height, panelBlack);
-    drawSectionHeader(
-      "Front Wing Shim Record",
-      "Main and spare front wing shim packs.",
-      "shims",
-      x + 12,
-      y + height - 16,
-      width - 24,
-    );
-
-    const padding = 12;
-    const gap = 7;
-    const cellW = (width - padding * 2 - gap) / 2;
-    const cellH = 26;
-    const topY = y + 38;
-    const bottomY = y + 10;
-
-    drawShimCell("Main LH", payload.wing_shims.main_lh, x + padding, topY, cellW, cellH);
-    drawShimCell("Main RH", payload.wing_shims.main_rh, x + padding + cellW + gap, topY, cellW, cellH);
-    drawShimCell("Spare LH", payload.wing_shims.spare_lh, x + padding, bottomY, cellW, cellH);
-    drawShimCell("Spare RH", payload.wing_shims.spare_rh, x + padding + cellW + gap, bottomY, cellW, cellH);
-  }
-
-  function drawImagePanel(
-    title: string,
-    subtitle: string,
-    image: PDFImage | null,
-    x: number,
-    y: number,
-    width: number,
-    height: number,
-  ) {
-    drawPanel(x, y, width, height, panelBlack);
-    drawSectionHeader(title, subtitle, "", x + 12, y + height - 16, width - 24);
-
-    const imageX = x + 16;
-    const imageY = y + 14;
-    const imageW = width - 32;
-    const imageH = height - 48;
-
-    page.drawRectangle({
-      x: imageX,
-      y: imageY,
-      width: imageW,
-      height: imageH,
-      color: cellBlack,
-      borderColor: borderGrey,
-      borderWidth: 0.55,
-    });
-
-    if (!image) {
-      drawCenteredText("Image not available", imageX, imageY + imageH / 2 - 3, imageW, 8, normalFont, grey);
-      return;
+    .header {
+      display: grid;
+      grid-template-columns: 140px 1fr auto;
+      align-items: center;
+      gap: 24px;
+      min-height: 128px;
+      padding: 28px 34px;
+      border-bottom: 1px solid var(--border);
+      background: linear-gradient(90deg, rgba(0,0,0,0.62), rgba(17,20,24,0.86));
     }
 
-    drawFittedImage(page, image, imageX + 6, imageY + 6, imageW - 12, imageH - 12);
-  }
+    .logo-stack img {
+      display: block;
+      max-width: 112px;
+      max-height: 46px;
+      object-fit: contain;
+      margin-bottom: 10px;
+    }
 
-  function shortItemName(item: LegalityPdfItem) {
-    const sidePattern = item.item_side === "LH" || item.item_side === "RH" ? new RegExp(`\\s+${item.item_side}$`, "i") : null;
-    const withoutSide = sidePattern ? item.item_name.replace(sidePattern, "").trim() : item.item_name.trim();
-    const name = withoutSide
-      .replace(/spare front wing/gi, "Spare FW")
-      .replace(/front wing endplate/gi, "FWEP")
-      .replace(/endplate/gi, "EP")
-      .replace(/front wing/gi, "FW")
-      .trim();
+    .logo-fallback {
+      font-size: 20px;
+      font-weight: 900;
+      letter-spacing: 0.08em;
+    }
 
-    return name || withoutSide || item.item_name;
-  }
+    .eyebrow {
+      margin: 0 0 8px;
+      color: var(--red);
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: 0.34em;
+      text-transform: uppercase;
+    }
 
-  function sortForSheet(items: LegalityPdfItem[]) {
-    const order = [
-      "spare_fwep_lh",
-      "spare_fw",
-      "spare_fwep_rh",
-      "fw_lh",
-      "fwep_lh",
-      "front_lh",
-      "mid_lh",
-      "rear_lh",
-      "diffuser_lh",
-      "rw_gap",
-      "fw_rh",
-      "fwep_rh",
-      "front_rh",
-      "mid_rh",
-      "rear_rh",
-      "diffuser_rh",
-    ];
+    h1, h2, h3, p { margin-top: 0; }
 
-    return [...items].sort((a, b) => {
-      const aIndex = order.indexOf(a.item_key);
-      const bIndex = order.indexOf(b.item_key);
-      if (aIndex !== -1 || bIndex !== -1) {
-        return (aIndex === -1 ? 999 : aIndex) - (bIndex === -1 ? 999 : bIndex);
+    h1 {
+      margin-bottom: 8px;
+      font-size: 42px;
+      line-height: 0.98;
+      letter-spacing: -0.04em;
+    }
+
+    .subtitle {
+      margin: 0;
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.55;
+    }
+
+    .summary-pill,
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 999px;
+      border: 1px solid currentColor;
+      font-weight: 900;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+    }
+
+    .summary-pill {
+      min-width: 190px;
+      padding: 12px 18px;
+      font-size: 12px;
+    }
+
+    .summary-pill.legal,
+    .badge.legal { color: var(--green); background: var(--green-dark); }
+    .summary-pill.illegal,
+    .badge.illegal { color: var(--red); background: var(--red-dark); }
+
+    .summary-layout {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 430px;
+      gap: 20px;
+      padding: 24px;
+    }
+
+    .left-stack,
+    .visual-stack {
+      display: grid;
+      gap: 16px;
+      align-content: start;
+    }
+
+    .panel {
+      border: 1px solid var(--border);
+      border-radius: 24px;
+      background: rgba(17, 20, 24, 0.92);
+      box-shadow: inset 0 1px 0 rgba(255,255,255,0.03);
+      padding: 18px;
+    }
+
+    .section-heading {
+      display: flex;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 14px;
+    }
+
+    .section-heading h2 {
+      margin: 0 0 5px;
+      font-size: 21px;
+      letter-spacing: -0.02em;
+    }
+
+    .section-heading p:not(.eyebrow) {
+      margin: 0;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.45;
+    }
+
+    .unit-chip {
+      align-self: start;
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      background: var(--cell);
+      color: var(--muted);
+      padding: 7px 10px;
+      font-size: 10px;
+      font-weight: 900;
+      text-transform: uppercase;
+      letter-spacing: 0.16em;
+    }
+
+    .info-grid {
+      display: grid;
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+      gap: 10px;
+    }
+
+    .info-card,
+    .measurement-card {
+      min-height: 64px;
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      background: var(--cell);
+      padding: 12px;
+    }
+
+    .label {
+      margin-bottom: 8px;
+      color: var(--muted);
+      font-size: 10px;
+      font-weight: 900;
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+    }
+
+    .value {
+      color: var(--white);
+      font-size: 14px;
+      font-weight: 800;
+      line-height: 1.25;
+      word-break: break-word;
+    }
+
+    .measurement-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+    }
+
+    .measurement-grid.five {
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+    }
+
+    .measurement-grid.four {
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+    }
+
+    .measurement-card {
+      min-height: 76px;
+    }
+
+    .measurement-card.compact {
+      min-height: 62px;
+    }
+
+    .measurement-value {
+      color: var(--white);
+      font-size: 23px;
+      font-weight: 900;
+      line-height: 1;
+      letter-spacing: -0.04em;
+      white-space: nowrap;
+    }
+
+    .small-value { font-size: 18px; }
+
+    .visual-panel {
+      min-height: 256px;
+      padding-bottom: 16px;
+    }
+
+    .visual-box {
+      display: grid;
+      place-items: center;
+      min-height: 188px;
+      border: 1px solid var(--border);
+      border-radius: 22px;
+      background:
+        linear-gradient(to right, rgba(82,82,91,.20) 1px, transparent 1px),
+        linear-gradient(to bottom, rgba(82,82,91,.20) 1px, transparent 1px),
+        #030507;
+      background-size: 28px 28px;
+      overflow: hidden;
+    }
+
+    .visual-box img {
+      display: block;
+      width: 94%;
+      height: 218px;
+      object-fit: contain;
+      filter: contrast(1.1) drop-shadow(0 0 12px rgba(255,255,255,0.08));
+    }
+
+    .visual-panel:first-child .visual-box img {
+      height: 148px;
+    }
+
+    .missing-image {
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 800;
+    }
+
+    .status-cards {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 12px;
+    }
+
+    .status-card {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      min-height: 72px;
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      background: var(--cell);
+      padding: 13px;
+    }
+
+    .status-card.legal { border-color: rgba(34, 197, 94, 0.7); }
+    .status-card.illegal { border-color: rgba(239, 68, 68, 0.9); background: rgba(127, 29, 29, 0.34); }
+
+    .status-title {
+      font-size: 14px;
+      font-weight: 900;
+      line-height: 1.2;
+    }
+
+    .status-meta {
+      margin-top: 5px;
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 700;
+    }
+
+    .badge {
+      flex: 0 0 auto;
+      padding: 7px 10px;
+      font-size: 9px;
+    }
+
+    .details-content {
+      padding: 24px;
+      display: grid;
+      gap: 18px;
+    }
+
+    .two-column {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 18px;
+    }
+
+    .table-wrap {
+      overflow: hidden;
+      border: 1px solid var(--border);
+      border-radius: 18px;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 12px;
+    }
+
+    th {
+      background: #090d13;
+      color: var(--muted);
+      text-align: left;
+      font-size: 10px;
+      letter-spacing: 0.16em;
+      text-transform: uppercase;
+      padding: 10px 11px;
+    }
+
+    td {
+      border-top: 1px solid var(--border);
+      padding: 10px 11px;
+      color: var(--soft);
+      vertical-align: top;
+      line-height: 1.35;
+    }
+
+    tr.illegal td {
+      background: rgba(127, 29, 29, 0.28);
+      color: #fee2e2;
+    }
+
+    .note-list {
+      display: grid;
+      gap: 9px;
+    }
+
+    .note-row,
+    .all-clear {
+      border: 1px solid rgba(239, 68, 68, 0.55);
+      border-radius: 16px;
+      background: rgba(127, 29, 29, 0.32);
+      padding: 12px 14px;
+      font-size: 13px;
+      line-height: 1.4;
+    }
+
+    .note-row strong {
+      display: block;
+      margin-bottom: 3px;
+      color: #fecaca;
+    }
+
+    .all-clear {
+      border-color: rgba(34, 197, 94, 0.55);
+      background: rgba(20, 83, 45, 0.35);
+      color: #bbf7d0;
+      font-weight: 800;
+    }
+
+    .footer-note {
+      color: var(--muted);
+      font-size: 11px;
+      text-align: right;
+      padding: 0 28px 22px;
+    }
+
+    @media print {
+      @page { size: A4 landscape; margin: 8mm; }
+      body { background: white; }
+      .report { max-width: none; padding: 0; }
+      .page {
+        min-height: 183mm;
+        margin: 0;
+        border-radius: 0;
+        box-shadow: none;
+        page-break-after: always;
       }
-      const aSide = a.item_side === "LH" ? 0 : a.item_side === "RH" ? 2 : 1;
-      const bSide = b.item_side === "LH" ? 0 : b.item_side === "RH" ? 2 : 1;
-      return aSide - bSide || a.item_name.localeCompare(b.item_name);
-    });
-  }
-
-  function heightLabel(item: LegalityPdfItem) {
-    const height = formatHeightNotation(item).replace("Height ", "");
-    return height || "-";
-  }
-
-  function drawSpareStatusCard(item: LegalityPdfItem, x: number, y: number, width: number, height: number) {
-    const isIllegal = item.status === "illegal";
-    page.drawRectangle({
-      x,
-      y,
-      width,
-      height,
-      color: isIllegal ? redDark : cellBlack,
-      borderColor: isIllegal ? red : green,
-      borderWidth: 0.85,
-    });
-    drawWrappedText(shortItemName(item), x + 9, y + height - 13, width - 76, 7.0, boldFont, white, 1, 8);
-    drawStatusPill(isIllegal ? "Illegal" : "Legal", x + width - 64, y + height - 18, 54, isIllegal);
-    drawText(`Height: ${heightLabel(item)}`, x + 9, y + 8, 5.8, normalFont, grey);
-  }
-
-  function orderedSpareWingItems(items: LegalityPdfItem[]) {
-    const order = ["spare_fwep_lh", "spare_fw", "spare_fwep_rh"];
-    return [...items].sort((a, b) => {
-      const aIndex = order.indexOf(a.item_key);
-      const bIndex = order.indexOf(b.item_key);
-      return (aIndex === -1 ? 99 : aIndex) - (bIndex === -1 ? 99 : bIndex) || a.item_name.localeCompare(b.item_name);
-    });
-  }
-
-  function drawSpareWingPanel(x: number, y: number, width: number, height: number) {
-    drawPanel(x, y, width, height, panelBlack);
-    drawSectionHeader(
-      "Spare Front Wing Checks",
-      "Same status cards as the mechanic working sheet.",
-      "spare fw",
-      x + 12,
-      y + height - 16,
-      width - 24,
-    );
-
-    const spareItems = orderedSpareWingItems(spareWingItems).slice(0, 3);
-    const padding = 12;
-    const gap = 9;
-    const cardW = (width - padding * 2 - gap * 2) / 3;
-    const cardH = 34;
-    const cardY = y + 12;
-
-    if (spareItems.length === 0) {
-      drawWrappedText("No spare front wing checks were supplied.", x + padding, cardY + 11, width - padding * 2, 7, normalFont, grey, 1, 8);
-      return;
     }
+  </style>
+</head>
+<body>
+  <main class="report">
+    <section class="page">
+      <header class="header">
+        <div class="logo-stack">
+          ${rodinLogo ? `<img src="${rodinLogo}" alt="Rodin Motorsport" />` : `<div class="logo-fallback">RODIN</div>`}
+          ${gb3Logo ? `<img src="${gb3Logo}" alt="GB3" />` : ``}
+        </div>
+        <div>
+          <p class="eyebrow">Rodin Motorsport</p>
+          <h1>Surface Table Checks</h1>
+          <p class="subtitle">Completed mechanic sheet copy · ${escapeHtml(formatReportDate(payload.check_date))} · ${escapeHtml(payload.circuit)}</p>
+        </div>
+        <div class="summary-pill ${illegalItems.length ? "illegal" : "legal"}">${escapeHtml(summary)}</div>
+      </header>
 
-    spareItems.forEach((item, index) => {
-      drawSpareStatusCard(item, x + padding + index * (cardW + gap), cardY, cardW, cardH);
-    });
-  }
+      <div class="summary-layout">
+        <div class="left-stack">
+          <section class="panel">
+            <div class="section-heading">
+              <div>
+                <p class="eyebrow">Event Details</p>
+                <h2>Check Information</h2>
+                <p>Saved surface table check metadata.</p>
+              </div>
+            </div>
+            <div class="info-grid">
+              ${makeInfoCard("Date", formatReportDate(payload.check_date))}
+              ${makeInfoCard("Circuit", payload.circuit)}
+              ${makeInfoCard("Car", payload.car_name || `Car ${payload.car_id}`)}
+              ${makeInfoCard("Driver", payload.driver || "Unknown")}
+              ${makeInfoCard("Engineer", payload.engineer_name)}
+            </div>
+          </section>
 
-  function drawStatusRow(item: LegalityPdfItem, x: number, y: number, width: number, rowH: number) {
-    const isIllegal = item.status === "illegal";
-    page.drawRectangle({
-      x,
-      y,
-      width,
-      height: rowH,
-      color: isIllegal ? redDark : cellBlack,
-      borderColor: isIllegal ? red : borderGrey,
-      borderWidth: isIllegal ? 0.75 : 0.45,
-    });
+          <section class="panel">
+            <div class="section-heading">
+              <div>
+                <p class="eyebrow">Measurements</p>
+                <h2>Corner Weights</h2>
+                <p>Front axle over rear axle, matching the app input sheet.</p>
+              </div>
+              <div class="unit-chip">kg</div>
+            </div>
+            <div class="measurement-grid five">
+              ${makeMeasurementCard("FL", formatWeight(payload.corner_weights.fl))}
+              ${makeMeasurementCard("FR", formatWeight(payload.corner_weights.fr))}
+              ${makeMeasurementCard("RL", formatWeight(payload.corner_weights.rl))}
+              ${makeMeasurementCard("RR", formatWeight(payload.corner_weights.rr))}
+              ${makeMeasurementCard("Total", formatWeight(payload.corner_weights.total))}
+            </div>
+          </section>
 
-    const rowFont = rowH < 17 ? 5.3 : 6.0;
-    const statusText = isIllegal ? "ILLEGAL" : "LEGAL";
-    drawWrappedText(shortItemName(item), x + 7, y + rowH - rowFont - 4, width - 118, rowFont, boldFont, white, 1, rowFont + 1);
-    drawText(item.item_side || "-", x + width - 110, y + rowH - rowFont - 4, rowFont, normalFont, grey);
-    drawText(heightLabel(item), x + width - 82, y + rowH - rowFont - 4, rowFont, boldFont, grey);
-    drawText(statusText, x + width - 48, y + rowH - rowFont - 4, rowFont, boldFont, isIllegal ? red : green);
-  }
+          <section class="panel">
+            <div class="section-heading">
+              <div>
+                <p class="eyebrow">Measurements</p>
+                <h2>Camber</h2>
+                <p>Negative values shown exactly as entered.</p>
+              </div>
+              <div class="unit-chip">deg</div>
+            </div>
+            <div class="measurement-grid four">
+              ${makeMeasurementCard("FL", formatCamber(payload.camber_measurements.fl))}
+              ${makeMeasurementCard("FR", formatCamber(payload.camber_measurements.fr))}
+              ${makeMeasurementCard("RL", formatCamber(payload.camber_measurements.rl))}
+              ${makeMeasurementCard("RR", formatCamber(payload.camber_measurements.rr))}
+            </div>
+          </section>
 
-  function drawTotalCarPanel(x: number, y: number, width: number, height: number) {
-    drawPanel(x, y, width, height, panelBlack);
-    drawSectionHeader(
-      "Total Car Surface Points",
-      "Height uses 0 = low touching and 5 = high touching.",
-      "total car",
-      x + 12,
-      y + height - 16,
-      width - 24,
-    );
+          <section class="panel">
+            <div class="section-heading">
+              <div>
+                <p class="eyebrow">Front Wing</p>
+                <h2>Shim Record</h2>
+                <p>Main and spare front wing shim packs.</p>
+              </div>
+              <div class="unit-chip">shims</div>
+            </div>
+            <div class="measurement-grid four">
+              ${makeShimCard("Main LH", payload.wing_shims.main_lh)}
+              ${makeShimCard("Main RH", payload.wing_shims.main_rh)}
+              ${makeShimCard("Spare LH", payload.wing_shims.spare_lh)}
+              ${makeShimCard("Spare RH", payload.wing_shims.spare_rh)}
+            </div>
+          </section>
+        </div>
 
-    const padding = 12;
-    const sortedCarItems = sortForSheet(carItems);
-    const leftColumn = sortedCarItems.filter((item) => item.item_side === "LH");
-    const rightColumn = sortedCarItems.filter((item) => item.item_side === "RH");
-    const centreItems = sortedCarItems.filter((item) => item.item_side !== "LH" && item.item_side !== "RH");
-    const maxRows = Math.max(leftColumn.length, rightColumn.length, 1);
-    const colGap = 10;
-    const colW = (width - padding * 2 - colGap) / 2;
-    const headerY = y + height - 62;
+        <aside class="visual-stack">
+          ${makeImagePanel("Spare Front Wing", "Reference image from the mechanic sheet.", spareWingImage, "Spare front wing legality overview")}
+          ${makeImagePanel("Car Surface Overview", "Reference image from the mechanic sheet.", carOverviewImage, "Car surface table overview")}
+        </aside>
+      </div>
+    </section>
 
-    function drawColumnHeader(startX: number) {
-      drawText("POINT", startX + 7, headerY, 5.8, boldFont, grey);
-      drawText("SIDE", startX + colW - 110, headerY, 5.8, boldFont, grey);
-      drawText("HEIGHT", startX + colW - 82, headerY, 5.8, boldFont, grey);
-      drawText("STATUS", startX + colW - 48, headerY, 5.8, boldFont, grey);
-    }
+    <section class="page">
+      <header class="header">
+        <div class="logo-stack">
+          ${rodinLogo ? `<img src="${rodinLogo}" alt="Rodin Motorsport" />` : `<div class="logo-fallback">RODIN</div>`}
+          ${gb3Logo ? `<img src="${gb3Logo}" alt="GB3" />` : ``}
+        </div>
+        <div>
+          <p class="eyebrow">Individual Elements</p>
+          <h1>Surface Point Results</h1>
+          <p class="subtitle">${escapeHtml(payload.car_name)} · ${escapeHtml(payload.circuit)} · ${escapeHtml(formatReportDate(payload.check_date))}</p>
+        </div>
+        <div class="summary-pill ${illegalItems.length ? "illegal" : "legal"}">${escapeHtml(summary)}</div>
+      </header>
 
-    drawColumnHeader(x + padding);
-    drawColumnHeader(x + padding + colW + colGap);
+      <div class="details-content">
+        <section class="panel">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">Spare Front Wing</p>
+              <h2>Element Checks</h2>
+              <p>Individual spare front wing statuses.</p>
+            </div>
+          </div>
+          <div class="status-cards">
+            ${spareWingItems.length ? spareWingItems.map(makeStatusCard).join("") : `<div class="all-clear">No spare front wing items supplied.</div>`}
+          </div>
+        </section>
 
-    const centreReserve = centreItems.length > 0 ? 30 : 0;
-    const rowTop = headerY - 22;
-    const rowBottom = y + 14 + centreReserve;
-    const rowGap = 4;
-    const availableRowH = rowTop - rowBottom - Math.max(0, maxRows - 1) * rowGap;
-    const rowH = Math.max(13, Math.min(22, Math.floor(availableRowH / maxRows)));
+        <div class="two-column">
+          <section class="panel">
+            <div class="section-heading">
+              <div>
+                <p class="eyebrow">Total Car</p>
+                <h2>Left Hand Side</h2>
+                <p>All LH surface check points.</p>
+              </div>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead><tr><th>Point</th><th>Side</th><th>Position</th><th>Height</th><th>Status</th><th>Note</th></tr></thead>
+                <tbody>${leftCarItems.length ? leftCarItems.map(makeStatusRow).join("") : `<tr><td colspan="6">No LH items supplied.</td></tr>`}</tbody>
+              </table>
+            </div>
+          </section>
 
-    leftColumn.forEach((item, index) => {
-      drawStatusRow(item, x + padding, rowTop - index * (rowH + rowGap), colW, rowH);
-    });
-    rightColumn.forEach((item, index) => {
-      drawStatusRow(item, x + padding + colW + colGap, rowTop - index * (rowH + rowGap), colW, rowH);
-    });
+          <section class="panel">
+            <div class="section-heading">
+              <div>
+                <p class="eyebrow">Total Car</p>
+                <h2>Right Hand Side / Centre</h2>
+                <p>All RH and centre surface check points.</p>
+              </div>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead><tr><th>Point</th><th>Side</th><th>Position</th><th>Height</th><th>Status</th><th>Note</th></tr></thead>
+                <tbody>${[...rightCarItems, ...centreCarItems].length ? [...rightCarItems, ...centreCarItems].map(makeStatusRow).join("") : `<tr><td colspan="6">No RH or centre items supplied.</td></tr>`}</tbody>
+              </table>
+            </div>
+          </section>
+        </div>
 
-    if (centreItems.length > 0) {
-      const centreY = y + 12;
-      const centreGap = 8;
-      const centreW = (width - padding * 2 - centreGap * Math.max(0, centreItems.length - 1)) / centreItems.length;
-      centreItems.forEach((item, index) => {
-        drawStatusRow(item, x + padding + index * (centreW + centreGap), centreY, centreW, 22);
-      });
-    }
-  }
+        <section class="panel">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">Check Summary</p>
+              <h2>${escapeHtml(summary)}</h2>
+              <p>Illegal notes are listed below. Legal items are kept in the tables above.</p>
+            </div>
+          </div>
+          <div class="note-list">${illegalNotes}</div>
+        </section>
+      </div>
 
-  function drawNotesPanel(x: number, y: number, width: number, height: number) {
-    drawPanel(x, y, width, height, panelBlack);
-    drawText("CHECK SUMMARY", x + 12, y + height - 16, 7, boldFont, red);
-    drawText(summary.toUpperCase(), x + 12, y + height - 33, 12, boldFont, illegalItems.length ? red : green);
-
-    if (illegalItems.length === 0) {
-      drawWrappedText("All recorded surface table check items are legal.", x + 12, y + height - 51, width - 24, 7.4, normalFont, grey, 2, 9);
-      return;
-    }
-
-    const notes = illegalItems.slice(0, 5);
-    notes.forEach((item, index) => {
-      const noteY = y + height - 52 - index * 15;
-      page.drawRectangle({ x: x + 12, y: noteY - 3, width: width - 24, height: 12, color: redDark, borderColor: red, borderWidth: 0.45 });
-      drawWrappedText(`${shortItemName(item)}: ${item.illegal_note || "Missing note"}`, x + 17, noteY + 1, width - 34, 5.8, normalFont, white, 1, 6.5);
-    });
-
-    if (illegalItems.length > notes.length) {
-      drawText(`+ ${illegalItems.length - notes.length} more illegal note(s)`, x + 14, y + 8, 6.4, boldFont, red);
-    }
-  }
-
-  drawReportHeader();
-
-  const margin = 18;
-  const leftW = 270;
-  const gap = 14;
-  const rightX = margin + leftW + gap;
-  const rightW = pageWidth - margin - rightX;
-
-  // Page 1: summary information and the same visual references mechanics see on the page.
-  drawMeasurementBlock({
-    title: "Corner Weight Measurements",
-    subtitle: "Front axle over rear axle, matching the input sheet.",
-    unit: "kg",
-    values: payload.corner_weights,
-    total: payload.corner_weights.total,
-    formatter: formatWeight,
-    x: margin,
-    y: 347,
-    width: leftW,
-    height: 141,
-  });
-
-  drawMeasurementBlock({
-    title: "Camber Measurements",
-    subtitle: "Front axle over rear axle. Negative values shown as entered.",
-    unit: "deg",
-    values: payload.camber_measurements,
-    formatter: formatCamber,
-    x: margin,
-    y: 217,
-    width: leftW,
-    height: 116,
-  });
-
-  drawWingShimPanel(margin, 116, leftW, 87);
-  drawNotesPanel(margin, 24, leftW, 78);
-
-  drawImagePanel(
-    "Spare Front Wing Overview",
-    "Visual reference from the mechanic sheet.",
-    spareWingOverviewImage,
-    rightX,
-    337,
-    rightW,
-    151,
-  );
-
-  drawImagePanel(
-    "Car Surface Overview",
-    "Visual reference from the mechanic sheet.",
-    carOverviewImage,
-    rightX,
-    84,
-    rightW,
-    232,
-  );
-
-  drawText("PDF layout: surface-table-v15-summary-images", pageWidth - 202, 10, 5.2, normalFont, muted);
-
-  // Page 2: detailed element list. This keeps the mechanic-facing images clear
-  // on page 1 while still including every individual check item in the PDF.
-  page = addSheetPage();
-  drawReportHeader();
-
-  drawSpareWingPanel(margin, 400, pageWidth - margin * 2, 88);
-  drawTotalCarPanel(margin, 118, pageWidth - margin * 2, 266);
-  drawNotesPanel(margin, 24, pageWidth - margin * 2, 78);
-
-  drawText("PDF layout: surface-table-v15-detail-list", pageWidth - 184, 10, 5.2, normalFont, muted);
-
-  return Buffer.from(await pdfDoc.save());
+      <div class="footer-note">HTML layout version: surface-table-v18-html-attachment</div>
+    </section>
+  </main>
+</body>
+</html>`;
 }
+
 export async function POST(request: NextRequest) {
   try {
     const rawPayload = (await request.json()) as LegalityEmailPayload;
@@ -1005,7 +1105,7 @@ export async function POST(request: NextRequest) {
     if (!rawPayload.car_id || !rawPayload.check_date || !rawPayload.circuit) {
       return NextResponse.json(
         {
-          error: "Missing legality payload fields.",
+          error: "Missing surface table check payload fields.",
           details: "The request must include car_id, check_date and circuit.",
         },
         { status: 400 },
@@ -1017,7 +1117,7 @@ export async function POST(request: NextRequest) {
     if (items.length === 0) {
       return NextResponse.json(
         {
-          error: "No legality items were supplied for the PDF.",
+          error: "No surface table check items were supplied for the HTML report.",
         },
         { status: 400 },
       );
@@ -1051,11 +1151,13 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    const carName = clean(rawPayload.car_name) || `Car ${rawPayload.car_id}`;
+
     const payload: NormalisedLegalityEmailPayload = {
       check_id: clean(rawPayload.check_id),
       car_id: Number(rawPayload.car_id),
-      car_name: clean(rawPayload.car_name) || `Car ${rawPayload.car_id}`,
-      driver: clean(rawPayload.driver) || "Unknown",
+      car_name: carName,
+      driver: clean(rawPayload.driver) || carName,
       circuit: clean(rawPayload.circuit) || "Unknown",
       check_date: clean(rawPayload.check_date),
       engineer_name:
@@ -1074,15 +1176,17 @@ export async function POST(request: NextRequest) {
         ? `${payload.items.length}/${payload.items.length} legal`
         : `${illegalCount} illegal · ${payload.items.length - illegalCount} legal`;
 
-    const pdfBuffer = await buildLegalityPdf(payload);
-    const safeFileName = `Surface_Table_Checks_${payload.circuit.replace(/[^a-z0-9]+/gi, "_")}_Car_${payload.car_id}_${payload.check_date}.pdf`;
+    const html = await buildLegalityHtml(payload);
+    const htmlBuffer = Buffer.from(html, "utf8");
+    const safeBaseName = `Surface_Table_Checks_${payload.circuit.replace(/[^a-z0-9]+/gi, "_")}_Car_${payload.car_id}_${payload.check_date}`;
+    const safeFileName = `${safeBaseName}.html`;
 
     if (downloadOnly) {
-      return new NextResponse(pdfBuffer, {
+      return new NextResponse(html, {
         status: 200,
         headers: {
-          "Content-Type": "application/pdf",
-          "Content-Disposition": `inline; filename="${safeFileName}"`,
+          "Content-Type": "text/html; charset=utf-8",
+          "Content-Disposition": `attachment; filename="${safeFileName}"`,
           "Cache-Control": "no-store",
         },
       });
@@ -1138,7 +1242,7 @@ export async function POST(request: NextRequest) {
         "Status Summary",
         summary,
         "",
-        illegalCount > 0 ? "Illegal item notes are included in the attached PDF." : "No illegal items were recorded.",
+        "The completed surface table check is attached as an HTML file.",
       ].join("\n"),
       html: `
         <div style="font-family:Arial,sans-serif;line-height:1.5;color:#111;background:#f6f7f9;padding:24px">
@@ -1168,46 +1272,18 @@ export async function POST(request: NextRequest) {
                   <td style="padding:9px 10px;border-bottom:1px solid #eee">${escapeHtml(to)}</td>
                 </tr>
                 <tr>
-                  <td style="padding:9px 10px;font-weight:bold;border-bottom:1px solid #eee">Corner Weights</td>
-                  <td style="padding:9px 10px;border-bottom:1px solid #eee">
-                    FL ${escapeHtml(formatWeight(payload.corner_weights.fl))} ·
-                    FR ${escapeHtml(formatWeight(payload.corner_weights.fr))}<br />
-                    RL ${escapeHtml(formatWeight(payload.corner_weights.rl))} ·
-                    RR ${escapeHtml(formatWeight(payload.corner_weights.rr))}<br />
-                    Total ${escapeHtml(formatWeight(payload.corner_weights.total))}
-                  </td>
-                </tr>
-                <tr>
-                  <td style="padding:9px 10px;font-weight:bold;border-bottom:1px solid #eee">Camber</td>
-                  <td style="padding:9px 10px;border-bottom:1px solid #eee">
-                    FL ${escapeHtml(formatCamber(payload.camber_measurements.fl))} ·
-                    FR ${escapeHtml(formatCamber(payload.camber_measurements.fr))}<br />
-                    RL ${escapeHtml(formatCamber(payload.camber_measurements.rl))} ·
-                    RR ${escapeHtml(formatCamber(payload.camber_measurements.rr))}
-                  </td>
-                </tr>
-                <tr>
-                  <td style="padding:9px 10px;font-weight:bold;border-bottom:1px solid #eee">Wing Shims</td>
-                  <td style="padding:9px 10px;border-bottom:1px solid #eee">
-                    Main LH ${escapeHtml(formatShim(payload.wing_shims.main_lh))} ·
-                    Main RH ${escapeHtml(formatShim(payload.wing_shims.main_rh))}<br />
-                    Spare LH ${escapeHtml(formatShim(payload.wing_shims.spare_lh))} ·
-                    Spare RH ${escapeHtml(formatShim(payload.wing_shims.spare_rh))}
-                  </td>
-                </tr>
-                <tr>
                   <td style="padding:9px 10px;font-weight:bold;border-bottom:1px solid #eee">Summary</td>
                   <td style="padding:9px 10px;border-bottom:1px solid #eee"><strong>${escapeHtml(summary)}</strong></td>
                 </tr>
               </table>
 
               <p style="margin:0 0 14px;font-size:14px;color:#374151">
-                A PDF copy of the completed legality sheet is attached.
+                A browser-openable HTML copy of the completed surface table check is attached.
               </p>
 
               ${
                 illegalCount > 0
-                  ? `<div style="border:1px solid #fecaca;background:#fef2f2;color:#991b1b;border-radius:10px;padding:12px 14px;font-size:14px"><strong>${escapeHtml(illegalCount)} illegal item(s)</strong> were recorded. See the PDF attachment for the full notes.</div>`
+                  ? `<div style="border:1px solid #fecaca;background:#fef2f2;color:#991b1b;border-radius:10px;padding:12px 14px;font-size:14px"><strong>${escapeHtml(illegalCount)} illegal item(s)</strong> were recorded. Open the HTML attachment for the full notes.</div>`
                   : `<div style="border:1px solid #bbf7d0;background:#f0fdf4;color:#166534;border-radius:10px;padding:12px 14px;font-size:14px"><strong>All checked items are legal.</strong></div>`
               }
             </div>
@@ -1217,8 +1293,8 @@ export async function POST(request: NextRequest) {
       attachments: [
         {
           filename: safeFileName,
-          content: pdfBuffer,
-          contentType: "application/pdf",
+          content: htmlBuffer,
+          contentType: "text/html; charset=utf-8",
         },
       ],
     });
@@ -1229,6 +1305,7 @@ export async function POST(request: NextRequest) {
       engineer_name: payload.engineer_name,
       circuit: payload.circuit,
       check_date: payload.check_date,
+      attachment_type: "html",
     });
   } catch (error) {
     const rawMessage =
