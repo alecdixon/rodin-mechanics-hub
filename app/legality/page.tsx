@@ -1928,7 +1928,7 @@ export default function LegalityPage() {
     });
   }
 
-  async function sendLegalityHtml(checkId: string, items: ReportItemPayload[]) {
+  async function sendLegalityReportLink(checkId: string, items: ReportItemPayload[]) {
     const carLabel = selectedCar ? carDisplayName(selectedCar) : `Car ${selectedCarId}`;
 
     const notifyResponse = await fetch("/api/legality", {
@@ -1966,7 +1966,7 @@ export default function LegalityPage() {
         .join("\n\n");
 
       throw new Error(
-        readableError || "Surface table check saved, but the HTML email failed.",
+        readableError || "Surface table check saved, but the report link email failed.",
       );
     }
 
@@ -1986,6 +1986,7 @@ export default function LegalityPage() {
       ok: boolean;
       sent_to: string;
       engineer_name: string;
+      report_url?: string;
     }>;
   }
 
@@ -2117,15 +2118,15 @@ export default function LegalityPage() {
       setActiveCheckId(savedCheckId);
 
       try {
-        const notifyResult = await sendLegalityHtml(savedCheckId, itemPayload);
+        const notifyResult = await sendLegalityReportLink(savedCheckId, itemPayload);
         setMessage(
-          `${existingCheckId ? "Surface table check updated" : "Surface table check saved"}. HTML sent to ${notifyResult.sent_to}.`,
+          `${existingCheckId ? "Surface table check updated" : "Surface table check saved"}. Report link sent to ${notifyResult.sent_to}.${notifyResult.report_url ? ` Open link: ${notifyResult.report_url}` : ""}`,
         );
       } catch (error) {
         setErrorMessage(
           error instanceof Error
-            ? `Surface table check saved, but the engineer HTML was not sent.\n\n${error.message}`
-            : "Surface table check saved, but the engineer HTML was not sent.",
+            ? `Surface table check saved, but the engineer report link was not sent.\n\n${error.message}`
+            : "Surface table check saved, but the engineer report link was not sent.",
         );
       }
 
@@ -2141,14 +2142,14 @@ export default function LegalityPage() {
     }
   }
 
-  async function resendCurrentHtml() {
+  async function resendCurrentReportLink() {
     if (readOnly) {
-      setErrorMessage("Guest/read-only users cannot send surface table HTML files.");
+      setErrorMessage("Guest/read-only users cannot send surface table report links.");
       return;
     }
 
     if (!activeCheckId) {
-      setErrorMessage("Save the surface table check before sending the HTML file.");
+      setErrorMessage("Save the surface table check before sending the report link.");
       return;
     }
 
@@ -2165,14 +2166,14 @@ export default function LegalityPage() {
     setSending(true);
 
     try {
-      const notifyResult = await sendLegalityHtml(activeCheckId, createItemPayload());
-      setMessage(`Surface table HTML sent to ${notifyResult.sent_to}.`);
+      const notifyResult = await sendLegalityReportLink(activeCheckId, createItemPayload());
+      setMessage(`Surface table report link sent to ${notifyResult.sent_to}.${notifyResult.report_url ? ` Open link: ${notifyResult.report_url}` : ""}`);
       await loadHistory(activeLayoutPoints);
     } catch (error) {
       setErrorMessage(
         error instanceof Error
           ? error.message
-          : "Failed to send surface table HTML.",
+          : "Failed to send surface table report link.",
       );
     } finally {
       setSending(false);
@@ -2222,7 +2223,7 @@ export default function LegalityPage() {
               </h1>
 
               <p className="mt-3 max-w-3xl text-sm leading-6 text-zinc-400">
-                Choose the car, circuit and date. The assigned engineer is selected automatically and receives an HTML copy when the sheet is saved.
+                Choose the car, circuit and date. The assigned engineer is selected automatically and receives a browser report link when the sheet is saved.
               </p>
             </div>
 
@@ -2241,7 +2242,7 @@ export default function LegalityPage() {
 
       {readOnly && (
         <div className="mb-6 rounded-2xl border border-amber-800 bg-amber-950/25 p-4 text-sm text-amber-200">
-          Guest/read-only mode is enabled. You can open and view previous surface table checks, but editing, saving and HTML sending are disabled.
+          Guest/read-only mode is enabled. You can open and view previous surface table checks, but editing, saving and report link sending are disabled.
         </div>
       )}
 
@@ -2396,7 +2397,7 @@ export default function LegalityPage() {
             </div>
             {lastSentToEngineerAt && (
               <p className="mt-3 text-xs text-zinc-500">
-                Last HTML sent: {niceDateTime(lastSentToEngineerAt)}
+                Last report link sent: {niceDateTime(lastSentToEngineerAt)}
               </p>
             )}
           </div>
@@ -2614,21 +2615,21 @@ export default function LegalityPage() {
                 className="rounded-2xl bg-red-700 px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-red-950/30 transition hover:bg-red-600 disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {saving
-                  ? "Saving & sending HTML..."
+                  ? "Saving & sending link..."
                   : activeCheckId
-                    ? "Update & Send HTML"
-                    : "Save & Send HTML"}
+                    ? "Update & Send Link"
+                    : "Save & Send Link"}
               </button>
             )}
 
             {!readOnly && activeCheckId && (
               <button
                 type="button"
-                onClick={resendCurrentHtml}
+                onClick={resendCurrentReportLink}
                 disabled={saving || sending || !selectedCarHasEmail}
                 className="rounded-2xl border border-red-800 bg-red-950/30 px-6 py-3 text-sm font-semibold text-red-100 transition hover:border-red-500 hover:bg-red-900/40 disabled:cursor-not-allowed disabled:opacity-60"
               >
-                {sending ? "Sending..." : "Resend HTML"}
+                {sending ? "Sending..." : "Resend Link"}
               </button>
             )}
 
@@ -2691,7 +2692,7 @@ export default function LegalityPage() {
                     </div>
                     <div className="mt-3 flex flex-wrap justify-between gap-2 text-[11px] uppercase tracking-[0.18em] text-zinc-600">
                       <span>Updated {niceDateTime(check.updated_at || check.created_at)}</span>
-                      <span>{check.sent_to_engineer_at ? `HTML ${niceDateTime(check.sent_to_engineer_at)}` : "HTML not sent"}</span>
+                      <span>{check.sent_to_engineer_at ? `Link ${niceDateTime(check.sent_to_engineer_at)}` : "Link not sent"}</span>
                     </div>
                   </button>
                 );

@@ -1,4 +1,4 @@
-// SURFACE TABLE CHECKS API ROUTE - HTML ATTACHMENT VERSION - v19 HTML attachment / no driver requirement
+// SURFACE TABLE CHECKS API ROUTE - REPORT LINK VERSION - v21 browser report link / no driver requirement
 import { NextRequest, NextResponse } from "next/server";
 import nodemailer from "nodemailer";
 import { readFile } from "node:fs/promises";
@@ -7,7 +7,7 @@ import { canEditLegality } from "@/lib/userAccess";
 
 export const runtime = "nodejs";
 
-// SURFACE TABLE CHECKS API ROUTE - sends the completed report as HTML email body, not as a PDF.
+// SURFACE TABLE CHECKS API ROUTE - sends a clickable browser report link, not a PDF or HTML attachment.
 
 type LegalityStatus = "legal" | "illegal";
 
@@ -1091,6 +1091,51 @@ async function buildLegalityHtml(payload: NormalisedLegalityEmailPayload) {
 </html>`;
 }
 
+
+function buildReportLinkEmailHtml(args: {
+  payload: NormalisedLegalityEmailPayload;
+  summary: string;
+  reportUrl: string;
+}) {
+  const { payload, summary, reportUrl } = args;
+  const statusColor = summary.toLowerCase().includes("illegal") ? "#ef4444" : "#22c55e";
+  const safeReportUrl = escapeHtml(reportUrl);
+
+  return `
+    <div style="margin:0;padding:24px;background:#0d0f12;color:#e5e7eb;font-family:Arial,Helvetica,sans-serif;line-height:1.5">
+      <div style="max-width:760px;margin:0 auto;border:1px solid #27272a;border-radius:24px;overflow:hidden;background:#111418">
+        <div style="padding:24px 26px;background:linear-gradient(135deg,#030507,#14181d 55%,#1a0d10);border-bottom:1px solid #27272a">
+          <div style="font-size:11px;font-weight:700;letter-spacing:0.28em;color:#f87171;text-transform:uppercase">Rodin Motorsport</div>
+          <h1 style="margin:10px 0 0;font-size:28px;line-height:1.15;color:#ffffff">Surface Table Checks</h1>
+          <div style="margin-top:10px;color:${statusColor};font-weight:700">${escapeHtml(summary)}</div>
+        </div>
+
+        <div style="padding:24px 26px">
+          <p style="margin:0 0 18px;color:#d4d4d8;font-size:15px">
+            A surface table check has been saved for <strong>${escapeHtml(payload.car_name)}</strong> at <strong>${escapeHtml(payload.circuit)}</strong>.
+          </p>
+
+          <table style="width:100%;border-collapse:collapse;margin:0 0 24px;font-size:14px;color:#e5e7eb">
+            <tr><td style="padding:9px 0;color:#a1a1aa;width:150px;border-bottom:1px solid #27272a">Date</td><td style="padding:9px 0;border-bottom:1px solid #27272a">${escapeHtml(formatReportDate(payload.check_date))}</td></tr>
+            <tr><td style="padding:9px 0;color:#a1a1aa;border-bottom:1px solid #27272a">Car</td><td style="padding:9px 0;border-bottom:1px solid #27272a">${escapeHtml(payload.car_name)}</td></tr>
+            <tr><td style="padding:9px 0;color:#a1a1aa;border-bottom:1px solid #27272a">Driver</td><td style="padding:9px 0;border-bottom:1px solid #27272a">${escapeHtml(payload.driver)}</td></tr>
+            <tr><td style="padding:9px 0;color:#a1a1aa;border-bottom:1px solid #27272a">Engineer</td><td style="padding:9px 0;border-bottom:1px solid #27272a">${escapeHtml(payload.engineer_name)}</td></tr>
+          </table>
+
+          <a href="${safeReportUrl}" style="display:inline-block;background:#dc2626;color:#ffffff;text-decoration:none;font-weight:800;border-radius:14px;padding:14px 20px">
+            Open Surface Table Report
+          </a>
+
+          <p style="margin:18px 0 0;color:#a1a1aa;font-size:12px">
+            If the button does not open, copy this link into a browser:<br />
+            <span style="word-break:break-all;color:#d4d4d8">${safeReportUrl}</span>
+          </p>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
 export async function POST(request: NextRequest) {
   try {
     const rawPayload = (await request.json()) as LegalityEmailPayload;
@@ -1178,21 +1223,18 @@ export async function POST(request: NextRequest) {
         ? `${payload.items.length}/${payload.items.length} legal`
         : `${illegalCount} illegal · ${payload.items.length - illegalCount} legal`;
 
-    const html = await buildLegalityHtml(payload);
-    const htmlBuffer = Buffer.from(html, "utf8");
-    const safeBaseName = `Surface_Table_Checks_${payload.circuit.replace(/[^a-z0-9]+/gi, "_")}_Car_${payload.car_id}_${payload.check_date}`;
-    const safeFileName = `${safeBaseName}.html`;
+    const requestOrigin = new URL(request.url).origin;
+    const configuredOrigin = process.env.NEXT_PUBLIC_SITE_URL?.trim() || process.env.NEXT_PUBLIC_APP_URL?.trim();
+    const origin = configuredOrigin || requestOrigin;
+    const reportUrl = payload.check_id
+      ? `${origin}/legality/report/${encodeURIComponent(payload.check_id)}`
+      : `${origin}/legality`;
 
     if (downloadOnly) {
-      return new NextResponse(html, {
-        status: 200,
-        headers: {
-          "Content-Type": "text/html; charset=utf-8",
-          "Content-Disposition": `attachment; filename="${safeFileName}"`,
-          "Cache-Control": "no-store",
-        },
-      });
+      return NextResponse.redirect(reportUrl, 303);
     }
+
+    const html = buildReportLinkEmailHtml({ payload, summary, reportUrl });
 
     const gmailUser = process.env.GMAIL_USER?.trim();
     const gmailAppPassword = process.env.GMAIL_APP_PASSWORD?.replace(/\s/g, "");
@@ -1226,7 +1268,7 @@ export async function POST(request: NextRequest) {
     const mailResult = await transporter.sendMail({
       from: `"Surface Table Checks" <${gmailUser}>`,
       to,
-      subject: `Surface Table Checks - ${payload.circuit} - ${payload.car_name} - ${summary}`,
+      subject: `Surface Table Checks Report Link - ${payload.circuit} - ${payload.car_name} - ${summary}`,
       text: [
         "Surface Table Checks Report",
         "",
@@ -1244,7 +1286,7 @@ export async function POST(request: NextRequest) {
         "Status Summary",
         summary,
         "",
-        "The completed surface table check is included in the HTML email body.",
+        `Open report: ${reportUrl}`,
       ].join("\n"),
       html,
     });
@@ -1275,7 +1317,8 @@ export async function POST(request: NextRequest) {
       engineer_name: payload.engineer_name,
       circuit: payload.circuit,
       check_date: payload.check_date,
-      delivery_mode: "html_email_body",
+      delivery_mode: "browser_report_link",
+      report_url: reportUrl,
       accepted,
       rejected,
       message_id: mailResult.messageId ?? null,
