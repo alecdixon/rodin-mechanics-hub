@@ -122,7 +122,7 @@ type CarEngineerAllocation = {
   engineerEmail: string;
 };
 
-type PdfItemPayload = {
+type ReportItemPayload = {
   item_key: string;
   item_name: string;
   item_side: string;
@@ -1354,10 +1354,6 @@ export default function LegalityPage() {
     return selectedCircuit === "Other" ? customCircuit.trim() : selectedCircuit;
   }, [customCircuit, selectedCircuit]);
 
-  const pdfDriverName = useMemo(() => {
-    return driver.trim() || selectedCar?.name || `Car ${selectedCarId}`;
-  }, [driver, selectedCar, selectedCarId]);
-
   const selectedCarHasEmail = Boolean(selectedEngineer.engineerEmail.trim());
   const canEditWingShims = !readOnly && (userRole === "chief_mechanic" || canEditLayout);
 
@@ -1876,6 +1872,8 @@ export default function LegalityPage() {
   }
 
   function validateSheet() {
+    const cleanDriver = driver.trim();
+
     if (!selectedCarId) {
       return "Select a car.";
     }
@@ -1908,7 +1906,7 @@ export default function LegalityPage() {
     return "";
   }
 
-  function createItemPayload(): PdfItemPayload[] {
+  function createItemPayload(): ReportItemPayload[] {
     return activeLayoutPoints.map((point) => {
       const state = getPointState(itemStates, point.key);
       const illegalNote = state.status === "illegal" ? state.illegal_note.trim() : null;
@@ -1930,7 +1928,7 @@ export default function LegalityPage() {
     });
   }
 
-  async function sendLegalityPdf(checkId: string, items: PdfItemPayload[]) {
+  async function sendLegalityHtml(checkId: string, items: ReportItemPayload[]) {
     const carLabel = selectedCar ? carDisplayName(selectedCar) : `Car ${selectedCarId}`;
 
     const notifyResponse = await fetch("/api/legality", {
@@ -1942,7 +1940,7 @@ export default function LegalityPage() {
         check_id: checkId,
         car_id: selectedCarId,
         car_name: carLabel,
-        driver: pdfDriverName,
+        driver: driver.trim() || selectedCar?.name || `Car ${selectedCarId}`,
         circuit: finalCircuit,
         check_date: checkDate,
         engineer_name: selectedEngineer.engineerName,
@@ -1968,7 +1966,7 @@ export default function LegalityPage() {
         .join("\n\n");
 
       throw new Error(
-        readableError || "Surface table check saved, but the PDF email failed.",
+        readableError || "Surface table check saved, but the HTML email failed.",
       );
     }
 
@@ -2011,7 +2009,7 @@ export default function LegalityPage() {
     setSaving(true);
 
     try {
-      const cleanDriver = pdfDriverName;
+      const cleanDriver = driver.trim() || selectedCar?.name || `Car ${selectedCarId}`;
       const now = new Date().toISOString();
       const existingCheckId = activeCheckId ?? activeExistingCheckForCarDateCircuit?.id ?? null;
 
@@ -2119,15 +2117,15 @@ export default function LegalityPage() {
       setActiveCheckId(savedCheckId);
 
       try {
-        const notifyResult = await sendLegalityPdf(savedCheckId, itemPayload);
+        const notifyResult = await sendLegalityHtml(savedCheckId, itemPayload);
         setMessage(
-          `${existingCheckId ? "Surface table check updated" : "Surface table check saved"}. PDF sent to ${notifyResult.sent_to}.`,
+          `${existingCheckId ? "Surface table check updated" : "Surface table check saved"}. HTML sent to ${notifyResult.sent_to}.`,
         );
       } catch (error) {
         setErrorMessage(
           error instanceof Error
-            ? `Surface table check saved, but the engineer PDF was not sent.\n\n${error.message}`
-            : "Surface table check saved, but the engineer PDF was not sent.",
+            ? `Surface table check saved, but the engineer HTML was not sent.\n\n${error.message}`
+            : "Surface table check saved, but the engineer HTML was not sent.",
         );
       }
 
@@ -2143,14 +2141,14 @@ export default function LegalityPage() {
     }
   }
 
-  async function resendCurrentPdf() {
+  async function resendCurrentHtml() {
     if (readOnly) {
-      setErrorMessage("Guest/read-only users cannot send surface table PDFs.");
+      setErrorMessage("Guest/read-only users cannot send surface table HTML files.");
       return;
     }
 
     if (!activeCheckId) {
-      setErrorMessage("Save the surface table check before sending the PDF.");
+      setErrorMessage("Save the surface table check before sending the HTML file.");
       return;
     }
 
@@ -2167,14 +2165,14 @@ export default function LegalityPage() {
     setSending(true);
 
     try {
-      const notifyResult = await sendLegalityPdf(activeCheckId, createItemPayload());
-      setMessage(`Surface table PDF sent to ${notifyResult.sent_to}.`);
+      const notifyResult = await sendLegalityHtml(activeCheckId, createItemPayload());
+      setMessage(`Surface table HTML sent to ${notifyResult.sent_to}.`);
       await loadHistory(activeLayoutPoints);
     } catch (error) {
       setErrorMessage(
         error instanceof Error
           ? error.message
-          : "Failed to send surface table PDF.",
+          : "Failed to send surface table HTML.",
       );
     } finally {
       setSending(false);
@@ -2224,7 +2222,7 @@ export default function LegalityPage() {
               </h1>
 
               <p className="mt-3 max-w-3xl text-sm leading-6 text-zinc-400">
-                Choose the car, circuit and date. The assigned engineer is selected automatically and receives a PDF copy when the sheet is saved.
+                Choose the car, circuit and date. The assigned engineer is selected automatically and receives an HTML copy when the sheet is saved.
               </p>
             </div>
 
@@ -2243,7 +2241,7 @@ export default function LegalityPage() {
 
       {readOnly && (
         <div className="mb-6 rounded-2xl border border-amber-800 bg-amber-950/25 p-4 text-sm text-amber-200">
-          Guest/read-only mode is enabled. You can open and view previous surface table checks, but editing, saving and PDF sending are disabled.
+          Guest/read-only mode is enabled. You can open and view previous surface table checks, but editing, saving and HTML sending are disabled.
         </div>
       )}
 
@@ -2398,7 +2396,7 @@ export default function LegalityPage() {
             </div>
             {lastSentToEngineerAt && (
               <p className="mt-3 text-xs text-zinc-500">
-                Last PDF sent: {niceDateTime(lastSentToEngineerAt)}
+                Last HTML sent: {niceDateTime(lastSentToEngineerAt)}
               </p>
             )}
           </div>
@@ -2616,21 +2614,21 @@ export default function LegalityPage() {
                 className="rounded-2xl bg-red-700 px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-red-950/30 transition hover:bg-red-600 disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {saving
-                  ? "Saving & sending PDF..."
+                  ? "Saving & sending HTML..."
                   : activeCheckId
-                    ? "Update & Send PDF"
-                    : "Save & Send PDF"}
+                    ? "Update & Send HTML"
+                    : "Save & Send HTML"}
               </button>
             )}
 
             {!readOnly && activeCheckId && (
               <button
                 type="button"
-                onClick={resendCurrentPdf}
+                onClick={resendCurrentHtml}
                 disabled={saving || sending || !selectedCarHasEmail}
                 className="rounded-2xl border border-red-800 bg-red-950/30 px-6 py-3 text-sm font-semibold text-red-100 transition hover:border-red-500 hover:bg-red-900/40 disabled:cursor-not-allowed disabled:opacity-60"
               >
-                {sending ? "Sending..." : "Resend PDF"}
+                {sending ? "Sending..." : "Resend HTML"}
               </button>
             )}
 
@@ -2693,7 +2691,7 @@ export default function LegalityPage() {
                     </div>
                     <div className="mt-3 flex flex-wrap justify-between gap-2 text-[11px] uppercase tracking-[0.18em] text-zinc-600">
                       <span>Updated {niceDateTime(check.updated_at || check.created_at)}</span>
-                      <span>{check.sent_to_engineer_at ? `PDF ${niceDateTime(check.sent_to_engineer_at)}` : "PDF not sent"}</span>
+                      <span>{check.sent_to_engineer_at ? `HTML ${niceDateTime(check.sent_to_engineer_at)}` : "HTML not sent"}</span>
                     </div>
                   </button>
                 );

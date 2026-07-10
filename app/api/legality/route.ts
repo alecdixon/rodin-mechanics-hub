@@ -1,4 +1,4 @@
-// SURFACE TABLE CHECKS API ROUTE - HTML ATTACHMENT VERSION - v18 no PDF / no driver requirement
+// SURFACE TABLE CHECKS API ROUTE - HTML ATTACHMENT VERSION - v19 HTML attachment / no driver requirement
 import { NextRequest, NextResponse } from "next/server";
 import nodemailer from "nodemailer";
 import { readFile } from "node:fs/promises";
