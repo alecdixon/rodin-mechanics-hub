@@ -62,30 +62,50 @@ function carDisplayName(car: Pick<CarProgress, "id" | "name">) {
   return `${car.name} / Car ${car.id}`;
 }
 
-function ProgressDial({
-  progress,
+function CompletionBars({
+  workshopProgress,
+  eveningProgress,
   colour,
 }: {
-  progress: number;
+  workshopProgress: number;
+  eveningProgress: number;
   colour: string;
 }) {
-  const angle = progress * 3.6;
+  const bars = [
+    { label: "Workshop", progress: workshopProgress },
+    { label: "Evening Prep", progress: eveningProgress },
+  ];
 
   return (
-    <div
-      className="grid h-32 w-32 shrink-0 place-items-center rounded-full shadow-inner"
-      style={{
-        background: `conic-gradient(${colour} ${angle}deg, #2a2f36 ${angle}deg)`,
-      }}
-    >
-      <div className="grid h-24 w-24 place-items-center rounded-full bg-[#111418]">
-        <div className="text-center">
-          <div className="text-2xl font-semibold">{progress}%</div>
-          <div className="text-[10px] uppercase tracking-[0.22em] text-zinc-500">
-            Jobs
+    <div className="w-40 shrink-0 space-y-4 sm:w-48">
+      {bars.map((bar) => (
+        <div key={bar.label}>
+          <div className="mb-2 flex items-center justify-between gap-3">
+            <span className="text-[10px] font-semibold uppercase tracking-[0.16em] text-zinc-500">
+              {bar.label}
+            </span>
+            <span className="text-sm font-semibold text-zinc-100">
+              {bar.progress}%
+            </span>
+          </div>
+          <div
+            className="h-2.5 overflow-hidden rounded-full bg-[#2a2f36] shadow-inner"
+            role="progressbar"
+            aria-label={`${bar.label} completion`}
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-valuenow={bar.progress}
+          >
+            <div
+              className="h-full rounded-full transition-[width] duration-300"
+              style={{
+                width: `${bar.progress}%`,
+                backgroundColor: colour,
+              }}
+            />
           </div>
         </div>
-      </div>
+      ))}
     </div>
   );
 }
@@ -1507,7 +1527,11 @@ export default function DashboardPage() {
                     </div>
                   </div>
 
-                  <ProgressDial progress={car.progress} colour={car.colour} />
+                  <CompletionBars
+                    workshopProgress={car.progress}
+                    eveningProgress={car.eveningProgress}
+                    colour={car.colour}
+                  />
                 </div>
 
                 <div className="mt-6 grid gap-3 md:grid-cols-3">
