@@ -636,7 +636,9 @@ function niceDateTime(value: string | null | undefined) {
 }
 
 function backHref(role: UserRole, assignedCar: number | null) {
-  if (role === "chief_mechanic" || role === "engineer" || role === "guest") {
+  if (role === "engineer") return "/engineer-dashboard";
+
+  if (role === "chief_mechanic" || role === "guest") {
     return "/dashboard";
   }
 

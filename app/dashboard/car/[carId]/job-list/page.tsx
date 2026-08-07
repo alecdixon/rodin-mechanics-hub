@@ -208,7 +208,7 @@ export default function ChiefJobListEditorPage() {
     }
 
     setMessage("");
-    setErrorMessage("Guest mode is view-only. Workshop job lists cannot be edited, published, cleared or changed.");
+    setErrorMessage("This profile has view-only access to Workshop job lists.");
     return true;
   }
 
@@ -320,7 +320,9 @@ export default function ChiefJobListEditorPage() {
       return;
     }
 
-    setReadOnly(isReadOnlyUser(email));
+    setReadOnly(
+      isReadOnlyUser(email) || !hasPermission(email, "job_lists:edit"),
+    );
 
     await loadTemplates();
     await loadJobs();
@@ -1104,7 +1106,7 @@ export default function ChiefJobListEditorPage() {
 
       {readOnly && (
         <div className="mb-6 rounded-2xl border border-amber-800 bg-amber-950/25 p-4 text-sm text-amber-200">
-          Guest mode is view-only. You can inspect the workshop job list, release details, notes and progress, but cannot edit, publish, clear or remove anything.
+          View-only access. You can inspect the workshop job list, release details, notes and progress, but cannot edit, publish, clear or remove anything.
         </div>
       )}
 

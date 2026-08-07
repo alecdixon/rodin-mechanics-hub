@@ -399,7 +399,9 @@ export default function StickerListPage() {
   }, [items]);
 
   const backHref = useMemo(() => {
-    if (userRole === "chief_mechanic" || userRole === "engineer" || userRole === "guest") {
+    if (userRole === "engineer") return "/engineer-dashboard";
+
+    if (userRole === "chief_mechanic" || userRole === "guest") {
       return "/dashboard";
     }
 

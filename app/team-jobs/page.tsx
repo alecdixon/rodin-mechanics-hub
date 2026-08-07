@@ -145,9 +145,10 @@ export default function TeamJobsPage() {
     : 0;
 
   function backHref() {
+    if (userRole === "engineer") return "/engineer-dashboard";
+
     if (
       userRole === "chief_mechanic" ||
-      userRole === "engineer" ||
       userRole === "guest"
     ) {
       return "/dashboard";

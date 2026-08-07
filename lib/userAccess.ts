@@ -127,20 +127,10 @@ const NUMBER2_MECHANIC_PERMISSIONS: Permission[] = [
 ];
 
 const ENGINEER_PERMISSIONS: Permission[] = [
-  "dashboard:view",
-  "cars:view",
-  "team_jobs:view",
-  "post_event:view",
-  "clutch:view",
-  "clutch:edit",
-  "calendar:view",
-  "drain_out:view",
-  "drain_out:manage",
-  "recorded_issues:view",
-  "recorded_issues:edit",
-  "sticker_list:view",
-  "legality:view",
-  "legality:edit",
+  ...VIEW_PERMISSIONS,
+  "team_jobs:create",
+  "recorded_issues:create",
+  "sticker_list:create",
 ];
 
 const LOGIN_ALIASES: Record<string, string> = {
@@ -160,12 +150,7 @@ const USER_ACCESS: Record<string, UserAccess> = {
   "jimmy@rodinmotorsport.com": {
     role: "engineer",
     assignedCar: null,
-    permissions: [
-      ...VIEW_PERMISSIONS,
-      "team_jobs:create",
-      "recorded_issues:create",
-      "sticker_list:create",
-    ],
+    permissions: ENGINEER_PERMISSIONS,
     readOnly: false,
   },
 
@@ -451,7 +436,7 @@ export function getLoginRedirect(email: string | null | undefined): string {
   }
 
   if (access.role === "engineer") {
-    return "/recorded-issues";
+    return "/engineer-dashboard";
   }
 
   if (access.role === "guest") {

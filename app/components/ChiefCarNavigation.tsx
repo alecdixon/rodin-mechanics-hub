@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { usePathname } from "next/navigation";
 import { supabase } from "@/lib/supabase";
+import { getUserRole } from "@/lib/userAccess";
 
 type DashboardCar = {
   id: number;
@@ -92,6 +93,7 @@ export default function ChiefCarNavigation({ carId }: { carId: string }) {
   const pathname = usePathname();
   const [menuOpen, setMenuOpen] = useState(false);
   const [cars, setCars] = useState<DashboardCar[]>(FALLBACK_CARS);
+  const [engineerView, setEngineerView] = useState(false);
 
   useEffect(() => {
     let mounted = true;
@@ -118,6 +120,12 @@ export default function ChiefCarNavigation({ carId }: { carId: string }) {
   }, []);
 
   useEffect(() => {
+    void supabase.auth.getUser().then(({ data }) => {
+      setEngineerView(getUserRole(data.user?.email) === "engineer");
+    });
+  }, []);
+
+  useEffect(() => {
     setMenuOpen(false);
   }, [pathname]);
 
@@ -128,7 +136,7 @@ export default function ChiefCarNavigation({ carId }: { carId: string }) {
 
   const globalLinks: NavLinkItem[] = [
     {
-      href: "/dashboard",
+      href: engineerView ? "/engineer-dashboard" : "/dashboard",
       label: "Dashboard",
       description: "All cars and progress",
     },
@@ -163,12 +171,12 @@ export default function ChiefCarNavigation({ carId }: { carId: string }) {
     {
       href: `/dashboard/car/${carId}/job-list`,
       label: "Workshop Jobs",
-      description: "Edit and publish main job list",
+      description: engineerView ? "View the main job list" : "Edit and publish main job list",
     },
     {
       href: `/dashboard/car/${carId}/evening-job-list`,
       label: "Evening Prep",
-      description: "Edit evening preparation list",
+      description: engineerView ? "View evening preparation" : "Edit evening preparation list",
     },
     {
       href: `/dashboard/car/${carId}/clutch-measurement`,
@@ -189,7 +197,7 @@ export default function ChiefCarNavigation({ carId }: { carId: string }) {
   ];
 
   const mobileGroups: NavGroup[] = [
-    { title: "Chief Navigation", items: globalLinks },
+    { title: engineerView ? "Engineer Navigation" : "Chief Navigation", items: globalLinks },
     { title: `Car ${carId} Tools`, items: carToolLinks },
   ];
 
@@ -199,7 +207,7 @@ export default function ChiefCarNavigation({ carId }: { carId: string }) {
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="min-w-0">
             <p className="text-[10px] font-semibold uppercase tracking-[0.35em] text-red-400">
-              Chief Mechanic Hub
+              {engineerView ? "Engineer Hub" : "Chief Mechanic Hub"}
             </p>
 
             <div className="mt-1 flex flex-wrap items-center gap-2">

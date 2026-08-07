@@ -195,7 +195,9 @@ export default function ChiefEveningJobListPage() {
       return null;
     }
 
-    setReadOnly(isReadOnlyUser(email));
+    setReadOnly(
+      isReadOnlyUser(email) || !hasPermission(email, "evening_jobs:edit"),
+    );
 
     return email;
   }
@@ -206,7 +208,7 @@ export default function ChiefEveningJobListPage() {
     }
 
     setMessage("");
-    setErrorMessage("Guest mode is view-only. Evening prep lists cannot be edited, published, cleared or changed.");
+    setErrorMessage("This profile has view-only access to Evening Prep job lists.");
     return true;
   }
 
@@ -226,7 +228,7 @@ export default function ChiefEveningJobListPage() {
       !isReadOnlyUser(email);
 
     if (!allowed) {
-      setErrorMessage("Guest mode is view-only. Evening prep lists cannot be edited.");
+      setErrorMessage("This profile has view-only access to Evening Prep job lists.");
       return null;
     }
 

@@ -41,6 +41,20 @@ export function middleware(request: NextRequest) {
       return NextResponse.redirect(url);
     }
 
+    if (path === "/dashboard" && role === "engineer") {
+      url.pathname = "/engineer-dashboard";
+      return NextResponse.redirect(url);
+    }
+
+    return NextResponse.next();
+  }
+
+  if (path.startsWith("/engineer-dashboard")) {
+    if (role !== "engineer") {
+      url.pathname = getLoginRedirect(email);
+      return NextResponse.redirect(url);
+    }
+
     return NextResponse.next();
   }
 
@@ -56,11 +70,21 @@ export function middleware(request: NextRequest) {
           : getLoginRedirect(email);
       return NextResponse.redirect(url);
     }
+
+    if (
+      role === "engineer" &&
+      (path.endsWith("/job-list") || path.endsWith("/evening-job-list"))
+    ) {
+      url.pathname = path.endsWith("/evening-job-list")
+        ? `/dashboard/car/${carId}/evening-job-list`
+        : `/dashboard/car/${carId}/job-list`;
+      return NextResponse.redirect(url);
+    }
   }
 
   return NextResponse.next();
 }
 
 export const config = {
-  matcher: ["/dashboard/:path*", "/car/:path*", "/recorded-issues", "/recorded-issues/:path*"],
+  matcher: ["/dashboard/:path*", "/engineer-dashboard/:path*", "/car/:path*", "/recorded-issues", "/recorded-issues/:path*"],
 };

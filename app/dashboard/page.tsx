@@ -377,6 +377,11 @@ export default function DashboardPage() {
         return;
       }
 
+      if (role === "engineer") {
+        router.replace("/engineer-dashboard");
+        return;
+      }
+
       if (!hasPermission(email, "dashboard:view")) {
         router.replace("/login");
         return;
