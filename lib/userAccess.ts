@@ -143,6 +143,13 @@ const USER_ACCESS: Record<string, UserAccess> = {
     readOnly: false,
   },
 
+  "jimmy@rodinmotorsport.com": {
+    role: "chief_mechanic",
+    assignedCar: null,
+    permissions: ALL_PERMISSIONS,
+    readOnly: false,
+  },
+
   "simon.crain@rodinmotorsport.com": {
     role: "number1_mechanic",
     assignedCar: 1,
