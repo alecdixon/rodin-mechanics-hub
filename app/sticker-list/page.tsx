@@ -5,6 +5,9 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import {
+  canCreateStickerList,
+  canDeleteStickerList,
+  canEditStickerList as userCanEditStickerList,
   getAssignedCar,
   getUserRole,
   isReadOnlyUser,
@@ -228,7 +231,9 @@ export default function StickerListPage() {
   }, [currentUserEmail]);
 
   const isChiefMechanic = userRole === "chief_mechanic";
-  const canEditStickerList = !readOnly;
+  const canCreateStickerItems = canCreateStickerList(currentUserEmail);
+  const canEditStickerItems = userCanEditStickerList(currentUserEmail);
+  const canDeleteStickerItems = canDeleteStickerList(currentUserEmail);
 
   const loadCars = useCallback(async () => {
     const { data, error } = await supabase
@@ -415,8 +420,8 @@ export default function StickerListPage() {
   }
 
   async function uploadStickerImage(file: File) {
-    if (blockReadOnlyAction()) {
-      throw new Error("Guest mode is view-only.");
+    if (blockReadOnlyAction() || !canCreateStickerItems) {
+      throw new Error("You do not have permission to add sticker items.");
     }
 
     if (!file.type.startsWith("image/")) {
@@ -462,6 +467,11 @@ export default function StickerListPage() {
 
   async function addStickerItem() {
     if (blockReadOnlyAction()) return;
+
+    if (!canCreateStickerItems) {
+      setErrorMessage("You do not have permission to add sticker items.");
+      return;
+    }
 
     setMessage("");
     setErrorMessage("");
@@ -613,6 +623,11 @@ export default function StickerListPage() {
   async function toggleDone(item: StickerItem) {
     if (blockReadOnlyAction()) return;
 
+    if (!canEditStickerItems) {
+      setErrorMessage("You do not have permission to update sticker items.");
+      return;
+    }
+
     setMessage("");
     setErrorMessage("");
 
@@ -642,7 +657,7 @@ export default function StickerListPage() {
   }
 
   function updateStickerText(item: StickerItem, value: string) {
-    if (readOnly) return;
+    if (!canEditStickerItems) return;
 
     setItems((current) =>
       current.map((currentItem) =>
@@ -654,7 +669,7 @@ export default function StickerListPage() {
   }
 
   function updateStickerQuantity(item: StickerItem, value: string) {
-    if (readOnly) return;
+    if (!canEditStickerItems) return;
 
     const cleanQuantity = safeQuantity(value);
 
@@ -668,7 +683,7 @@ export default function StickerListPage() {
   }
 
   function updateStickerNotes(item: StickerItem, value: string) {
-    if (readOnly) return;
+    if (!canEditStickerItems) return;
 
     setItems((current) =>
       current.map((currentItem) =>
@@ -681,6 +696,11 @@ export default function StickerListPage() {
 
   async function saveStickerItem(item: StickerItem) {
     if (blockReadOnlyAction()) return;
+
+    if (!canEditStickerItems) {
+      setErrorMessage("You do not have permission to update sticker items.");
+      return;
+    }
 
     setMessage("");
     setErrorMessage("");
@@ -712,6 +732,11 @@ export default function StickerListPage() {
 
   async function removeStickerItem(item: StickerItem) {
     if (blockReadOnlyAction()) return;
+
+    if (!canDeleteStickerItems) {
+      setErrorMessage("You do not have permission to remove sticker items.");
+      return;
+    }
 
     const confirmed = window.confirm(
       `Remove "${item.sticker_text}" from the sticker list?`,
@@ -1097,7 +1122,7 @@ export default function StickerListPage() {
               Save / Send PDF
             </button>
 
-            {isChiefMechanic && canEditStickerList && (
+            {isChiefMechanic && canDeleteStickerItems && (
               <button
                 type="button"
                 onClick={clearAllStickers}
@@ -1150,7 +1175,7 @@ export default function StickerListPage() {
           </div>
         </div>
 
-        {isChiefMechanic && canEditStickerList ? (
+        {isChiefMechanic && canEditStickerItems ? (
           <div className="grid gap-3 md:grid-cols-[220px_auto_auto_1fr]">
             <input
               type="date"
@@ -1196,7 +1221,7 @@ export default function StickerListPage() {
         )}
       </section>
 
-      {canEditStickerList ? (
+      {canCreateStickerItems ? (
         <section className="no-print mb-8 rounded-3xl border border-zinc-800 bg-[#14181d] p-6 shadow-xl">
           <div className="mb-5">
             <p className="text-xs font-semibold uppercase tracking-[0.35em] text-red-400">
@@ -1507,7 +1532,7 @@ export default function StickerListPage() {
                         <th className="print-done-col w-[90px] px-4 py-3 text-left">
                           Done
                         </th>
-                        {canEditStickerList && (
+                        {(canEditStickerItems || canDeleteStickerItems) && (
                           <th className="screen-only w-[260px] px-4 py-3 text-left">
                             Actions
                           </th>
@@ -1524,7 +1549,7 @@ export default function StickerListPage() {
                           }`}
                         >
                           <td className="px-4 py-3">
-                            {canEditStickerList ? (
+                            {canEditStickerItems ? (
                               <>
                                 <span className="print-only font-semibold print-text">
                                   {item.quantity}
@@ -1548,7 +1573,7 @@ export default function StickerListPage() {
                           </td>
 
                           <td className="px-4 py-3">
-                            {canEditStickerList ? (
+                            {canEditStickerItems ? (
                               <>
                                 <span className="print-only print-item-text print-text">
                                   {item.sticker_text}
@@ -1577,7 +1602,7 @@ export default function StickerListPage() {
                           </td>
 
                           <td className="px-4 py-3">
-                            {canEditStickerList ? (
+                            {canEditStickerItems ? (
                               <>
                                 <span className="print-only print-text">
                                   {item.notes || "—"}
@@ -1621,7 +1646,7 @@ export default function StickerListPage() {
                           </td>
 
                           <td className="px-4 py-3">
-                            {canEditStickerList ? (
+                            {canEditStickerItems ? (
                               <>
                                 <button
                                   type="button"
@@ -1651,18 +1676,18 @@ export default function StickerListPage() {
                             )}
                           </td>
 
-                          {canEditStickerList && (
+                          {(canEditStickerItems || canDeleteStickerItems) && (
                             <td className="screen-only px-4 py-3">
                               <div className="flex flex-wrap gap-2">
-                                <button
+                                {canEditStickerItems && <button
                                   type="button"
                                   onClick={() => saveStickerItem(item)}
                                   className="rounded-lg bg-red-700 px-3 py-2 text-xs font-semibold text-white hover:bg-red-600"
                                 >
                                   Save
-                                </button>
+                                </button>}
 
-                                <button
+                                {canDeleteStickerItems && <button
                                   type="button"
                                   onClick={() => removeStickerItem(item)}
                                   disabled={removingId === item.id}
@@ -1671,7 +1696,7 @@ export default function StickerListPage() {
                                   {removingId === item.id
                                     ? "Removing..."
                                     : "Remove"}
-                                </button>
+                                </button>}
                               </div>
                             </td>
                           )}

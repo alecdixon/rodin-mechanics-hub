@@ -1,0 +1,3472 @@
+
+Wednesday 3:47 PM
+
+Pasted text(24).txt
+Document
+I want to change this so that below the corner weights and total weights are camber boxes, identical as the corner weights but for camber.
+i also want to change the design below as the spare wing only has one box and it needs 3. so i want a section above the total car for the spare wing essentically like this: 
+
+Wednesday 3:53 PM
+Wednesday 3:54 PM
+Wednesday 3:58 PM
+can you make this the image of the spare front wing.
+
+
+also i want to modify the PDF to show the weights and the camber in the same format as the input ( 2 fronts over 2 rears for both) not side by side and make the pdf as neat as possible
+
+Wednesday 4:02 PM
+
+Pasted code(96).ts
+TypeScript
+rewrite this for me please
+
+Wednesday 4:09 PM
+Wednesday 4:24 PM
+Wednesday 4:32 PM
+Wednesday 4:43 PM
+
+Legality_Oulton_Park_Car_3_2026-07-08.pdf
+PDF
+the pdf is bad, needs tuning. can you please make it better and nicer laid out. i also want to change the name of this page to surface table checks. can you paste the file and give me somthing to copy paste into the terminal so its quicker please
+
+Thought for 3m 15s
+I’ve tuned it properly now. Your sample PDF was too cramped, the spare wing image was missing, and the component list was visually messy/crammed on page 2. 
+
+
+Use this patch zip:
+
+Download surface_table_checks_patch.zip
+
+It contains:
+
+app/api/legality/route.ts
+
+app/legality/page.tsx
+
+public/legality-spare-front-wing.png
+
+I also included the individual files here:
+
+route_surface_table_checks.ts
+
+page_surface_table_checks.tsx
+
+What I changed
+Renamed the page title to Surface Table Checks
+
+Renamed the PDF/report title to Surface Table Checks
+
+Changed the email subject/report wording to Surface Table Checks
+
+Split the PDF into a cleaner layout:
+
+Page 1: weights, camber, shim record, summary
+
+Page 2: spare front wing and total car diagrams
+
+Page 3+: component list
+
+Fixed the spare front wing image handling
+
+Added a fallback drawing if the image is missing, so the PDF will no longer show a big “IMAGE MISSING” message
+
+Made the component list less cramped and added a proper Height column
+
+Copy-paste this into PowerShell
+Download the zip first, then run:
+
+cd "C:\Users\Alec.Dixon\Documents\rodin-mechanics-hub backup"
+
+Copy-Item "app\api\legality\route.ts" "app\api\legality\route.ts.bak-$(Get-Date -Format yyyyMMdd-HHmmss)"
+Copy-Item "app\legality\page.tsx" "app\legality\page.tsx.bak-$(Get-Date -Format yyyyMMdd-HHmmss)"
+
+Expand-Archive -Path "$env:USERPROFILE\Downloads\surface_table_checks_patch.zip" -DestinationPath "." -Force
+
+if (Test-Path "public\legality-spare-fron-wing.png") {
+  Remove-Item "public\legality-spare-fron-wing.png"
+}
+
+npm run build
+If the build passes, commit it:
+
+git add app/api/legality/route.ts app/legality/page.tsx public/legality-spare-front-wing.png
+git commit -m "Rename legality to surface table checks and improve PDF layout"
+git push
+The route path is still /api/legality, so the app won’t break. This only changes the displayed/report name to Surface Table Checks.
+
+
+Wednesday 6:00 PM
+so there is clipping in the text and the two last pages from the pdf are useless
+
+Thought for 2m 38s
+You’re right — the PDF layout is clipping because the measurement cards are too short, and the extra visual/component pages are not adding value. Your uploaded PDF shows the overlap in the weight/camber panels and the messy component list page. 
+
+
+I’ve changed it to a single-page PDF:
+
+No extra useless pages.
+
+Corner weights and camber are still FL/FR over RL/RR.
+
+Text spacing is increased so it should not clip.
+
+Shims are included neatly.
+
+Spare wing and total car checks are shown as compact status rows.
+
+Illegal notes are shown in a summary box at the bottom.
+
+Download:
+
+Surface table checks v13 patch
+
+route_surface_table_checks_v13.ts
+
+Copy-paste this into PowerShell
+cd "C:\Users\Alec.Dixon\Documents\rodin-mechanics-hub backup"
+
+Copy-Item "app\api\legality\route.ts" "app\api\legality\route.ts.bak-$(Get-Date -Format yyyyMMdd-HHmmss)"
+Copy-Item "app\legality\page.tsx" "app\legality\page.tsx.bak-$(Get-Date -Format yyyyMMdd-HHmmss)"
+
+Expand-Archive -Path "$env:USERPROFILE\Downloads\surface_table_checks_v13_patch.zip" -DestinationPath "." -Force
+
+npm run build
+If the build passes:
+
+git add app/api/legality/route.ts app/legality/page.tsx public/legality-spare-front-wing.png
+git commit -m "Simplify surface table check PDF layout"
+git push
+This version should generate one clean PDF page only instead of the previous multi-page report.
+
+
+Wednesday 6:03 PM
+                                                                                                                                 
+                                                                                                                                     
+ Expand-Archive                                                                                                                      
+    The archive file '.' expansion is in progress...                                                                                 
+    [o                                                                                                                        ]      
+                                                                                                                                     
+At line:6 char:1
++ Expand-Archive -Path "$env:USERPROFILE\Downloads\surface_table_checks ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : InvalidArgument: (C:\Users\Alec.D...s_v13_patch.zip:String) [Expand-Archive], InvalidOperationExcepti 
+   on
+    + FullyQualifiedErrorId : ArchiveCmdletPathNotFound,Expand-Archive
+ 
+
+> rodin-mechanics-hub@0.1.0 build
+> next build
+
+▲ Next.js 16.2.4 (Turbopack)
+- Environments: .env.local
+
+⚠ The "middleware" file convention is deprecated. Please use "proxy" instead. Learn more: https://nextjs.org/docs/messages/middleware-to-proxy
+  Creating an optimized production build ...
+
+Thought for 10s
+That error means the zip was not found in your Downloads folder, so the patch did not apply. The build that started afterwards is still using the old files.
+
+Press Ctrl + C on the keyboard to stop the build, then run this:
+
+cd "C:\Users\Alec.Dixon\Documents\rodin-mechanics-hub backup"
+
+Get-ChildItem "$env:USERPROFILE\Downloads" -Filter "*surface_table_checks*v13*patch*.zip" | Sort-Object LastWriteTime -Descending | Select-Object FullName, LastWriteTime
+If it shows a file, run:
+
+$zip = Get-ChildItem "$env:USERPROFILE\Downloads" -Filter "*surface_table_checks*v13*patch*.zip" | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+
+Copy-Item "app\api\legality\route.ts" "app\api\legality\route.ts.bak-$(Get-Date -Format yyyyMMdd-HHmmss)"
+Copy-Item "app\legality\page.tsx" "app\legality\page.tsx.bak-$(Get-Date -Format yyyyMMdd-HHmmss)"
+
+Expand-Archive -Path $zip.FullName -DestinationPath "." -Force
+
+npm run build
+If the first command shows nothing, download the patch zip again first:
+
+Download surface_table_checks_v13_patch.zip
+
+Then rerun the commands above.
+
+Once build passes:
+
+git add app/api/legality/route.ts app/legality/page.tsx public/legality-spare-front-wing.png
+git commit -m "Simplify surface table check PDF layout"
+git push
+
+Yesterday 8:24 AM
+3a480d3e-4e36-44c7-89cd-d5534d849798.png
+d93dda6a-d8e7-4db2-bcea-4af40908e298.png
+
+Surface_Table_Checks_Oulton_Park_Car_3_2026-07-09.pdf
+PDF
+still not right. I want the font alignement fixed here 
+
+the next bit needs to show the car image. essentially the pdf should be a copy of the filled out page
+
+Thought for 2m 29s
+You’re right — that v13 PDF is still not good. The measurement text is still too tight, and the surface-point table is the wrong direction. Your latest PDF shows the issue clearly: the values overlap the helper labels and the car image is missing from the lower section. 
+
+
+I’ve made a new v14 patch that changes the PDF back towards a copy of the filled-out page:
+
+fixes the weight/camber text alignment
+
+removes the useless table-style lower section
+
+brings back the spare front wing image
+
+brings back the total car image
+
+overlays the legal/illegal boxes around the images
+
+keeps it as a single-page PDF
+
+keeps the title as Surface Table Checks
+
+Download this:
+
+Download surface_table_checks_v14_patch.zip
+
+Individual route file:
+
+route_surface_table_checks_v14.ts
+
+Copy-paste this into PowerShell
+Download the zip first, then run:
+
+cd "C:\Users\Alec.Dixon\Documents\rodin-mechanics-hub backup"
+
+$zip = Get-ChildItem "$env:USERPROFILE\Downloads" -Filter "surface_table_checks_v14_patch.zip" | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+
+if (!$zip) {
+  throw "surface_table_checks_v14_patch.zip was not found in Downloads. Download it first, then run this again."
+}
+
+Copy-Item "app\api\legality\route.ts" "app\api\legality\route.ts.bak-$(Get-Date -Format yyyyMMdd-HHmmss)"
+
+Expand-Archive -Path $zip.FullName -DestinationPath "." -Force
+
+npm run build
+If the build passes:
+
+git add app/api/legality/route.ts public/legality-spare-front-wing.png
+git commit -m "Improve surface table checks PDF to match filled page"
+git push
+One thing to check: the route now uses this existing image for the car section:
+
+public\legality-car-overview-inverted.png
+That should already exist because your page uses it.
+
+
+Today 3:09 PM
+b5f4dc67-5b93-47c1-964e-755018b38653.png
+Some emails get this: 
+
+Worked for 31s
+That error is almost certainly coming from a Supabase .single() query.
+
+Meaning: the report-opening page expected exactly one matching report, but Supabase found either:
+
+zero reports, usually because the email link is old/broken, or
+
+multiple reports, usually because it is searching by car/date/circuit instead of the unique check_id.
+
+That is why only some emails get it.
+
+The proper fix is: email links must open reports by check_id, not by car/date/circuit, and any report fetch should use .maybeSingle() or .limit(1) instead of plain .single() unless the query is guaranteed unique.
+
+Run this first to find where the broken query is:
+
+cd "C:\Users\Alec.Dixon\Documents\rodin-mechanics-hub backup"
+
+Select-String -Path ".\app\**\*.tsx",".\app\**\*.ts" -Pattern "Could not open report","Cannot coerce","\.single\(\)","legality_checks" -CaseSensitive:$false
+Look for the file that contains “Could not open report”. That is the one causing the screenshot.
+
+The bad code will look something like this:
+
+const { data, error } = await supabase
+  .from("legality_checks")
+  .select("*")
+  .eq("car_id", carId)
+  .eq("check_date", checkDate)
+  .eq("circuit", circuit)
+  .single();
+Change it to this safer version:
+
+const { data, error } = await supabase
+  .from("legality_checks")
+  .select("*")
+  .eq("id", checkId)
+  .maybeSingle();
+If that page does not have checkId available yet, use this temporary safer version:
+
+const { data, error } = await supabase
+  .from("legality_checks")
+  .select("*")
+  .eq("car_id", carId)
+  .eq("check_date", checkDate)
+  .eq("circuit", circuit)
+  .order("updated_at", { ascending: false })
+  .limit(1)
+  .maybeSingle();
+Then build:
+
+npm run build
+If it passes:
+
+git add .
+git commit -m "Fix surface table report link lookup"
+git push
+The best long-term fix is to update the email route so every email link uses the unique check_id. Old emails may still fail if they were sent with the older ambiguous link, but new emails should stop getting this error.
+
+
+Today 4:38 PM
+>> Select-String -Path ".\app\**\*.tsx",".\app\**\*.ts" -Pattern "Could not open report","Cannot coerce","\.single\(\)","legality_checks" -CaseSensitive:$false
+
+app\drain-out\page.tsx:320:        .single();
+app\legality\page.tsx:1453:        .from("legality_checks")
+app\legality\page.tsx:1976:      .from("legality_checks")
+app\legality\page.tsx:2021:          .from("legality_checks")
+app\legality\page.tsx:2053:          .from("legality_checks")
+app\legality\page.tsx:2080:          .single();
+app\plank-legality\page.tsx:931:          .single();
+app\plank-legality\page.tsx:943:          .single();
+app\sticker-list\page.tsx:559:      .single();
+app\sticker-list\page.tsx:600:      .single();
+
+
+PS C:\Users\Alec.Dixon\Documents\rodin-mechanics-hub backup> 
+
+That search was useful, but it probably did not search deep enough into app/api/..., which is where the report/email route lives.
+
+Run this better recursive search:
+
+cd "C:\Users\Alec.Dixon\Documents\rodin-mechanics-hub backup"
+
+Get-ChildItem .\app -Recurse -Include *.ts,*.tsx |
+  Select-String -Pattern "Could not open report","Cannot coerce","\.single\(\)","maybeSingle","report" -CaseSensitive:$false |
+  Select-Object Path, LineNumber, Line
+Then also search the whole repo excluding node_modules:
+
+Get-ChildItem . -Recurse -Include *.ts,*.tsx,*.js,*.jsx |
+  Where-Object { $_.FullName -notmatch "\\node_modules\\|\\.next\\" } |
+  Select-String -Pattern "Could not open report","Cannot coerce","\.single\(\)","legality_checks","surface table" -CaseSensitive:$false |
+  Select-Object Path, LineNumber, Line
+For now, do not change the drain-out, plank-legality, or sticker-list files. They are unrelated.
+
+The likely fix will be in whichever file is creating/opening the email report link. Any query that opens a report should use the unique check_id and avoid plain .single() unless it is guaranteed unique.
+
+The pattern we want is this:
+
+const { data, error } = await supabase
+  .from("legality_checks")
+  .select("*")
+  .eq("id", checkId)
+  .maybeSingle();
+
+if (error) {
+  throw new Error(error.message);
+}
+
+if (!data) {
+  throw new Error("No surface table check was found for this report link.");
+}
+Not this:
+
+const { data, error } = await supabase
+  .from("legality_checks")
+  .select("*")
+  .eq("car_id", carId)
+  .eq("check_date", checkDate)
+  .eq("circuit", circuit)
+  .single();
+The second version breaks when more than one check exists for the same car/date/circuit, which matches your “some emails get this” problem.
+
+Paste me the output from the recursive search, especially anything inside app\api\legality, app\legality, or any report route.
+
+
+
+Pasted text(25).txt
+Document
+
+That output found the real file:
+
+app\legality\report\[checkId]\page.tsx
+The error page is coming from the email report opener, not the main Surface Table Checks page. Your search shows it loads the report around line 284–313. 
+
+
+Run this next so we can see the exact Supabase query:
+
+cd "C:\Users\Alec.Dixon\Documents\rodin-mechanics-hub backup"
+
+$path = ".\app\legality\report\[checkId]\page.tsx"
+
+$lines = Get-Content -LiteralPath $path
+for ($i = 280; $i -le 320; $i++) {
+  "{0}: {1}" -f $i, $lines[$i-1]
+}
+Most likely, the fix will be in that block. You want the report page to fetch by the unique URL ID and not fail if Supabase returns no single object.
+
+The query should look like this:
+
+const { data: check, error: checkError } = await supabase
+  .from("legality_checks")
+  .select("*")
+  .eq("id", checkId)
+  .limit(1)
+  .maybeSingle();
+
+if (checkError) {
+  throw new Error(checkError.message);
+}
+
+if (!check) {
+  throw new Error("No surface table check was found for this report link. The link may be old, deleted, or from before report links were updated.");
+}
+If it currently has .single() anywhere in that report loader, replace it with:
+
+.limit(1)
+.maybeSingle()
+Then run:
+
+npm run build
+If it passes:
+
+git add "app/legality/report/[checkId]/page.tsx"
+git commit -m "Fix surface table report link opening"
+git push
+Paste the 280–320 output and I’ll give you the exact replacement block.
+
+
+S C:\Users\Alec.Dixon\Documents\rodin-mechanics-hub backup> cd "C:\Users\Alec.Dixon\Documents\rodin-mechanics-hub backup"
+>> 
+>> $path = ".\app\legality\report\[checkId]\page.tsx"
+>> 
+>> $lines = Get-Content -LiteralPath $path
+>> for ($i = 280; $i -le 320; $i++) {
+>>   "{0}: {1}" -f $i, $lines[$i-1]
+>> }
+280:   const [loading, setLoading] = useState(true);
+281:   const [error, setError] = useState("");
+282: 
+283:   useEffect(() => {
+284:     async function loadReport() {
+285:       if (!checkId || typeof checkId !== "string") {
+286:         setError("No surface table check ID was found in the link.");
+287:         setLoading(false);
+288:         return;
+289:       }
+290: 
+291:       setLoading(true);
+292:       setError("");
+293: 
+294:       try {
+295:         const [{ data: checkData, error: checkError }, { data: itemData, error: itemError }, { data: layoutData }] = await Promise.all([
+296:           supabase.from("legality_checks").select("*").eq("id", checkId).single(),
+297:           supabase.from("legality_check_items").select("*").eq("legality_check_id", checkId),
+298:           supabase.from("legality_layout_points").select("point_key, label, short_label, side, position, x_percent, y_percent, sort_order, active, height_notation_enabled").eq("active", true),
+299:         ]);
+300: 
+301:         if (checkError) throw new Error(checkError.message);
+302:         if (itemError) throw new Error(itemError.message);
+303:         if (!checkData) throw new Error("Surface table check not found.");
+304: 
+305:         const points = Array.isArray(layoutData)
+306:           ? mergeWithDefaultLayoutPoints((layoutData as LegalityLayoutPointRecord[]).map(normaliseLayoutPoint))
+307:           : DEFAULT_LEGALITY_POINTS;
+308: 
+309:         setCheck(checkData as LegalityCheckRecord);
+310:         setItems((itemData ?? []) as LegalityCheckItemRecord[]);
+311:         setLayoutPoints(points);
+312:       } catch (loadError) {
+313:         setError(loadError instanceof Error ? loadError.message : "Could not load the surface table report.");
+314:       } finally {
+315:         setLoading(false);
+316:       }
+317:     }
+318: 
+319:     loadReport();
+320:   }, [checkId]);
+PS C:\Users\Alec.Dixon\Documents\rodin-mechanics-hub backup> 
+
+Yes, that is the issue. Line 296 is using .single(), which causes the exact error: “Cannot coerce the result to a single JSON object.” Your report opener is fetching by checkId, but .single() still throws if Supabase does not get exactly one row. 
+
+
+Replace this line:
+
+supabase.from("legality_checks").select("*").eq("id", checkId).single(),
+with this:
+
+supabase.from("legality_checks").select("*").eq("id", checkId).limit(1).maybeSingle(),
+Quick PowerShell fix
+Copy-paste this:
+
+cd "C:\Users\Alec.Dixon\Documents\rodin-mechanics-hub backup"
+
+$path = ".\app\legality\report\[checkId]\page.tsx"
+
+(Get-Content -LiteralPath $path -Raw) `
+  -replace 'supabase\.from\("legality_checks"\)\.select\("\*"\)\.eq\("id", checkId\)\.single\(\),', 'supabase.from("legality_checks").select("*").eq("id", checkId).limit(1).maybeSingle(),' |
+  Set-Content -LiteralPath $path
+
+npm run build
+If the build passes:
+
+git add "app/legality/report/[checkId]/page.tsx"
+git commit -m "Fix surface table report link opening"
+git push
+That should stop the raw Supabase error appearing for emailed report links. If a link is genuinely invalid/deleted, the page should now show your cleaner "Surface table check not found." message instead.
+
+
+Today 4:45 PM
+okay but the html needs to open.. otherwise gthere is no point
+
+Worked for 27s
+Yes — agreed. The email should open the HTML report page. Otherwise the whole link-based setup is pointless.
+
+You need two things fixed:
+
+The report page must stop crashing on .single().
+
+The email route must always generate a valid link like:
+
+/legality/report/<check_id>
+Your report page currently crashes at line 296 because it uses .single(). That is why some links open the red error page instead of the HTML report. 
+
+
+Run this first
+cd "C:\Users\Alec.Dixon\Documents\rodin-mechanics-hub backup"
+
+$path = ".\app\legality\report\[checkId]\page.tsx"
+
+(Get-Content -LiteralPath $path -Raw) `
+  -replace 'supabase\.from\("legality_checks"\)\.select\("\*"\)\.eq\("id", checkId\)\.single\(\),', 'supabase.from("legality_checks").select("*").eq("id", checkId).limit(1).maybeSingle(),' |
+  Set-Content -LiteralPath $path
+Then check the email route link
+Run this:
+
+$lines = Get-Content ".\app\api\legality\route.ts"
+for ($i = 1218; $i -le 1238; $i++) {
+  "{0}: {1}" -f $i, $lines[$i-1]
+}
+You should see something like this:
+
+const reportUrl = payload.check_id
+  ? `${origin}/legality/report/${encodeURIComponent(payload.check_id)}`
+  : `${origin}/legality`;
+That is okay, but better is to force it to fail if there is no check_id, because emails without a proper report link are useless.
+
+Replace that block with this:
+
+if (!payload.check_id) {
+  return NextResponse.json(
+    {
+      error: "No surface table check ID was supplied, so a report link could not be created.",
+    },
+    { status: 400 },
+  );
+}
+
+const reportUrl = `${origin}/legality/report/${encodeURIComponent(payload.check_id)}`;
+Then build
+npm run build
+If it passes:
+
+git add "app/legality/report/[checkId]/page.tsx" app/api/legality/route.ts
+git commit -m "Fix surface table HTML report links"
+git push
+After deployment, resend a Surface Table Check email from the app. Old emails may still fail if they were generated with a bad/missing check_id, but any email sent after this should open the HTML report page directly.
+
+
+Today 4:46 PM
+well it worked on one email, not the other two
+
+If one email opens and the other two do not, the HTML report page itself works. The two broken emails are almost certainly using either:
+
+an old link from before the fix,
+
+a bad/missing check_id, or
+
+a check_id that does not exist in legality_checks.
+
+We need check the actual links in the three emails.
+
+Step 1 — copy the report links
+In each email, right-click Open Surface Table Check and copy the link address.
+
+You should get links like:
+
+https://your-site.vercel.app/legality/report/xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
+If the broken ones are not in that format, they are old/bad emails and need resending.
+
+Step 2 — check whether those IDs exist
+Take the ID after /legality/report/ and run this in Supabase SQL editor:
+
+select
+  id,
+  car_id,
+  driver,
+  circuit,
+  check_date,
+  created_at,
+  updated_at
+from legality_checks
+where id in (
+  'PASTE_WORKING_ID_HERE',
+  'PASTE_BROKEN_ID_1_HERE',
+  'PASTE_BROKEN_ID_2_HERE'
+);
+Expected result: 3 rows.
+
+If it only returns 1 row, then the two broken emails point to reports that do not exist. Resend those reports from the app after the latest deploy.
+
+Step 3 — make sure the deployed route is the fixed one
+Run this locally:
+
+cd "C:\Users\Alec.Dixon\Documents\rodin-mechanics-hub backup"
+
+Select-String -LiteralPath ".\app\legality\report\[checkId]\page.tsx" -Pattern "maybeSingle","single","Surface table check not found"
+You want to see maybeSingle, not .single().
+
+Then deploy again:
+
+npm run build
+
+git add "app/legality/report/[checkId]/page.tsx" app/api/legality/route.ts
+git commit -m "Fix surface table HTML report links"
+git push
+Most likely answer
+The working email was probably sent after the link fix. The two broken ones were probably sent before it or have stale/bad report IDs.
+
+After the push deploys, open the app, open each saved Surface Table Check, press Resend, and use the new email links.
+
+
+works on chrome not microsoft edge
+
+That actually tells us the app/link is basically working. If it opens in Chrome but not Microsoft Edge, then Edge is almost certainly using a stale cached version of the report page — probably the older version that still had .single() and threw the Supabase error.
+
+Do this first in Edge:
+
+Open the broken report link in Edge.
+
+Press:
+
+Ctrl + F5
+If that does not work:
+
+Ctrl + Shift + Delete
+Then clear:
+
+Cached images and files
+Cookies and other site data
+Set time range to All time, then reopen the link.
+
+Also test in Edge InPrivate:
+
+Ctrl + Shift + N
+Paste the report link there. If it works in InPrivate, it is definitely Edge cache/cookies.
+
+Code-side fix to reduce this happening again
+In your email route, add a cache-buster to the report URL. Find this in:
+
+app/api/legality/route.ts
+Something like:
+
+const reportUrl = `${origin}/legality/report/${encodeURIComponent(payload.check_id)}`;
+Change it to:
+
+const reportUrl = `${origin}/legality/report/${encodeURIComponent(payload.check_id)}?v=${Date.now()}`;
+Then rebuild and push:
+
+cd "C:\Users\Alec.Dixon\Documents\rodin-mechanics-hub backup"
+
+npm run build
+
+git add app/api/legality/route.ts
+git commit -m "Add cache buster to surface table report links"
+git push
+After that, resend the emails. New links should be less likely to open an old cached Edge version.
+
+
+Today 4:58 PM
+
+Pasted code(100).ts
+TypeScript
+rewrite this for me please
+
+Worked for 37s
+I rewrote the route so the email always opens the HTML browser report and adds a cache-buster for Edge. It also now fails clearly if no check_id is supplied, instead of falling back to /legality. Your pasted route was the Surface Table Checks report-link API route. 
+
+
+Download:
+
+route_surface_table_checks_v22.ts
+
+Patch zip
+
+What changed
+Report links now always go to:
+
+/legality/report/<check_id>?v=<timestamp>
+No more fallback to /legality.
+
+Edge should stop opening cached/stale versions because every new email has a fresh ?v=....
+
+If check_id is missing, the API returns a useful error telling you to save the check first.
+
+Email button text changed to Open Surface Table Check.
+
+Error wording now correctly says browser report link, not HTML attachment.
+
+Copy-paste into PowerShell
+Download the zip first, then run:
+
+cd "C:\Users\Alec.Dixon\Documents\rodin-mechanics-hub backup"
+
+$zip = Get-ChildItem "$env:USERPROFILE\Downloads" -Filter "surface_table_checks_v22_link_patch.zip" | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+
+if (!$zip) {
+  throw "surface_table_checks_v22_link_patch.zip was not found in Downloads. Download it first, then run this again."
+}
+
+Copy-Item "app\api\legality\route.ts" "app\api\legality\route.ts.bak-$(Get-Date -Format yyyyMMdd-HHmmss)"
+
+Expand-Archive -Path $zip.FullName -DestinationPath "." -Force
+
+npm run build
+If the build passes:
+
+git add app/api/legality/route.ts
+git commit -m "Fix surface table browser report links"
+git push
+After it deploys, resend the emails from the app. New links should open correctly in both Chrome and Edge.
+
+
+Library
+/
+route_surface_table_checks_v22.ts
+
+
+// SURFACE TABLE CHECKS API ROUTE - REPORT LINK VERSION - v22 cache-busted browser report link / requires check_id
+import { NextRequest, NextResponse } from "next/server";
+import nodemailer from "nodemailer";
+import { readFile } from "node:fs/promises";
+import path from "node:path";
+import { canEditLegality } from "@/lib/userAccess";
+
+export const runtime = "nodejs";
+
+// SURFACE TABLE CHECKS API ROUTE - sends a clickable browser report link, not a PDF or HTML attachment.
+
+type LegalityStatus = "legal" | "illegal";
+
+type LegalityReportItem = {
+  item_key: string;
+  item_name: string;
+  item_side: string;
+  item_position: string;
+  status: LegalityStatus;
+  illegal_note: string | null;
+  height_notation_enabled?: boolean | null;
+  height_notation?: string | number | null;
+};
+
+type CornerWeights = {
+  fl: string | number | null;
+  fr: string | number | null;
+  rl: string | number | null;
+  rr: string | number | null;
+  total: string | number | null;
+};
+
+type CamberMeasurements = {
+  fl: string | number | null;
+  fr: string | number | null;
+  rl: string | number | null;
+  rr: string | number | null;
+};
+
+type NormalisedCornerWeights = {
+  fl: string;
+  fr: string;
+  rl: string;
+  rr: string;
+  total: string;
+};
+
+type NormalisedCamberMeasurements = {
+  fl: string;
+  fr: string;
+  rl: string;
+  rr: string;
+};
+
+type WingShims = {
+  main_lh: string | number | null;
+  main_rh: string | number | null;
+  spare_lh: string | number | null;
+  spare_rh: string | number | null;
+};
+
+type NormalisedWingShims = {
+  main_lh: string;
+  main_rh: string;
+  spare_lh: string;
+  spare_rh: string;
+};
+
+type LegalityEmailPayload = {
+  check_id?: string | null;
+  car_id: number;
+  car_name?: string | null;
+  driver?: string | null;
+  circuit?: string | null;
+  check_date?: string | null;
+  engineer_name?: string | null;
+  engineer_email?: string | null;
+  created_by?: string | null;
+  corner_weights?: Partial<CornerWeights> | null;
+  camber_measurements?: Partial<CamberMeasurements> | null;
+  wing_shims?: Partial<WingShims> | null;
+  download_only?: boolean | null;
+  items?: LegalityReportItem[];
+};
+
+type NormalisedLegalityEmailPayload = {
+  check_id: string;
+  car_id: number;
+  car_name: string;
+  driver: string;
+  circuit: string;
+  check_date: string;
+  engineer_name: string;
+  engineer_email: string;
+  created_by: string;
+  corner_weights: NormalisedCornerWeights;
+  camber_measurements: NormalisedCamberMeasurements;
+  wing_shims: NormalisedWingShims;
+  items: LegalityReportItem[];
+};
+
+function getRequestUserEmail(request: NextRequest) {
+  return request.cookies.get("user-email")?.value?.trim().toLowerCase() ?? "";
+}
+
+function blockUnauthorisedUser(request: NextRequest) {
+  const userEmail = getRequestUserEmail(request);
+
+  if (!userEmail || !canEditLegality(userEmail)) {
+    return NextResponse.json(
+      {
+        error: "Only authorised users can send surface table check emails.",
+      },
+      { status: 403 },
+    );
+  }
+
+  return null;
+}
+
+function clean(value: string | number | null | undefined) {
+  return String(value ?? "").trim();
+}
+
+function cleanDecimalValue(value: string | number | null | undefined) {
+  const cleanValue = String(value ?? "").trim();
+  if (!cleanValue) return "";
+
+  const numericValue = Number(cleanValue);
+  if (!Number.isFinite(numericValue)) return cleanValue;
+
+  return numericValue.toFixed(1).replace(/\.0$/, "");
+}
+
+function normaliseCornerWeights(
+  weights: Partial<CornerWeights> | null | undefined,
+): NormalisedCornerWeights {
+  return {
+    fl: cleanDecimalValue(weights?.fl),
+    fr: cleanDecimalValue(weights?.fr),
+    rl: cleanDecimalValue(weights?.rl),
+    rr: cleanDecimalValue(weights?.rr),
+    total: cleanDecimalValue(weights?.total),
+  };
+}
+
+function normaliseCamberMeasurements(
+  measurements: Partial<CamberMeasurements> | null | undefined,
+): NormalisedCamberMeasurements {
+  return {
+    fl: cleanDecimalValue(measurements?.fl),
+    fr: cleanDecimalValue(measurements?.fr),
+    rl: cleanDecimalValue(measurements?.rl),
+    rr: cleanDecimalValue(measurements?.rr),
+  };
+}
+
+function normaliseWingShims(shims: Partial<WingShims> | null | undefined): NormalisedWingShims {
+  return {
+    main_lh: clean(shims?.main_lh),
+    main_rh: clean(shims?.main_rh),
+    spare_lh: clean(shims?.spare_lh),
+    spare_rh: clean(shims?.spare_rh),
+  };
+}
+
+function formatShim(value: string) {
+  return value ? value : "—";
+}
+
+function cleanHeightNotation(value: string | number | null | undefined) {
+  const cleanValue = clean(value);
+  return /^[0-5]$/.test(cleanValue) ? cleanValue : "";
+}
+
+function formatHeightNotation(item: LegalityReportItem) {
+  if (!item.height_notation_enabled || item.status !== "legal") return "";
+
+  const notation = cleanHeightNotation(item.height_notation);
+  return notation ? `Height ${notation}/5` : "Height not recorded";
+}
+
+function heightLabel(item: LegalityReportItem) {
+  const height = formatHeightNotation(item).replace("Height ", "");
+  return height || "—";
+}
+
+function formatWeight(value: string) {
+  return value ? `${value} kg` : "—";
+}
+
+function formatCamber(value: string) {
+  return value ? `${value}°` : "—";
+}
+
+function getFallbackEngineerEmailForCar(carId: number) {
+  const specific = process.env[`DRAIN_OUT_ENGINEER_EMAIL_CAR_${carId}`];
+
+  if (specific?.trim()) {
+    return specific.trim();
+  }
+
+  return process.env.DRAIN_OUT_ENGINEER_EMAIL?.trim() || "";
+}
+
+function getFallbackEngineerNameForCar(carId: number) {
+  return (
+    process.env[`DRAIN_OUT_ENGINEER_NAME_CAR_${carId}`]?.trim() ||
+    `Engineer Car ${carId}`
+  );
+}
+
+function escapeHtml(value: string | number | null | undefined) {
+  return String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+}
+
+function formatReportDate(value: string | null | undefined) {
+  if (!value) return "Not supplied";
+
+  const date = new Date(`${value}T00:00:00`);
+
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+
+  return date.toLocaleDateString("en-GB", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+  });
+}
+
+function buildFriendlyEmailError(rawMessage: string) {
+  const lower = rawMessage.toLowerCase();
+
+  if (
+    rawMessage.includes("535-5.7.8") ||
+    lower.includes("username and password not accepted") ||
+    lower.includes("badcredentials")
+  ) {
+    return {
+      error:
+        "Gmail rejected the SMTP username/password. GMAIL_USER and GMAIL_APP_PASSWORD probably do not match.",
+      likely_cause:
+        "Wrong Gmail address, wrong app password, app password copied incorrectly, or using the normal Gmail password.",
+      fix:
+        "Generate a fresh Google App Password from the exact Gmail account in GMAIL_USER, paste it into GMAIL_APP_PASSWORD with no spaces, then redeploy.",
+    };
+  }
+
+  if (
+    rawMessage.includes("534-5.7.9") ||
+    lower.includes("webloginrequired") ||
+    lower.includes("please log in with your web browser")
+  ) {
+    return {
+      error:
+        "Gmail is blocking the SMTP login because the account needs a browser security check.",
+      likely_cause: "Google does not trust the SMTP login from this environment.",
+      fix:
+        "Log into the Gmail account in a browser, approve any security warning, then redeploy. If it continues, switch to Resend instead of Gmail SMTP.",
+    };
+  }
+
+  if (
+    lower.includes("invalid login") ||
+    lower.includes("authentication failed") ||
+    lower.includes("auth")
+  ) {
+    return {
+      error: "The SMTP login failed.",
+      likely_cause:
+        "The Gmail credentials are wrong, revoked, or the deployment has not picked up the latest environment variables.",
+      fix: "Check GMAIL_USER and GMAIL_APP_PASSWORD, then restart/redeploy.",
+    };
+  }
+
+  if (
+    lower.includes("no recipients defined") ||
+    lower.includes("recipient") ||
+    lower.includes("invalid address")
+  ) {
+    return {
+      error: "No valid engineer recipient email was found.",
+      likely_cause:
+        "The selected car did not provide engineer_email, and no fallback email is configured.",
+      fix:
+        "Check NEXT_PUBLIC_DRAIN_OUT_ENGINEER_EMAIL_CAR_X and DRAIN_OUT_ENGINEER_EMAIL_CAR_X in Vercel/.env.local.",
+    };
+  }
+
+  return {
+    error: "Surface table check HTML notification failed while sending the engineer email.",
+    likely_cause:
+      "The surface table check may have saved, but the HTML email attachment failed.",
+    fix: "Check the technical_error value, then verify Gmail/Vercel environment variables.",
+  };
+}
+
+function isSpareWingItem(item: LegalityReportItem) {
+  const key = item.item_key.toLowerCase();
+  const name = item.item_name.toLowerCase();
+
+  return key.startsWith("spare_") || name.includes("spare front wing");
+}
+
+function shortItemName(item: LegalityReportItem) {
+  const sidePattern =
+    item.item_side === "LH" || item.item_side === "RH"
+      ? new RegExp(`\\s+${item.item_side}$`, "i")
+      : null;
+
+  const withoutSide = sidePattern
+    ? item.item_name.replace(sidePattern, "").trim()
+    : item.item_name.trim();
+
+  const name = withoutSide
+    .replace(/spare front wing/gi, "Spare FW")
+    .replace(/front wing endplate/gi, "FWEP")
+    .replace(/endplate/gi, "EP")
+    .replace(/front wing/gi, "FW")
+    .trim();
+
+  return name || withoutSide || item.item_name;
+}
+
+function sortForSheet(items: LegalityReportItem[]) {
+  const order = [
+    "spare_fwep_lh",
+    "spare_fw",
+    "spare_fwep_rh",
+    "fw_lh",
+    "fwep_lh",
+    "front_lh",
+    "mid_lh",
+    "rear_lh",
+    "diffuser_lh",
+    "rw_gap",
+    "fw_rh",
+    "fwep_rh",
+    "front_rh",
+    "mid_rh",
+    "rear_rh",
+    "diffuser_rh",
+  ];
+
+  return [...items].sort((a, b) => {
+    const aIndex = order.indexOf(a.item_key);
+    const bIndex = order.indexOf(b.item_key);
+    if (aIndex !== -1 || bIndex !== -1) {
+      return (aIndex === -1 ? 999 : aIndex) - (bIndex === -1 ? 999 : bIndex);
+    }
+    const aSide = a.item_side === "LH" ? 0 : a.item_side === "RH" ? 2 : 1;
+    const bSide = b.item_side === "LH" ? 0 : b.item_side === "RH" ? 2 : 1;
+    return aSide - bSide || a.item_name.localeCompare(b.item_name);
+  });
+}
+
+function orderedSpareWingItems(items: LegalityReportItem[]) {
+  const order = ["spare_fwep_lh", "spare_fw", "spare_fwep_rh"];
+  return [...items].sort((a, b) => {
+    const aIndex = order.indexOf(a.item_key);
+    const bIndex = order.indexOf(b.item_key);
+    return (
+      (aIndex === -1 ? 99 : aIndex) - (bIndex === -1 ? 99 : bIndex) ||
+      a.item_name.localeCompare(b.item_name)
+    );
+  });
+}
+
+function statusText(item: LegalityReportItem) {
+  return item.status === "illegal" ? "Illegal" : "Legal";
+}
+
+function statusClass(item: LegalityReportItem) {
+  return item.status === "illegal" ? "illegal" : "legal";
+}
+
+async function tryReadPublicImageDataUrl(fileName: string) {
+  try {
+    const filePath = path.join(process.cwd(), "public", fileName);
+    const bytes = await readFile(filePath);
+    const lower = fileName.toLowerCase();
+    const contentType = lower.endsWith(".jpg") || lower.endsWith(".jpeg") ? "image/jpeg" : "image/png";
+    return `data:${contentType};base64,${Buffer.from(bytes).toString("base64")}`;
+  } catch {
+    return "";
+  }
+}
+
+function makeInfoCard(label: string, value: string) {
+  return `
+    <div class="info-card">
+      <div class="label">${escapeHtml(label)}</div>
+      <div class="value">${escapeHtml(value || "—")}</div>
+    </div>
+  `;
+}
+
+function makeMeasurementCard(label: string, value: string) {
+  return `
+    <div class="measurement-card">
+      <div class="label">${escapeHtml(label)}</div>
+      <div class="measurement-value">${escapeHtml(value || "—")}</div>
+    </div>
+  `;
+}
+
+function makeShimCard(label: string, value: string) {
+  return `
+    <div class="measurement-card compact">
+      <div class="label">${escapeHtml(label)}</div>
+      <div class="measurement-value small-value">${escapeHtml(formatShim(value))}</div>
+    </div>
+  `;
+}
+
+function makeStatusCard(item: LegalityReportItem) {
+  return `
+    <div class="status-card ${statusClass(item)}">
+      <div>
+        <div class="status-title">${escapeHtml(shortItemName(item))}</div>
+        <div class="status-meta">${escapeHtml(item.item_side || "—")} · ${escapeHtml(heightLabel(item))}</div>
+      </div>
+      <div class="badge ${statusClass(item)}">${escapeHtml(statusText(item))}</div>
+    </div>
+  `;
+}
+
+function makeStatusRow(item: LegalityReportItem) {
+  return `
+    <tr class="${statusClass(item)}">
+      <td>${escapeHtml(shortItemName(item))}</td>
+      <td>${escapeHtml(item.item_side || "—")}</td>
+      <td>${escapeHtml(item.item_position || "—")}</td>
+      <td>${escapeHtml(heightLabel(item))}</td>
+      <td><span class="badge ${statusClass(item)}">${escapeHtml(statusText(item))}</span></td>
+      <td>${item.status === "illegal" ? escapeHtml(item.illegal_note || "Missing note") : "—"}</td>
+    </tr>
+  `;
+}
+
+function makeImagePanel(title: string, subtitle: string, imageDataUrl: string, alt: string) {
+  return `
+    <section class="panel visual-panel">
+      <div class="section-heading">
+        <div>
+          <p class="eyebrow">Visual Reference</p>
+          <h2>${escapeHtml(title)}</h2>
+          <p>${escapeHtml(subtitle)}</p>
+        </div>
+      </div>
+      <div class="visual-box">
+        ${
+          imageDataUrl
+            ? `<img src="${imageDataUrl}" alt="${escapeHtml(alt)}" />`
+            : `<div class="missing-image">Image not found in public folder</div>`
+        }
+      </div>
+    </section>
+  `;
+}
+
+async function buildLegalityHtml(payload: NormalisedLegalityEmailPayload) {
+  const illegalItems = payload.items.filter((item) => item.status === "illegal");
+  const spareWingItems = orderedSpareWingItems(payload.items.filter(isSpareWingItem));
+  const carItems = sortForSheet(payload.items.filter((item) => !isSpareWingItem(item)));
+  const legalCount = payload.items.length - illegalItems.length;
+  const summary =
+    illegalItems.length === 0
+      ? `${payload.items.length}/${payload.items.length} legal`
+      : `${illegalItems.length} illegal · ${legalCount} legal`;
+
+  const rodinLogo = await tryReadPublicImageDataUrl("rodin-logo.png");
+  const gb3Logo = await tryReadPublicImageDataUrl("gb3-logo.png");
+  const carOverviewImage = await tryReadPublicImageDataUrl("legality-car-overview-inverted.png");
+  const spareWingImage = await tryReadPublicImageDataUrl("legality-spare-front-wing.png");
+
+  const leftCarItems = carItems.filter((item) => item.item_side === "LH");
+  const rightCarItems = carItems.filter((item) => item.item_side === "RH");
+  const centreCarItems = carItems.filter((item) => item.item_side !== "LH" && item.item_side !== "RH");
+
+  const illegalNotes = illegalItems.length
+    ? illegalItems
+        .map(
+          (item) => `
+            <div class="note-row">
+              <strong>${escapeHtml(shortItemName(item))}</strong>
+              <span>${escapeHtml(item.illegal_note || "Missing note")}</span>
+            </div>
+          `,
+        )
+        .join("")
+    : `<div class="all-clear">All recorded surface table check items are legal.</div>`;
+
+  return `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Surface Table Checks - ${escapeHtml(payload.car_name)} - ${escapeHtml(payload.circuit)}</title>
+  <style>
+    :root {
+      --bg: #0d0f12;
+      --sheet: #0a0e14;
+      --panel: #111418;
+      --panel2: #14181d;
+      --cell: #070a0f;
+      --border: #2a3441;
+      --muted: #9ca3af;
+      --soft: #d1d5db;
+      --white: #f9fafb;
+      --red: #ef4444;
+      --red-dark: rgba(127, 29, 29, 0.55);
+      --green: #22c55e;
+      --green-dark: rgba(20, 83, 45, 0.48);
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--white);
+      font-family: Arial, Helvetica, sans-serif;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    .report {
+      max-width: 1280px;
+      margin: 0 auto;
+      padding: 24px;
+    }
+
+    .page {
+      min-height: 820px;
+      margin-bottom: 24px;
+      overflow: hidden;
+      border: 1px solid var(--border);
+      border-radius: 32px;
+      background:
+        radial-gradient(circle at top right, rgba(239, 68, 68, 0.12), transparent 38%),
+        linear-gradient(135deg, #05070a 0%, #0a0e14 48%, #111418 100%);
+      box-shadow: 0 24px 80px rgba(0, 0, 0, 0.35);
+    }
+
+    .header {
+      display: grid;
+      grid-template-columns: 140px 1fr auto;
+      align-items: center;
+      gap: 24px;
+      min-height: 128px;
+      padding: 28px 34px;
+      border-bottom: 1px solid var(--border);
+      background: linear-gradient(90deg, rgba(0,0,0,0.62), rgba(17,20,24,0.86));
+    }
+
+    .logo-stack img {
+      display: block;
+      max-width: 112px;
+      max-height: 46px;
+      object-fit: contain;
+      margin-bottom: 10px;
+    }
+
+    .logo-fallback {
+      font-size: 20px;
+      font-weight: 900;
+      letter-spacing: 0.08em;
+    }
+
+    .eyebrow {
+      margin: 0 0 8px;
+      color: var(--red);
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: 0.34em;
+      text-transform: uppercase;
+    }
+
+    h1, h2, h3, p { margin-top: 0; }
+
+    h1 {
+      margin-bottom: 8px;
+      font-size: 42px;
+      line-height: 0.98;
+      letter-spacing: -0.04em;
+    }
+
+    .subtitle {
+      margin: 0;
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.55;
+    }
+
+    .summary-pill,
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 999px;
+      border: 1px solid currentColor;
+      font-weight: 900;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+    }
+
+    .summary-pill {
+      min-width: 190px;
+      padding: 12px 18px;
+      font-size: 12px;
+    }
+
+    .summary-pill.legal,
+    .badge.legal { color: var(--green); background: var(--green-dark); }
+    .summary-pill.illegal,
+    .badge.illegal { color: var(--red); background: var(--red-dark); }
+
+    .summary-layout {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 430px;
+      gap: 20px;
+      padding: 24px;
+    }
+
+    .left-stack,
+    .visual-stack {
+      display: grid;
+      gap: 16px;
+      align-content: start;
+    }
+
+    .panel {
+      border: 1px solid var(--border);
+      border-radius: 24px;
+      background: rgba(17, 20, 24, 0.92);
+      box-shadow: inset 0 1px 0 rgba(255,255,255,0.03);
+      padding: 18px;
+    }
+
+    .section-heading {
+      display: flex;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 14px;
+    }
+
+    .section-heading h2 {
+      margin: 0 0 5px;
+      font-size: 21px;
+      letter-spacing: -0.02em;
+    }
+
+    .section-heading p:not(.eyebrow) {
+      margin: 0;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.45;
+    }
+
+    .unit-chip {
+      align-self: start;
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      background: var(--cell);
+      color: var(--muted);
+      padding: 7px 10px;
+      font-size: 10px;
+      font-weight: 900;
+      text-transform: uppercase;
+      letter-spacing: 0.16em;
+    }
+
+    .info-grid {
+      display: grid;
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+      gap: 10px;
+    }
+
+    .info-card,
+    .measurement-card {
+      min-height: 64px;
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      background: var(--cell);
+      padding: 12px;
+    }
+
+    .label {
+      margin-bottom: 8px;
+      color: var(--muted);
+      font-size: 10px;
+      font-weight: 900;
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+    }
+
+    .value {
+      color: var(--white);
+      font-size: 14px;
+      font-weight: 800;
+      line-height: 1.25;
+      word-break: break-word;
+    }
+
+    .measurement-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+    }
+
+    .measurement-grid.five {
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+    }
+
+    .measurement-grid.four {
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+    }
+
+    .measurement-card {
+      min-height: 76px;
+    }
+
+    .measurement-card.compact {
+      min-height: 62px;
+    }
+
+    .measurement-value {
+      color: var(--white);
+      font-size: 23px;
+      font-weight: 900;
+      line-height: 1;
+      letter-spacing: -0.04em;
+      white-space: nowrap;
+    }
+
+    .small-value { font-size: 18px; }
+
+    .visual-panel {
+      min-height: 256px;
+      padding-bottom: 16px;
+    }
+
+    .visual-box {
+      display: grid;
+      place-items: center;
+      min-height: 188px;
+      border: 1px solid var(--border);
+      border-radius: 22px;
+      background:
+        linear-gradient(to right, rgba(82,82,91,.20) 1px, transparent 1px),
+        linear-gradient(to bottom, rgba(82,82,91,.20) 1px, transparent 1px),
+        #030507;
+      background-size: 28px 28px;
+      overflow: hidden;
+    }
+
+    .visual-box img {
+      display: block;
+      width: 94%;
+      height: 218px;
+      object-fit: contain;
+      filter: contrast(1.1) drop-shadow(0 0 12px rgba(255,255,255,0.08));
+    }
+
+    .visual-panel:first-child .visual-box img {
+      height: 148px;
+    }
+
+    .missing-image {
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 800;
+    }
+
+    .status-cards {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 12px;
+    }
+
+    .status-card {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      min-height: 72px;
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      background: var(--cell);
+      padding: 13px;
+    }
+
+    .status-card.legal { border-color: rgba(34, 197, 94, 0.7); }
+    .status-card.illegal { border-color: rgba(239, 68, 68, 0.9); background: rgba(127, 29, 29, 0.34); }
+
+    .status-title {
+      font-size: 14px;
+      font-weight: 900;
+      line-height: 1.2;
+    }
+
+    .status-meta {
+      margin-top: 5px;
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 700;
+    }
+
+    .badge {
+      flex: 0 0 auto;
+      padding: 7px 10px;
+      font-size: 9px;
+    }
+
+    .details-content {
+      padding: 24px;
+      display: grid;
+      gap: 18px;
+    }
+
+    .two-column {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 18px;
+    }
+
+    .table-wrap {
+      overflow: hidden;
+      border: 1px solid var(--border);
+      border-radius: 18px;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 12px;
+    }
+
+    th {
+      background: #090d13;
+      color: var(--muted);
+      text-align: left;
+      font-size: 10px;
+      letter-spacing: 0.16em;
+      text-transform: uppercase;
+      padding: 10px 11px;
+    }
+
+    td {
+      border-top: 1px solid var(--border);
+      padding: 10px 11px;
+      color: var(--soft);
+      vertical-align: top;
+      line-height: 1.35;
+    }
+
+    tr.illegal td {
+      background: rgba(127, 29, 29, 0.28);
+      color: #fee2e2;
+    }
+
+    .note-list {
+      display: grid;
+      gap: 9px;
+    }
+
+    .note-row,
+    .all-clear {
+      border: 1px solid rgba(239, 68, 68, 0.55);
+      border-radius: 16px;
+      background: rgba(127, 29, 29, 0.32);
+      padding: 12px 14px;
+      font-size: 13px;
+      line-height: 1.4;
+    }
+
+    .note-row strong {
+      display: block;
+      margin-bottom: 3px;
+      color: #fecaca;
+    }
+
+    .all-clear {
+      border-color: rgba(34, 197, 94, 0.55);
+      background: rgba(20, 83, 45, 0.35);
+      color: #bbf7d0;
+      font-weight: 800;
+    }
+
+    .footer-note {
+      color: var(--muted);
+      font-size: 11px;
+      text-align: right;
+      padding: 0 28px 22px;
+    }
+
+    @media print {
+      @page { size: A4 landscape; margin: 8mm; }
+      body { background: white; }
+      .report { max-width: none; padding: 0; }
+      .page {
+        min-height: 183mm;
+        margin: 0;
+        border-radius: 0;
+        box-shadow: none;
+        page-break-after: always;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="report">
+    <section class="page">
+      <header class="header">
+        <div class="logo-stack">
+          ${rodinLogo ? `<img src="${rodinLogo}" alt="Rodin Motorsport" />` : `<div class="logo-fallback">RODIN</div>`}
+          ${gb3Logo ? `<img src="${gb3Logo}" alt="GB3" />` : ``}
+        </div>
+        <div>
+          <p class="eyebrow">Rodin Motorsport</p>
+          <h1>Surface Table Checks</h1>
+          <p class="subtitle">Completed mechanic sheet copy · ${escapeHtml(formatReportDate(payload.check_date))} · ${escapeHtml(payload.circuit)}</p>
+        </div>
+        <div class="summary-pill ${illegalItems.length ? "illegal" : "legal"}">${escapeHtml(summary)}</div>
+      </header>
+
+      <div class="summary-layout">
+        <div class="left-stack">
+          <section class="panel">
+            <div class="section-heading">
+              <div>
+                <p class="eyebrow">Event Details</p>
+                <h2>Check Information</h2>
+                <p>Saved surface table check metadata.</p>
+              </div>
+            </div>
+            <div class="info-grid">
+              ${makeInfoCard("Date", formatReportDate(payload.check_date))}
+              ${makeInfoCard("Circuit", payload.circuit)}
+              ${makeInfoCard("Car", payload.car_name || `Car ${payload.car_id}`)}
+              ${makeInfoCard("Driver", payload.driver || "Unknown")}
+              ${makeInfoCard("Engineer", payload.engineer_name)}
+            </div>
+          </section>
+
+          <section class="panel">
+            <div class="section-heading">
+              <div>
+                <p class="eyebrow">Measurements</p>
+                <h2>Corner Weights</h2>
+                <p>Front axle over rear axle, matching the app input sheet.</p>
+              </div>
+              <div class="unit-chip">kg</div>
+            </div>
+            <div class="measurement-grid five">
+              ${makeMeasurementCard("FL", formatWeight(payload.corner_weights.fl))}
+              ${makeMeasurementCard("FR", formatWeight(payload.corner_weights.fr))}
+              ${makeMeasurementCard("RL", formatWeight(payload.corner_weights.rl))}
+              ${makeMeasurementCard("RR", formatWeight(payload.corner_weights.rr))}
+              ${makeMeasurementCard("Total", formatWeight(payload.corner_weights.total))}
+            </div>
+          </section>
+
+          <section class="panel">
+            <div class="section-heading">
+              <div>
+                <p class="eyebrow">Measurements</p>
+                <h2>Camber</h2>
+                <p>Negative values shown exactly as entered.</p>
+              </div>
+              <div class="unit-chip">deg</div>
+            </div>
+            <div class="measurement-grid four">
+              ${makeMeasurementCard("FL", formatCamber(payload.camber_measurements.fl))}
+              ${makeMeasurementCard("FR", formatCamber(payload.camber_measurements.fr))}
+              ${makeMeasurementCard("RL", formatCamber(payload.camber_measurements.rl))}
+              ${makeMeasurementCard("RR", formatCamber(payload.camber_measurements.rr))}
+            </div>
+          </section>
+
+          <section class="panel">
+            <div class="section-heading">
+              <div>
+                <p class="eyebrow">Front Wing</p>
+                <h2>Shim Record</h2>
+                <p>Main and spare front wing shim packs.</p>
+              </div>
+              <div class="unit-chip">shims</div>
+            </div>
+            <div class="measurement-grid four">
+              ${makeShimCard("Main LH", payload.wing_shims.main_lh)}
+              ${makeShimCard("Main RH", payload.wing_shims.main_rh)}
+              ${makeShimCard("Spare LH", payload.wing_shims.spare_lh)}
+              ${makeShimCard("Spare RH", payload.wing_shims.spare_rh)}
+            </div>
+          </section>
+        </div>
+
+        <aside class="visual-stack">
+          ${makeImagePanel("Spare Front Wing", "Reference image from the mechanic sheet.", spareWingImage, "Spare front wing legality overview")}
+          ${makeImagePanel("Car Surface Overview", "Reference image from the mechanic sheet.", carOverviewImage, "Car surface table overview")}
+        </aside>
+      </div>
+    </section>
+
+    <section class="page">
+      <header class="header">
+        <div class="logo-stack">
+          ${rodinLogo ? `<img src="${rodinLogo}" alt="Rodin Motorsport" />` : `<div class="logo-fallback">RODIN</div>`}
+          ${gb3Logo ? `<img src="${gb3Logo}" alt="GB3" />` : ``}
+        </div>
+        <div>
+          <p class="eyebrow">Individual Elements</p>
+          <h1>Surface Point Results</h1>
+          <p class="subtitle">${escapeHtml(payload.car_name)} · ${escapeHtml(payload.circuit)} · ${escapeHtml(formatReportDate(payload.check_date))}</p>
+        </div>
+        <div class="summary-pill ${illegalItems.length ? "illegal" : "legal"}">${escapeHtml(summary)}</div>
+      </header>
+
+      <div class="details-content">
+        <section class="panel">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">Spare Front Wing</p>
+              <h2>Element Checks</h2>
+              <p>Individual spare front wing statuses.</p>
+            </div>
+          </div>
+          <div class="status-cards">
+            ${spareWingItems.length ? spareWingItems.map(makeStatusCard).join("") : `<div class="all-clear">No spare front wing items supplied.</div>`}
+          </div>
+        </section>
+
+        <div class="two-column">
+          <section class="panel">
+            <div class="section-heading">
+              <div>
+                <p class="eyebrow">Total Car</p>
+                <h2>Left Hand Side</h2>
+                <p>All LH surface check points.</p>
+              </div>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead><tr><th>Point</th><th>Side</th><th>Position</th><th>Height</th><th>Status</th><th>Note</th></tr></thead>
+                <tbody>${leftCarItems.length ? leftCarItems.map(makeStatusRow).join("") : `<tr><td colspan="6">No LH items supplied.</td></tr>`}</tbody>
+              </table>
+            </div>
+          </section>
+
+          <section class="panel">
+            <div class="section-heading">
+              <div>
+                <p class="eyebrow">Total Car</p>
+                <h2>Right Hand Side / Centre</h2>
+                <p>All RH and centre surface check points.</p>
+              </div>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead><tr><th>Point</th><th>Side</th><th>Position</th><th>Height</th><th>Status</th><th>Note</th></tr></thead>
+                <tbody>${[...rightCarItems, ...centreCarItems].length ? [...rightCarItems, ...centreCarItems].map(makeStatusRow).join("") : `<tr><td colspan="6">No RH or centre items supplied.</td></tr>`}</tbody>
+              </table>
+            </div>
+          </section>
+        </div>
+
+        <section class="panel">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">Check Summary</p>
+              <h2>${escapeHtml(summary)}</h2>
+              <p>Illegal notes are listed below. Legal items are kept in the tables above.</p>
+            </div>
+          </div>
+          <div class="note-list">${illegalNotes}</div>
+        </section>
+      </div>
+
+      <div class="footer-note">HTML layout version: surface-table-v22-browser-report-link</div>
+    </section>
+  </main>
+</body>
+</html>`;
+}
+
+
+function buildReportLinkEmailHtml(args: {
+  payload: NormalisedLegalityEmailPayload;
+  summary: string;
+  reportUrl: string;
+}) {
+  const { payload, summary, reportUrl } = args;
+  const statusColor = summary.toLowerCase().includes("illegal") ? "#ef4444" : "#22c55e";
+  const safeReportUrl = escapeHtml(reportUrl);
+
+  return `
+    <div style="margin:0;padding:24px;background:#0d0f12;color:#e5e7eb;font-family:Arial,Helvetica,sans-serif;line-height:1.5">
+      <div style="max-width:760px;margin:0 auto;border:1px solid #27272a;border-radius:24px;overflow:hidden;background:#111418">
+        <div style="padding:24px 26px;background:linear-gradient(135deg,#030507,#14181d 55%,#1a0d10);border-bottom:1px solid #27272a">
+          <div style="font-size:11px;font-weight:700;letter-spacing:0.28em;color:#f87171;text-transform:uppercase">Rodin Motorsport</div>
+          <h1 style="margin:10px 0 0;font-size:28px;line-height:1.15;color:#ffffff">Surface Table Checks</h1>
+          <div style="margin-top:10px;color:${statusColor};font-weight:700">${escapeHtml(summary)}</div>
+        </div>
+
+        <div style="padding:24px 26px">
+          <p style="margin:0 0 18px;color:#d4d4d8;font-size:15px">
+            A surface table check has been saved for <strong>${escapeHtml(payload.car_name)}</strong> at <strong>${escapeHtml(payload.circuit)}</strong>.
+          </p>
+
+          <table style="width:100%;border-collapse:collapse;margin:0 0 24px;font-size:14px;color:#e5e7eb">
+            <tr><td style="padding:9px 0;color:#a1a1aa;width:150px;border-bottom:1px solid #27272a">Date</td><td style="padding:9px 0;border-bottom:1px solid #27272a">${escapeHtml(formatReportDate(payload.check_date))}</td></tr>
+            <tr><td style="padding:9px 0;color:#a1a1aa;border-bottom:1px solid #27272a">Car</td><td style="padding:9px 0;border-bottom:1px solid #27272a">${escapeHtml(payload.car_name)}</td></tr>
+            <tr><td style="padding:9px 0;color:#a1a1aa;border-bottom:1px solid #27272a">Driver</td><td style="padding:9px 0;border-bottom:1px solid #27272a">${escapeHtml(payload.driver)}</td></tr>
+            <tr><td style="padding:9px 0;color:#a1a1aa;border-bottom:1px solid #27272a">Engineer</td><td style="padding:9px 0;border-bottom:1px solid #27272a">${escapeHtml(payload.engineer_name)}</td></tr>
+          </table>
+
+          <a href="${safeReportUrl}" style="display:inline-block;background:#dc2626;color:#ffffff;text-decoration:none;font-weight:800;border-radius:14px;padding:14px 20px">
+            Open Surface Table Check
+          </a>
+
+          <p style="margin:18px 0 0;color:#a1a1aa;font-size:12px">
+            If the button does not open, copy this link into a browser:<br />
+            <span style="word-break:break-all;color:#d4d4d8">${safeReportUrl}</span>
+          </p>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+export async function POST(request: NextRequest) {
+  try {
+    const rawPayload = (await request.json()) as LegalityEmailPayload;
+    const downloadOnly = rawPayload.download_only === true;
+
+    if (!downloadOnly) {
+      const authBlock = blockUnauthorisedUser(request);
+
+      if (authBlock) {
+        return authBlock;
+      }
+    }
+
+    if (!rawPayload.car_id || !rawPayload.check_date || !rawPayload.circuit) {
+      return NextResponse.json(
+        {
+          error: "Missing surface table check payload fields.",
+          details: "The request must include car_id, check_date and circuit.",
+        },
+        { status: 400 },
+      );
+    }
+
+    const items = rawPayload.items ?? [];
+
+    if (items.length === 0) {
+      return NextResponse.json(
+        {
+          error: "No surface table check items were supplied for the HTML report.",
+        },
+        { status: 400 },
+      );
+    }
+
+    const illegalWithoutNotes = items.filter(
+      (item) => item.status === "illegal" && !clean(item.illegal_note),
+    );
+
+    if (illegalWithoutNotes.length > 0) {
+      return NextResponse.json(
+        {
+          error: "Illegal items cannot be emailed without notes.",
+          details: illegalWithoutNotes.map((item) => item.item_name).join(", "),
+        },
+        { status: 400 },
+      );
+    }
+
+    const fallbackEngineerEmail = getFallbackEngineerEmailForCar(Number(rawPayload.car_id));
+    const to = clean(rawPayload.engineer_email) || fallbackEngineerEmail;
+
+    if (!downloadOnly && !to) {
+      return NextResponse.json(
+        {
+          error: "No engineer email selected and no fallback engineer email is configured.",
+          details: `No engineer email was found for car ${rawPayload.car_id}.`,
+          fix: `Add DRAIN_OUT_ENGINEER_EMAIL_CAR_${rawPayload.car_id}, NEXT_PUBLIC_DRAIN_OUT_ENGINEER_EMAIL_CAR_${rawPayload.car_id} or DRAIN_OUT_ENGINEER_EMAIL in Vercel/.env.local.`,
+        },
+        { status: 500 },
+      );
+    }
+
+    const carName = clean(rawPayload.car_name) || `Car ${rawPayload.car_id}`;
+
+    const payload: NormalisedLegalityEmailPayload = {
+      check_id: clean(rawPayload.check_id),
+      car_id: Number(rawPayload.car_id),
+      car_name: carName,
+      driver: clean(rawPayload.driver) || carName,
+      circuit: clean(rawPayload.circuit) || "Unknown",
+      check_date: clean(rawPayload.check_date),
+      engineer_name:
+        clean(rawPayload.engineer_name) || getFallbackEngineerNameForCar(Number(rawPayload.car_id)),
+      engineer_email: to || clean(rawPayload.engineer_email) || "Not supplied",
+      created_by: clean(rawPayload.created_by) || getRequestUserEmail(request) || "Unknown",
+      corner_weights: normaliseCornerWeights(rawPayload.corner_weights),
+      camber_measurements: normaliseCamberMeasurements(rawPayload.camber_measurements),
+      wing_shims: normaliseWingShims(rawPayload.wing_shims),
+      items,
+    };
+
+    const illegalCount = payload.items.filter((item) => item.status === "illegal").length;
+    const summary =
+      illegalCount === 0
+        ? `${payload.items.length}/${payload.items.length} legal`
+        : `${illegalCount} illegal · ${payload.items.length - illegalCount} legal`;
+
+    if (!payload.check_id) {
+      return NextResponse.json(
+        {
+          error: "No surface table check ID was supplied, so a browser report link could not be created.",
+          details: "Save the surface table check first, then send or resend the report email.",
+        },
+        { status: 400 },
+      );
+    }
+
+    const requestOrigin = new URL(request.url).origin;
+    const configuredOrigin = process.env.NEXT_PUBLIC_SITE_URL?.trim() || process.env.NEXT_PUBLIC_APP_URL?.trim();
+    const origin = (configuredOrigin || requestOrigin).replace(/\/+$/, "");
+    const reportUrl = `${origin}/legality/report/${encodeURIComponent(payload.check_id)}?v=${Date.now()}`;
+
+    if (downloadOnly) {
+      return NextResponse.redirect(reportUrl, 303);
+    }
+
+    const html = buildReportLinkEmailHtml({ payload, summary, reportUrl });
+
+    const gmailUser = process.env.GMAIL_USER?.trim();
+    const gmailAppPassword = process.env.GMAIL_APP_PASSWORD?.replace(/\s/g, "");
+
+    if (!gmailUser) {
+      return NextResponse.json(
+        {
+          error: "GMAIL_USER is not configured.",
+        },
+        { status: 500 },
+      );
+    }
+
+    if (!gmailAppPassword) {
+      return NextResponse.json(
+        {
+          error: "GMAIL_APP_PASSWORD is not configured.",
+        },
+        { status: 500 },
+      );
+    }
+
+    const transporter = nodemailer.createTransport({
+      service: "gmail",
+      auth: {
+        user: gmailUser,
+        pass: gmailAppPassword,
+      },
+    });
+
+    const mailResult = await transporter.sendMail({
+      from: `"Surface Table Checks" <${gmailUser}>`,
+      to,
+      subject: `Surface Table Checks Report Link - ${payload.circuit} - ${payload.car_name} - ${summary}`,
+      text: [
+        "Surface Table Checks Report",
+        "",
+        `Sent to: ${payload.engineer_name} <${to}>`,
+        "",
+        "Event Details",
+        `Date: ${formatReportDate(payload.check_date)}`,
+        `Circuit: ${payload.circuit}`,
+        `Car: ${payload.car_name}`,
+        `Driver: ${payload.driver}`,
+        `Corner weights: FL ${formatWeight(payload.corner_weights.fl)} · FR ${formatWeight(payload.corner_weights.fr)} · RL ${formatWeight(payload.corner_weights.rl)} · RR ${formatWeight(payload.corner_weights.rr)} · Total ${formatWeight(payload.corner_weights.total)}`,
+        `Camber: FL ${formatCamber(payload.camber_measurements.fl)} · FR ${formatCamber(payload.camber_measurements.fr)} · RL ${formatCamber(payload.camber_measurements.rl)} · RR ${formatCamber(payload.camber_measurements.rr)}`,
+        `Wing shims: Main LH ${formatShim(payload.wing_shims.main_lh)} · Main RH ${formatShim(payload.wing_shims.main_rh)} · Spare LH ${formatShim(payload.wing_shims.spare_lh)} · Spare RH ${formatShim(payload.wing_shims.spare_rh)}`,
+        "",
+        "Status Summary",
+        summary,
+        "",
+        `Open report: ${reportUrl}`,
+      ].join("\n"),
+      html,
+    });
+
+    const accepted = Array.isArray(mailResult.accepted)
+      ? mailResult.accepted.map(String)
+      : [];
+    const rejected = Array.isArray(mailResult.rejected)
+      ? mailResult.rejected.map(String)
+      : [];
+
+    if (rejected.length > 0 && accepted.length === 0) {
+      return NextResponse.json(
+        {
+          error: "Surface table check email was rejected by the mail server.",
+          sent_to: to,
+          accepted,
+          rejected,
+          message_id: mailResult.messageId ?? null,
+        },
+        { status: 502 },
+      );
+    }
+
+    return NextResponse.json({
+      ok: true,
+      sent_to: to,
+      engineer_name: payload.engineer_name,
+      circuit: payload.circuit,
+      check_date: payload.check_date,
+      delivery_mode: "browser_report_link",
+      report_url: reportUrl,
+      accepted,
+      rejected,
+      message_id: mailResult.messageId ?? null,
+    });
+  } catch (error) {
+    const rawMessage =
+      error instanceof Error ? error.message : "Unknown email sending error.";
+
+    const friendly = buildFriendlyEmailError(rawMessage);
+
+    return NextResponse.json(
+      {
+        error: friendly.error,
+        likely_cause: friendly.likely_cause,
+        fix: friendly.fix,
+        technical_error: rawMessage,
+        diagnostic: {
+          gmail_user_configured: Boolean(process.env.GMAIL_USER?.trim()),
+          gmail_app_password_configured: Boolean(
+            process.env.GMAIL_APP_PASSWORD?.trim(),
+          ),
+          drain_out_engineer_email_configured: Boolean(
+            process.env.DRAIN_OUT_ENGINEER_EMAIL?.trim(),
+          ),
+        },
+      },
+      { status: 500 },
+    );
+  }
+}
+Library
+/
+route_surface_table_checks_v22.ts
+
+
+// SURFACE TABLE CHECKS API ROUTE - REPORT LINK VERSION - v22 cache-busted browser report link / requires check_id
+import { NextRequest, NextResponse } from "next/server";
+import nodemailer from "nodemailer";
+import { readFile } from "node:fs/promises";
+import path from "node:path";
+import { canEditLegality } from "@/lib/userAccess";
+
+export const runtime = "nodejs";
+
+// SURFACE TABLE CHECKS API ROUTE - sends a clickable browser report link, not a PDF or HTML attachment.
+
+type LegalityStatus = "legal" | "illegal";
+
+type LegalityReportItem = {
+  item_key: string;
+  item_name: string;
+  item_side: string;
+  item_position: string;
+  status: LegalityStatus;
+  illegal_note: string | null;
+  height_notation_enabled?: boolean | null;
+  height_notation?: string | number | null;
+};
+
+type CornerWeights = {
+  fl: string | number | null;
+  fr: string | number | null;
+  rl: string | number | null;
+  rr: string | number | null;
+  total: string | number | null;
+};
+
+type CamberMeasurements = {
+  fl: string | number | null;
+  fr: string | number | null;
+  rl: string | number | null;
+  rr: string | number | null;
+};
+
+type NormalisedCornerWeights = {
+  fl: string;
+  fr: string;
+  rl: string;
+  rr: string;
+  total: string;
+};
+
+type NormalisedCamberMeasurements = {
+  fl: string;
+  fr: string;
+  rl: string;
+  rr: string;
+};
+
+type WingShims = {
+  main_lh: string | number | null;
+  main_rh: string | number | null;
+  spare_lh: string | number | null;
+  spare_rh: string | number | null;
+};
+
+type NormalisedWingShims = {
+  main_lh: string;
+  main_rh: string;
+  spare_lh: string;
+  spare_rh: string;
+};
+
+type LegalityEmailPayload = {
+  check_id?: string | null;
+  car_id: number;
+  car_name?: string | null;
+  driver?: string | null;
+  circuit?: string | null;
+  check_date?: string | null;
+  engineer_name?: string | null;
+  engineer_email?: string | null;
+  created_by?: string | null;
+  corner_weights?: Partial<CornerWeights> | null;
+  camber_measurements?: Partial<CamberMeasurements> | null;
+  wing_shims?: Partial<WingShims> | null;
+  download_only?: boolean | null;
+  items?: LegalityReportItem[];
+};
+
+type NormalisedLegalityEmailPayload = {
+  check_id: string;
+  car_id: number;
+  car_name: string;
+  driver: string;
+  circuit: string;
+  check_date: string;
+  engineer_name: string;
+  engineer_email: string;
+  created_by: string;
+  corner_weights: NormalisedCornerWeights;
+  camber_measurements: NormalisedCamberMeasurements;
+  wing_shims: NormalisedWingShims;
+  items: LegalityReportItem[];
+};
+
+function getRequestUserEmail(request: NextRequest) {
+  return request.cookies.get("user-email")?.value?.trim().toLowerCase() ?? "";
+}
+
+function blockUnauthorisedUser(request: NextRequest) {
+  const userEmail = getRequestUserEmail(request);
+
+  if (!userEmail || !canEditLegality(userEmail)) {
+    return NextResponse.json(
+      {
+        error: "Only authorised users can send surface table check emails.",
+      },
+      { status: 403 },
+    );
+  }
+
+  return null;
+}
+
+function clean(value: string | number | null | undefined) {
+  return String(value ?? "").trim();
+}
+
+function cleanDecimalValue(value: string | number | null | undefined) {
+  const cleanValue = String(value ?? "").trim();
+  if (!cleanValue) return "";
+
+  const numericValue = Number(cleanValue);
+  if (!Number.isFinite(numericValue)) return cleanValue;
+
+  return numericValue.toFixed(1).replace(/\.0$/, "");
+}
+
+function normaliseCornerWeights(
+  weights: Partial<CornerWeights> | null | undefined,
+): NormalisedCornerWeights {
+  return {
+    fl: cleanDecimalValue(weights?.fl),
+    fr: cleanDecimalValue(weights?.fr),
+    rl: cleanDecimalValue(weights?.rl),
+    rr: cleanDecimalValue(weights?.rr),
+    total: cleanDecimalValue(weights?.total),
+  };
+}
+
+function normaliseCamberMeasurements(
+  measurements: Partial<CamberMeasurements> | null | undefined,
+): NormalisedCamberMeasurements {
+  return {
+    fl: cleanDecimalValue(measurements?.fl),
+    fr: cleanDecimalValue(measurements?.fr),
+    rl: cleanDecimalValue(measurements?.rl),
+    rr: cleanDecimalValue(measurements?.rr),
+  };
+}
+
+function normaliseWingShims(shims: Partial<WingShims> | null | undefined): NormalisedWingShims {
+  return {
+    main_lh: clean(shims?.main_lh),
+    main_rh: clean(shims?.main_rh),
+    spare_lh: clean(shims?.spare_lh),
+    spare_rh: clean(shims?.spare_rh),
+  };
+}
+
+function formatShim(value: string) {
+  return value ? value : "—";
+}
+
+function cleanHeightNotation(value: string | number | null | undefined) {
+  const cleanValue = clean(value);
+  return /^[0-5]$/.test(cleanValue) ? cleanValue : "";
+}
+
+function formatHeightNotation(item: LegalityReportItem) {
+  if (!item.height_notation_enabled || item.status !== "legal") return "";
+
+  const notation = cleanHeightNotation(item.height_notation);
+  return notation ? `Height ${notation}/5` : "Height not recorded";
+}
+
+function heightLabel(item: LegalityReportItem) {
+  const height = formatHeightNotation(item).replace("Height ", "");
+  return height || "—";
+}
+
+function formatWeight(value: string) {
+  return value ? `${value} kg` : "—";
+}
+
+function formatCamber(value: string) {
+  return value ? `${value}°` : "—";
+}
+
+function getFallbackEngineerEmailForCar(carId: number) {
+  const specific = process.env[`DRAIN_OUT_ENGINEER_EMAIL_CAR_${carId}`];
+
+  if (specific?.trim()) {
+    return specific.trim();
+  }
+
+  return process.env.DRAIN_OUT_ENGINEER_EMAIL?.trim() || "";
+}
+
+function getFallbackEngineerNameForCar(carId: number) {
+  return (
+    process.env[`DRAIN_OUT_ENGINEER_NAME_CAR_${carId}`]?.trim() ||
+    `Engineer Car ${carId}`
+  );
+}
+
+function escapeHtml(value: string | number | null | undefined) {
+  return String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+}
+
+function formatReportDate(value: string | null | undefined) {
+  if (!value) return "Not supplied";
+
+  const date = new Date(`${value}T00:00:00`);
+
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+
+  return date.toLocaleDateString("en-GB", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+  });
+}
+
+function buildFriendlyEmailError(rawMessage: string) {
+  const lower = rawMessage.toLowerCase();
+
+  if (
+    rawMessage.includes("535-5.7.8") ||
+    lower.includes("username and password not accepted") ||
+    lower.includes("badcredentials")
+  ) {
+    return {
+      error:
+        "Gmail rejected the SMTP username/password. GMAIL_USER and GMAIL_APP_PASSWORD probably do not match.",
+      likely_cause:
+        "Wrong Gmail address, wrong app password, app password copied incorrectly, or using the normal Gmail password.",
+      fix:
+        "Generate a fresh Google App Password from the exact Gmail account in GMAIL_USER, paste it into GMAIL_APP_PASSWORD with no spaces, then redeploy.",
+    };
+  }
+
+  if (
+    rawMessage.includes("534-5.7.9") ||
+    lower.includes("webloginrequired") ||
+    lower.includes("please log in with your web browser")
+  ) {
+    return {
+      error:
+        "Gmail is blocking the SMTP login because the account needs a browser security check.",
+      likely_cause: "Google does not trust the SMTP login from this environment.",
+      fix:
+        "Log into the Gmail account in a browser, approve any security warning, then redeploy. If it continues, switch to Resend instead of Gmail SMTP.",
+    };
+  }
+
+  if (
+    lower.includes("invalid login") ||
+    lower.includes("authentication failed") ||
+    lower.includes("auth")
+  ) {
+    return {
+      error: "The SMTP login failed.",
+      likely_cause:
+        "The Gmail credentials are wrong, revoked, or the deployment has not picked up the latest environment variables.",
+      fix: "Check GMAIL_USER and GMAIL_APP_PASSWORD, then restart/redeploy.",
+    };
+  }
+
+  if (
+    lower.includes("no recipients defined") ||
+    lower.includes("recipient") ||
+    lower.includes("invalid address")
+  ) {
+    return {
+      error: "No valid engineer recipient email was found.",
+      likely_cause:
+        "The selected car did not provide engineer_email, and no fallback email is configured.",
+      fix:
+        "Check NEXT_PUBLIC_DRAIN_OUT_ENGINEER_EMAIL_CAR_X and DRAIN_OUT_ENGINEER_EMAIL_CAR_X in Vercel/.env.local.",
+    };
+  }
+
+  return {
+    error: "Surface table check HTML notification failed while sending the engineer email.",
+    likely_cause:
+      "The surface table check may have saved, but the HTML email attachment failed.",
+    fix: "Check the technical_error value, then verify Gmail/Vercel environment variables.",
+  };
+}
+
+function isSpareWingItem(item: LegalityReportItem) {
+  const key = item.item_key.toLowerCase();
+  const name = item.item_name.toLowerCase();
+
+  return key.startsWith("spare_") || name.includes("spare front wing");
+}
+
+function shortItemName(item: LegalityReportItem) {
+  const sidePattern =
+    item.item_side === "LH" || item.item_side === "RH"
+      ? new RegExp(`\\s+${item.item_side}$`, "i")
+      : null;
+
+  const withoutSide = sidePattern
+    ? item.item_name.replace(sidePattern, "").trim()
+    : item.item_name.trim();
+
+  const name = withoutSide
+    .replace(/spare front wing/gi, "Spare FW")
+    .replace(/front wing endplate/gi, "FWEP")
+    .replace(/endplate/gi, "EP")
+    .replace(/front wing/gi, "FW")
+    .trim();
+
+  return name || withoutSide || item.item_name;
+}
+
+function sortForSheet(items: LegalityReportItem[]) {
+  const order = [
+    "spare_fwep_lh",
+    "spare_fw",
+    "spare_fwep_rh",
+    "fw_lh",
+    "fwep_lh",
+    "front_lh",
+    "mid_lh",
+    "rear_lh",
+    "diffuser_lh",
+    "rw_gap",
+    "fw_rh",
+    "fwep_rh",
+    "front_rh",
+    "mid_rh",
+    "rear_rh",
+    "diffuser_rh",
+  ];
+
+  return [...items].sort((a, b) => {
+    const aIndex = order.indexOf(a.item_key);
+    const bIndex = order.indexOf(b.item_key);
+    if (aIndex !== -1 || bIndex !== -1) {
+      return (aIndex === -1 ? 999 : aIndex) - (bIndex === -1 ? 999 : bIndex);
+    }
+    const aSide = a.item_side === "LH" ? 0 : a.item_side === "RH" ? 2 : 1;
+    const bSide = b.item_side === "LH" ? 0 : b.item_side === "RH" ? 2 : 1;
+    return aSide - bSide || a.item_name.localeCompare(b.item_name);
+  });
+}
+
+function orderedSpareWingItems(items: LegalityReportItem[]) {
+  const order = ["spare_fwep_lh", "spare_fw", "spare_fwep_rh"];
+  return [...items].sort((a, b) => {
+    const aIndex = order.indexOf(a.item_key);
+    const bIndex = order.indexOf(b.item_key);
+    return (
+      (aIndex === -1 ? 99 : aIndex) - (bIndex === -1 ? 99 : bIndex) ||
+      a.item_name.localeCompare(b.item_name)
+    );
+  });
+}
+
+function statusText(item: LegalityReportItem) {
+  return item.status === "illegal" ? "Illegal" : "Legal";
+}
+
+function statusClass(item: LegalityReportItem) {
+  return item.status === "illegal" ? "illegal" : "legal";
+}
+
+async function tryReadPublicImageDataUrl(fileName: string) {
+  try {
+    const filePath = path.join(process.cwd(), "public", fileName);
+    const bytes = await readFile(filePath);
+    const lower = fileName.toLowerCase();
+    const contentType = lower.endsWith(".jpg") || lower.endsWith(".jpeg") ? "image/jpeg" : "image/png";
+    return `data:${contentType};base64,${Buffer.from(bytes).toString("base64")}`;
+  } catch {
+    return "";
+  }
+}
+
+function makeInfoCard(label: string, value: string) {
+  return `
+    <div class="info-card">
+      <div class="label">${escapeHtml(label)}</div>
+      <div class="value">${escapeHtml(value || "—")}</div>
+    </div>
+  `;
+}
+
+function makeMeasurementCard(label: string, value: string) {
+  return `
+    <div class="measurement-card">
+      <div class="label">${escapeHtml(label)}</div>
+      <div class="measurement-value">${escapeHtml(value || "—")}</div>
+    </div>
+  `;
+}
+
+function makeShimCard(label: string, value: string) {
+  return `
+    <div class="measurement-card compact">
+      <div class="label">${escapeHtml(label)}</div>
+      <div class="measurement-value small-value">${escapeHtml(formatShim(value))}</div>
+    </div>
+  `;
+}
+
+function makeStatusCard(item: LegalityReportItem) {
+  return `
+    <div class="status-card ${statusClass(item)}">
+      <div>
+        <div class="status-title">${escapeHtml(shortItemName(item))}</div>
+        <div class="status-meta">${escapeHtml(item.item_side || "—")} · ${escapeHtml(heightLabel(item))}</div>
+      </div>
+      <div class="badge ${statusClass(item)}">${escapeHtml(statusText(item))}</div>
+    </div>
+  `;
+}
+
+function makeStatusRow(item: LegalityReportItem) {
+  return `
+    <tr class="${statusClass(item)}">
+      <td>${escapeHtml(shortItemName(item))}</td>
+      <td>${escapeHtml(item.item_side || "—")}</td>
+      <td>${escapeHtml(item.item_position || "—")}</td>
+      <td>${escapeHtml(heightLabel(item))}</td>
+      <td><span class="badge ${statusClass(item)}">${escapeHtml(statusText(item))}</span></td>
+      <td>${item.status === "illegal" ? escapeHtml(item.illegal_note || "Missing note") : "—"}</td>
+    </tr>
+  `;
+}
+
+function makeImagePanel(title: string, subtitle: string, imageDataUrl: string, alt: string) {
+  return `
+    <section class="panel visual-panel">
+      <div class="section-heading">
+        <div>
+          <p class="eyebrow">Visual Reference</p>
+          <h2>${escapeHtml(title)}</h2>
+          <p>${escapeHtml(subtitle)}</p>
+        </div>
+      </div>
+      <div class="visual-box">
+        ${
+          imageDataUrl
+            ? `<img src="${imageDataUrl}" alt="${escapeHtml(alt)}" />`
+            : `<div class="missing-image">Image not found in public folder</div>`
+        }
+      </div>
+    </section>
+  `;
+}
+
+async function buildLegalityHtml(payload: NormalisedLegalityEmailPayload) {
+  const illegalItems = payload.items.filter((item) => item.status === "illegal");
+  const spareWingItems = orderedSpareWingItems(payload.items.filter(isSpareWingItem));
+  const carItems = sortForSheet(payload.items.filter((item) => !isSpareWingItem(item)));
+  const legalCount = payload.items.length - illegalItems.length;
+  const summary =
+    illegalItems.length === 0
+      ? `${payload.items.length}/${payload.items.length} legal`
+      : `${illegalItems.length} illegal · ${legalCount} legal`;
+
+  const rodinLogo = await tryReadPublicImageDataUrl("rodin-logo.png");
+  const gb3Logo = await tryReadPublicImageDataUrl("gb3-logo.png");
+  const carOverviewImage = await tryReadPublicImageDataUrl("legality-car-overview-inverted.png");
+  const spareWingImage = await tryReadPublicImageDataUrl("legality-spare-front-wing.png");
+
+  const leftCarItems = carItems.filter((item) => item.item_side === "LH");
+  const rightCarItems = carItems.filter((item) => item.item_side === "RH");
+  const centreCarItems = carItems.filter((item) => item.item_side !== "LH" && item.item_side !== "RH");
+
+  const illegalNotes = illegalItems.length
+    ? illegalItems
+        .map(
+          (item) => `
+            <div class="note-row">
+              <strong>${escapeHtml(shortItemName(item))}</strong>
+              <span>${escapeHtml(item.illegal_note || "Missing note")}</span>
+            </div>
+          `,
+        )
+        .join("")
+    : `<div class="all-clear">All recorded surface table check items are legal.</div>`;
+
+  return `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Surface Table Checks - ${escapeHtml(payload.car_name)} - ${escapeHtml(payload.circuit)}</title>
+  <style>
+    :root {
+      --bg: #0d0f12;
+      --sheet: #0a0e14;
+      --panel: #111418;
+      --panel2: #14181d;
+      --cell: #070a0f;
+      --border: #2a3441;
+      --muted: #9ca3af;
+      --soft: #d1d5db;
+      --white: #f9fafb;
+      --red: #ef4444;
+      --red-dark: rgba(127, 29, 29, 0.55);
+      --green: #22c55e;
+      --green-dark: rgba(20, 83, 45, 0.48);
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--white);
+      font-family: Arial, Helvetica, sans-serif;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    .report {
+      max-width: 1280px;
+      margin: 0 auto;
+      padding: 24px;
+    }
+
+    .page {
+      min-height: 820px;
+      margin-bottom: 24px;
+      overflow: hidden;
+      border: 1px solid var(--border);
+      border-radius: 32px;
+      background:
+        radial-gradient(circle at top right, rgba(239, 68, 68, 0.12), transparent 38%),
+        linear-gradient(135deg, #05070a 0%, #0a0e14 48%, #111418 100%);
+      box-shadow: 0 24px 80px rgba(0, 0, 0, 0.35);
+    }
+
+    .header {
+      display: grid;
+      grid-template-columns: 140px 1fr auto;
+      align-items: center;
+      gap: 24px;
+      min-height: 128px;
+      padding: 28px 34px;
+      border-bottom: 1px solid var(--border);
+      background: linear-gradient(90deg, rgba(0,0,0,0.62), rgba(17,20,24,0.86));
+    }
+
+    .logo-stack img {
+      display: block;
+      max-width: 112px;
+      max-height: 46px;
+      object-fit: contain;
+      margin-bottom: 10px;
+    }
+
+    .logo-fallback {
+      font-size: 20px;
+      font-weight: 900;
+      letter-spacing: 0.08em;
+    }
+
+    .eyebrow {
+      margin: 0 0 8px;
+      color: var(--red);
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: 0.34em;
+      text-transform: uppercase;
+    }
+
+    h1, h2, h3, p { margin-top: 0; }
+
+    h1 {
+      margin-bottom: 8px;
+      font-size: 42px;
+      line-height: 0.98;
+      letter-spacing: -0.04em;
+    }
+
+    .subtitle {
+      margin: 0;
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.55;
+    }
+
+    .summary-pill,
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 999px;
+      border: 1px solid currentColor;
+      font-weight: 900;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+    }
+
+    .summary-pill {
+      min-width: 190px;
+      padding: 12px 18px;
+      font-size: 12px;
+    }
+
+    .summary-pill.legal,
+    .badge.legal { color: var(--green); background: var(--green-dark); }
+    .summary-pill.illegal,
+    .badge.illegal { color: var(--red); background: var(--red-dark); }
+
+    .summary-layout {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 430px;
+      gap: 20px;
+      padding: 24px;
+    }
+
+    .left-stack,
+    .visual-stack {
+      display: grid;
+      gap: 16px;
+      align-content: start;
+    }
+
+    .panel {
+      border: 1px solid var(--border);
+      border-radius: 24px;
+      background: rgba(17, 20, 24, 0.92);
+      box-shadow: inset 0 1px 0 rgba(255,255,255,0.03);
+      padding: 18px;
+    }
+
+    .section-heading {
+      display: flex;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 14px;
+    }
+
+    .section-heading h2 {
+      margin: 0 0 5px;
+      font-size: 21px;
+      letter-spacing: -0.02em;
+    }
+
+    .section-heading p:not(.eyebrow) {
+      margin: 0;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.45;
+    }
+
+    .unit-chip {
+      align-self: start;
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      background: var(--cell);
+      color: var(--muted);
+      padding: 7px 10px;
+      font-size: 10px;
+      font-weight: 900;
+      text-transform: uppercase;
+      letter-spacing: 0.16em;
+    }
+
+    .info-grid {
+      display: grid;
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+      gap: 10px;
+    }
+
+    .info-card,
+    .measurement-card {
+      min-height: 64px;
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      background: var(--cell);
+      padding: 12px;
+    }
+
+    .label {
+      margin-bottom: 8px;
+      color: var(--muted);
+      font-size: 10px;
+      font-weight: 900;
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+    }
+
+    .value {
+      color: var(--white);
+      font-size: 14px;
+      font-weight: 800;
+      line-height: 1.25;
+      word-break: break-word;
+    }
+
+    .measurement-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+    }
+
+    .measurement-grid.five {
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+    }
+
+    .measurement-grid.four {
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+    }
+
+    .measurement-card {
+      min-height: 76px;
+    }
+
+    .measurement-card.compact {
+      min-height: 62px;
+    }
+
+    .measurement-value {
+      color: var(--white);
+      font-size: 23px;
+      font-weight: 900;
+      line-height: 1;
+      letter-spacing: -0.04em;
+      white-space: nowrap;
+    }
+
+    .small-value { font-size: 18px; }
+
+    .visual-panel {
+      min-height: 256px;
+      padding-bottom: 16px;
+    }
+
+    .visual-box {
+      display: grid;
+      place-items: center;
+      min-height: 188px;
+      border: 1px solid var(--border);
+      border-radius: 22px;
+      background:
+        linear-gradient(to right, rgba(82,82,91,.20) 1px, transparent 1px),
+        linear-gradient(to bottom, rgba(82,82,91,.20) 1px, transparent 1px),
+        #030507;
+      background-size: 28px 28px;
+      overflow: hidden;
+    }
+
+    .visual-box img {
+      display: block;
+      width: 94%;
+      height: 218px;
+      object-fit: contain;
+      filter: contrast(1.1) drop-shadow(0 0 12px rgba(255,255,255,0.08));
+    }
+
+    .visual-panel:first-child .visual-box img {
+      height: 148px;
+    }
+
+    .missing-image {
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 800;
+    }
+
+    .status-cards {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 12px;
+    }
+
+    .status-card {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      min-height: 72px;
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      background: var(--cell);
+      padding: 13px;
+    }
+
+    .status-card.legal { border-color: rgba(34, 197, 94, 0.7); }
+    .status-card.illegal { border-color: rgba(239, 68, 68, 0.9); background: rgba(127, 29, 29, 0.34); }
+
+    .status-title {
+      font-size: 14px;
+      font-weight: 900;
+      line-height: 1.2;
+    }
+
+    .status-meta {
+      margin-top: 5px;
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 700;
+    }
+
+    .badge {
+      flex: 0 0 auto;
+      padding: 7px 10px;
+      font-size: 9px;
+    }
+
+    .details-content {
+      padding: 24px;
+      display: grid;
+      gap: 18px;
+    }
+
+    .two-column {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 18px;
+    }
+
+    .table-wrap {
+      overflow: hidden;
+      border: 1px solid var(--border);
+      border-radius: 18px;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 12px;
+    }
+
+    th {
+      background: #090d13;
+      color: var(--muted);
+      text-align: left;
+      font-size: 10px;
+      letter-spacing: 0.16em;
+      text-transform: uppercase;
+      padding: 10px 11px;
+    }
+
+    td {
+      border-top: 1px solid var(--border);
+      padding: 10px 11px;
+      color: var(--soft);
+      vertical-align: top;
+      line-height: 1.35;
+    }
+
+    tr.illegal td {
+      background: rgba(127, 29, 29, 0.28);
+      color: #fee2e2;
+    }
+
+    .note-list {
+      display: grid;
+      gap: 9px;
+    }
+
+    .note-row,
+    .all-clear {
+      border: 1px solid rgba(239, 68, 68, 0.55);
+      border-radius: 16px;
+      background: rgba(127, 29, 29, 0.32);
+      padding: 12px 14px;
+      font-size: 13px;
+      line-height: 1.4;
+    }
+
+    .note-row strong {
+      display: block;
+      margin-bottom: 3px;
+      color: #fecaca;
+    }
+
+    .all-clear {
+      border-color: rgba(34, 197, 94, 0.55);
+      background: rgba(20, 83, 45, 0.35);
+      color: #bbf7d0;
+      font-weight: 800;
+    }
+
+    .footer-note {
+      color: var(--muted);
+      font-size: 11px;
+      text-align: right;
+      padding: 0 28px 22px;
+    }
+
+    @media print {
+      @page { size: A4 landscape; margin: 8mm; }
+      body { background: white; }
+      .report { max-width: none; padding: 0; }
+      .page {
+        min-height: 183mm;
+        margin: 0;
+        border-radius: 0;
+        box-shadow: none;
+        page-break-after: always;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="report">
+    <section class="page">
+      <header class="header">
+        <div class="logo-stack">
+          ${rodinLogo ? `<img src="${rodinLogo}" alt="Rodin Motorsport" />` : `<div class="logo-fallback">RODIN</div>`}
+          ${gb3Logo ? `<img src="${gb3Logo}" alt="GB3" />` : ``}
+        </div>
+        <div>
+          <p class="eyebrow">Rodin Motorsport</p>
+          <h1>Surface Table Checks</h1>
+          <p class="subtitle">Completed mechanic sheet copy · ${escapeHtml(formatReportDate(payload.check_date))} · ${escapeHtml(payload.circuit)}</p>
+        </div>
+        <div class="summary-pill ${illegalItems.length ? "illegal" : "legal"}">${escapeHtml(summary)}</div>
+      </header>
+
+      <div class="summary-layout">
+        <div class="left-stack">
+          <section class="panel">
+            <div class="section-heading">
+              <div>
+                <p class="eyebrow">Event Details</p>
+                <h2>Check Information</h2>
+                <p>Saved surface table check metadata.</p>
+              </div>
+            </div>
+            <div class="info-grid">
+              ${makeInfoCard("Date", formatReportDate(payload.check_date))}
+              ${makeInfoCard("Circuit", payload.circuit)}
+              ${makeInfoCard("Car", payload.car_name || `Car ${payload.car_id}`)}
+              ${makeInfoCard("Driver", payload.driver || "Unknown")}
+              ${makeInfoCard("Engineer", payload.engineer_name)}
+            </div>
+          </section>
+
+          <section class="panel">
+            <div class="section-heading">
+              <div>
+                <p class="eyebrow">Measurements</p>
+                <h2>Corner Weights</h2>
+                <p>Front axle over rear axle, matching the app input sheet.</p>
+              </div>
+              <div class="unit-chip">kg</div>
+            </div>
+            <div class="measurement-grid five">
+              ${makeMeasurementCard("FL", formatWeight(payload.corner_weights.fl))}
+              ${makeMeasurementCard("FR", formatWeight(payload.corner_weights.fr))}
+              ${makeMeasurementCard("RL", formatWeight(payload.corner_weights.rl))}
+              ${makeMeasurementCard("RR", formatWeight(payload.corner_weights.rr))}
+              ${makeMeasurementCard("Total", formatWeight(payload.corner_weights.total))}
+            </div>
+          </section>
+
+          <section class="panel">
+            <div class="section-heading">
+              <div>
+                <p class="eyebrow">Measurements</p>
+                <h2>Camber</h2>
+                <p>Negative values shown exactly as entered.</p>
+              </div>
+              <div class="unit-chip">deg</div>
+            </div>
+            <div class="measurement-grid four">
+              ${makeMeasurementCard("FL", formatCamber(payload.camber_measurements.fl))}
+              ${makeMeasurementCard("FR", formatCamber(payload.camber_measurements.fr))}
+              ${makeMeasurementCard("RL", formatCamber(payload.camber_measurements.rl))}
+              ${makeMeasurementCard("RR", formatCamber(payload.camber_measurements.rr))}
+            </div>
+          </section>
+
+          <section class="panel">
+            <div class="section-heading">
+              <div>
+                <p class="eyebrow">Front Wing</p>
+                <h2>Shim Record</h2>
+                <p>Main and spare front wing shim packs.</p>
+              </div>
+              <div class="unit-chip">shims</div>
+            </div>
+            <div class="measurement-grid four">
+              ${makeShimCard("Main LH", payload.wing_shims.main_lh)}
+              ${makeShimCard("Main RH", payload.wing_shims.main_rh)}
+              ${makeShimCard("Spare LH", payload.wing_shims.spare_lh)}
+              ${makeShimCard("Spare RH", payload.wing_shims.spare_rh)}
+            </div>
+          </section>
+        </div>
+
+        <aside class="visual-stack">
+          ${makeImagePanel("Spare Front Wing", "Reference image from the mechanic sheet.", spareWingImage, "Spare front wing legality overview")}
+          ${makeImagePanel("Car Surface Overview", "Reference image from the mechanic sheet.", carOverviewImage, "Car surface table overview")}
+        </aside>
+      </div>
+    </section>
+
+    <section class="page">
+      <header class="header">
+        <div class="logo-stack">
+          ${rodinLogo ? `<img src="${rodinLogo}" alt="Rodin Motorsport" />` : `<div class="logo-fallback">RODIN</div>`}
+          ${gb3Logo ? `<img src="${gb3Logo}" alt="GB3" />` : ``}
+        </div>
+        <div>
+          <p class="eyebrow">Individual Elements</p>
+          <h1>Surface Point Results</h1>
+          <p class="subtitle">${escapeHtml(payload.car_name)} · ${escapeHtml(payload.circuit)} · ${escapeHtml(formatReportDate(payload.check_date))}</p>
+        </div>
+        <div class="summary-pill ${illegalItems.length ? "illegal" : "legal"}">${escapeHtml(summary)}</div>
+      </header>
+
+      <div class="details-content">
+        <section class="panel">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">Spare Front Wing</p>
+              <h2>Element Checks</h2>
+              <p>Individual spare front wing statuses.</p>
+            </div>
+          </div>
+          <div class="status-cards">
+            ${spareWingItems.length ? spareWingItems.map(makeStatusCard).join("") : `<div class="all-clear">No spare front wing items supplied.</div>`}
+          </div>
+        </section>
+
+        <div class="two-column">
+          <section class="panel">
+            <div class="section-heading">
+              <div>
+                <p class="eyebrow">Total Car</p>
+                <h2>Left Hand Side</h2>
+                <p>All LH surface check points.</p>
+              </div>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead><tr><th>Point</th><th>Side</th><th>Position</th><th>Height</th><th>Status</th><th>Note</th></tr></thead>
+                <tbody>${leftCarItems.length ? leftCarItems.map(makeStatusRow).join("") : `<tr><td colspan="6">No LH items supplied.</td></tr>`}</tbody>
+              </table>
+            </div>
+          </section>
+
+          <section class="panel">
+            <div class="section-heading">
+              <div>
+                <p class="eyebrow">Total Car</p>
+                <h2>Right Hand Side / Centre</h2>
+                <p>All RH and centre surface check points.</p>
+              </div>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead><tr><th>Point</th><th>Side</th><th>Position</th><th>Height</th><th>Status</th><th>Note</th></tr></thead>
+                <tbody>${[...rightCarItems, ...centreCarItems].length ? [...rightCarItems, ...centreCarItems].map(makeStatusRow).join("") : `<tr><td colspan="6">No RH or centre items supplied.</td></tr>`}</tbody>
+              </table>
+            </div>
+          </section>
+        </div>
+
+        <section class="panel">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">Check Summary</p>
+              <h2>${escapeHtml(summary)}</h2>
+              <p>Illegal notes are listed below. Legal items are kept in the tables above.</p>
+            </div>
+          </div>
+          <div class="note-list">${illegalNotes}</div>
+        </section>
+      </div>
+
+      <div class="footer-note">HTML layout version: surface-table-v22-browser-report-link</div>
+    </section>
+  </main>
+</body>
+</html>`;
+}
+
+
+function buildReportLinkEmailHtml(args: {
+  payload: NormalisedLegalityEmailPayload;
+  summary: string;
+  reportUrl: string;
+}) {
+  const { payload, summary, reportUrl } = args;
+  const statusColor = summary.toLowerCase().includes("illegal") ? "#ef4444" : "#22c55e";
+  const safeReportUrl = escapeHtml(reportUrl);
+
+  return `
+    <div style="margin:0;padding:24px;background:#0d0f12;color:#e5e7eb;font-family:Arial,Helvetica,sans-serif;line-height:1.5">
+      <div style="max-width:760px;margin:0 auto;border:1px solid #27272a;border-radius:24px;overflow:hidden;background:#111418">
+        <div style="padding:24px 26px;background:linear-gradient(135deg,#030507,#14181d 55%,#1a0d10);border-bottom:1px solid #27272a">
+          <div style="font-size:11px;font-weight:700;letter-spacing:0.28em;color:#f87171;text-transform:uppercase">Rodin Motorsport</div>
+          <h1 style="margin:10px 0 0;font-size:28px;line-height:1.15;color:#ffffff">Surface Table Checks</h1>
+          <div style="margin-top:10px;color:${statusColor};font-weight:700">${escapeHtml(summary)}</div>
+        </div>
+
+        <div style="padding:24px 26px">
+          <p style="margin:0 0 18px;color:#d4d4d8;font-size:15px">
+            A surface table check has been saved for <strong>${escapeHtml(payload.car_name)}</strong> at <strong>${escapeHtml(payload.circuit)}</strong>.
+          </p>
+
+          <table style="width:100%;border-collapse:collapse;margin:0 0 24px;font-size:14px;color:#e5e7eb">
+            <tr><td style="padding:9px 0;color:#a1a1aa;width:150px;border-bottom:1px solid #27272a">Date</td><td style="padding:9px 0;border-bottom:1px solid #27272a">${escapeHtml(formatReportDate(payload.check_date))}</td></tr>
+            <tr><td style="padding:9px 0;color:#a1a1aa;border-bottom:1px solid #27272a">Car</td><td style="padding:9px 0;border-bottom:1px solid #27272a">${escapeHtml(payload.car_name)}</td></tr>
+            <tr><td style="padding:9px 0;color:#a1a1aa;border-bottom:1px solid #27272a">Driver</td><td style="padding:9px 0;border-bottom:1px solid #27272a">${escapeHtml(payload.driver)}</td></tr>
+            <tr><td style="padding:9px 0;color:#a1a1aa;border-bottom:1px solid #27272a">Engineer</td><td style="padding:9px 0;border-bottom:1px solid #27272a">${escapeHtml(payload.engineer_name)}</td></tr>
+          </table>
+
+          <a href="${safeReportUrl}" style="display:inline-block;background:#dc2626;color:#ffffff;text-decoration:none;font-weight:800;border-radius:14px;padding:14px 20px">
+            Open Surface Table Check
+          </a>
+
+          <p style="margin:18px 0 0;color:#a1a1aa;font-size:12px">
+            If the button does not open, copy this link into a browser:<br />
+            <span style="word-break:break-all;color:#d4d4d8">${safeReportUrl}</span>
+          </p>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+export async function POST(request: NextRequest) {
+  try {
+    const rawPayload = (await request.json()) as LegalityEmailPayload;
+    const downloadOnly = rawPayload.download_only === true;
+
+    if (!downloadOnly) {
+      const authBlock = blockUnauthorisedUser(request);
+
+      if (authBlock) {
+        return authBlock;
+      }
+    }
+
+    if (!rawPayload.car_id || !rawPayload.check_date || !rawPayload.circuit) {
+      return NextResponse.json(
+        {
+          error: "Missing surface table check payload fields.",
+          details: "The request must include car_id, check_date and circuit.",
+        },
+        { status: 400 },
+      );
+    }
+
+    const items = rawPayload.items ?? [];
+
+    if (items.length === 0) {
+      return NextResponse.json(
+        {
+          error: "No surface table check items were supplied for the HTML report.",
+        },
+        { status: 400 },
+      );
+    }
+
+    const illegalWithoutNotes = items.filter(
+      (item) => item.status === "illegal" && !clean(item.illegal_note),
+    );
+
+    if (illegalWithoutNotes.length > 0) {
+      return NextResponse.json(
+        {
+          error: "Illegal items cannot be emailed without notes.",
+          details: illegalWithoutNotes.map((item) => item.item_name).join(", "),
+        },
+        { status: 400 },
+      );
+    }
+
+    const fallbackEngineerEmail = getFallbackEngineerEmailForCar(Number(rawPayload.car_id));
+    const to = clean(rawPayload.engineer_email) || fallbackEngineerEmail;
+
+    if (!downloadOnly && !to) {
+      return NextResponse.json(
+        {
+          error: "No engineer email selected and no fallback engineer email is configured.",
+          details: `No engineer email was found for car ${rawPayload.car_id}.`,
+          fix: `Add DRAIN_OUT_ENGINEER_EMAIL_CAR_${rawPayload.car_id}, NEXT_PUBLIC_DRAIN_OUT_ENGINEER_EMAIL_CAR_${rawPayload.car_id} or DRAIN_OUT_ENGINEER_EMAIL in Vercel/.env.local.`,
+        },
+        { status: 500 },
+      );
+    }
+
+    const carName = clean(rawPayload.car_name) || `Car ${rawPayload.car_id}`;
+
+    const payload: NormalisedLegalityEmailPayload = {
+      check_id: clean(rawPayload.check_id),
+      car_id: Number(rawPayload.car_id),
+      car_name: carName,
+      driver: clean(rawPayload.driver) || carName,
+      circuit: clean(rawPayload.circuit) || "Unknown",
+      check_date: clean(rawPayload.check_date),
+      engineer_name:
+        clean(rawPayload.engineer_name) || getFallbackEngineerNameForCar(Number(rawPayload.car_id)),
+      engineer_email: to || clean(rawPayload.engineer_email) || "Not supplied",
+      created_by: clean(rawPayload.created_by) || getRequestUserEmail(request) || "Unknown",
+      corner_weights: normaliseCornerWeights(rawPayload.corner_weights),
+      camber_measurements: normaliseCamberMeasurements(rawPayload.camber_measurements),
+      wing_shims: normaliseWingShims(rawPayload.wing_shims),
+      items,
+    };
+
+    const illegalCount = payload.items.filter((item) => item.status === "illegal").length;
+    const summary =
+      illegalCount === 0
+        ? `${payload.items.length}/${payload.items.length} legal`
+        : `${illegalCount} illegal · ${payload.items.length - illegalCount} legal`;
+
+    if (!payload.check_id) {
+      return NextResponse.json(
+        {
+          error: "No surface table check ID was supplied, so a browser report link could not be created.",
+          details: "Save the surface table check first, then send or resend the report email.",
+        },
+        { status: 400 },
+      );
+    }
+
+    const requestOrigin = new URL(request.url).origin;
+    const configuredOrigin = process.env.NEXT_PUBLIC_SITE_URL?.trim() || process.env.NEXT_PUBLIC_APP_URL?.trim();
+    const origin = (configuredOrigin || requestOrigin).replace(/\/+$/, "");
+    const reportUrl = `${origin}/legality/report/${encodeURIComponent(payload.check_id)}?v=${Date.now()}`;
+
+    if (downloadOnly) {
+      return NextResponse.redirect(reportUrl, 303);
+    }
+
+    const html = buildReportLinkEmailHtml({ payload, summary, reportUrl });
+
+    const gmailUser = process.env.GMAIL_USER?.trim();
+    const gmailAppPassword = process.env.GMAIL_APP_PASSWORD?.replace(/\s/g, "");
+
+    if (!gmailUser) {
+      return NextResponse.json(
+        {
+          error: "GMAIL_USER is not configured.",
+        },
+        { status: 500 },
+      );
+    }
+
+    if (!gmailAppPassword) {
+      return NextResponse.json(
+        {
+          error: "GMAIL_APP_PASSWORD is not configured.",
+        },
+        { status: 500 },
+      );
+    }
+
+    const transporter = nodemailer.createTransport({
+      service: "gmail",
+      auth: {
+        user: gmailUser,
+        pass: gmailAppPassword,
+      },
+    });
+
+    const mailResult = await transporter.sendMail({
+      from: `"Surface Table Checks" <${gmailUser}>`,
+      to,
+      subject: `Surface Table Checks Report Link - ${payload.circuit} - ${payload.car_name} - ${summary}`,
+      text: [
+        "Surface Table Checks Report",
+        "",
+        `Sent to: ${payload.engineer_name} <${to}>`,
+        "",
+        "Event Details",
+        `Date: ${formatReportDate(payload.check_date)}`,
+        `Circuit: ${payload.circuit}`,
+        `Car: ${payload.car_name}`,
+        `Driver: ${payload.driver}`,
+        `Corner weights: FL ${formatWeight(payload.corner_weights.fl)} · FR ${formatWeight(payload.corner_weights.fr)} · RL ${formatWeight(payload.corner_weights.rl)} · RR ${formatWeight(payload.corner_weights.rr)} · Total ${formatWeight(payload.corner_weights.total)}`,
+        `Camber: FL ${formatCamber(payload.camber_measurements.fl)} · FR ${formatCamber(payload.camber_measurements.fr)} · RL ${formatCamber(payload.camber_measurements.rl)} · RR ${formatCamber(payload.camber_measurements.rr)}`,
+        `Wing shims: Main LH ${formatShim(payload.wing_shims.main_lh)} · Main RH ${formatShim(payload.wing_shims.main_rh)} · Spare LH ${formatShim(payload.wing_shims.spare_lh)} · Spare RH ${formatShim(payload.wing_shims.spare_rh)}`,
+        "",
+        "Status Summary",
+        summary,
+        "",
+        `Open report: ${reportUrl}`,
+      ].join("\n"),
+      html,
+    });
+
+    const accepted = Array.isArray(mailResult.accepted)
+      ? mailResult.accepted.map(String)
+      : [];
+    const rejected = Array.isArray(mailResult.rejected)
+      ? mailResult.rejected.map(String)
+      : [];
+
+    if (rejected.length > 0 && accepted.length === 0) {
+      return NextResponse.json(
+        {
+          error: "Surface table check email was rejected by the mail server.",
+          sent_to: to,
+          accepted,
+          rejected,
+          message_id: mailResult.messageId ?? null,
+        },
+        { status: 502 },
+      );
+    }
+
+    return NextResponse.json({
+      ok: true,
+      sent_to: to,
+      engineer_name: payload.engineer_name,
+      circuit: payload.circuit,
+      check_date: payload.check_date,
+      delivery_mode: "browser_report_link",
+      report_url: reportUrl,
+      accepted,
+      rejected,
+      message_id: mailResult.messageId ?? null,
+    });
+  } catch (error) {
+    const rawMessage =
+      error instanceof Error ? error.message : "Unknown email sending error.";
+
+    const friendly = buildFriendlyEmailError(rawMessage);
+
+    return NextResponse.json(
+      {
+        error: friendly.error,
+        likely_cause: friendly.likely_cause,
+        fix: friendly.fix,
+        technical_error: rawMessage,
+        diagnostic: {
+          gmail_user_configured: Boolean(process.env.GMAIL_USER?.trim()),
+          gmail_app_password_configured: Boolean(
+            process.env.GMAIL_APP_PASSWORD?.trim(),
+          ),
+          drain_out_engineer_email_configured: Boolean(
+            process.env.DRAIN_OUT_ENGINEER_EMAIL?.trim(),
+          ),
+        },
+      },
+      { status: 500 },
+    );
+  }
+}

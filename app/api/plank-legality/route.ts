@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import nodemailer from "nodemailer";
+import { canEditLegality } from "@/lib/userAccess";
 import {
   PDFDocument,
   StandardFonts,
@@ -73,7 +74,7 @@ function getRequestUserEmail(request: NextRequest) {
 function blockUnauthorisedUser(request: NextRequest) {
   const userEmail = getRequestUserEmail(request);
 
-  if (!userEmail) {
+  if (!userEmail || !canEditLegality(userEmail)) {
     return NextResponse.json(
       {
         error: "You must be logged in to send plank legality PDF emails.",

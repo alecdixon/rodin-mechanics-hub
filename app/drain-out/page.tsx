@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { supabase } from "@/lib/supabase";
 import {
+  canManageDrainOut,
   getUserRole,
   isReadOnlyUser,
   type UserRole,
@@ -197,7 +198,7 @@ export default function DrainOutPage() {
     userRole === "guest";
 
   const canDeleteDrainOuts = userRole === "chief_mechanic" && !readOnly;
-  const canSubmitDrainOut = !readOnly;
+  const canSubmitDrainOut = canManageDrainOut(createdBy);
 
   async function loadRecordsForCar(carId: number) {
     if (!Number.isFinite(carId) || carId <= 0) {
@@ -264,6 +265,11 @@ export default function DrainOutPage() {
 
     setMessage("");
     setErrorMessage("");
+
+    if (!canSubmitDrainOut) {
+      setErrorMessage("You do not have permission to submit drain-out reports.");
+      return;
+    }
 
     if (!selectedAllocation) {
       setErrorMessage("Select a car before submitting.");

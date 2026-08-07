@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { supabase } from "@/lib/supabase";
-import { getUserRole, type UserRole } from "@/lib/userAccess";
+import { canManageDrainOut, getUserRole, type UserRole } from "@/lib/userAccess";
 
 type DrainOutRecord = {
   id: string;
@@ -175,6 +175,7 @@ export default function DrainOutPage() {
     userRole === "chief_mechanic" || userRole === "engineer";
 
   const canDeleteDrainOuts = userRole === "chief_mechanic";
+  const canSubmitDrainOut = canManageDrainOut(createdBy);
 
   async function loadRecordsForCar(carId: number) {
     if (!Number.isFinite(carId) || carId <= 0) {
@@ -228,6 +229,11 @@ export default function DrainOutPage() {
   async function submitDrainOut() {
     setMessage("");
     setErrorMessage("");
+
+    if (!canSubmitDrainOut) {
+      setErrorMessage("You do not have permission to submit drain-out reports.");
+      return;
+    }
 
     if (!selectedAllocation) {
       setErrorMessage("Select a car before submitting.");
@@ -679,7 +685,7 @@ export default function DrainOutPage() {
             <button
               type="button"
               onClick={submitDrainOut}
-              disabled={saving || !selectedCarHasEmail}
+              disabled={saving || !selectedCarHasEmail || !canSubmitDrainOut}
               className="rounded-xl bg-red-700 px-6 py-3 text-sm font-semibold text-white hover:bg-red-600 disabled:cursor-not-allowed disabled:opacity-50"
             >
               {saving ? "Submitting..." : "Submit & Notify Engineer"}

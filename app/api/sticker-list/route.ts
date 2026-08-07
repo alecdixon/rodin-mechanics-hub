@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase";
-import { isReadOnlyUser } from "@/lib/userAccess";
+import {
+  canCreateStickerList,
+  canDeleteStickerList,
+  canEditStickerList,
+} from "@/lib/userAccess";
 
 type StickerCategoryType = "car" | "general" | "custom";
 
@@ -20,12 +24,15 @@ function getRequestUserEmail(request: NextRequest) {
   return request.cookies.get("user-email")?.value?.trim().toLowerCase() ?? "";
 }
 
-function blockReadOnlyUser(request: NextRequest) {
+function blockUnauthorisedUser(
+  request: NextRequest,
+  canPerformAction: (email: string) => boolean,
+) {
   const userEmail = getRequestUserEmail(request);
 
-  if (isReadOnlyUser(userEmail)) {
+  if (!canPerformAction(userEmail)) {
     return NextResponse.json(
-      { error: "Guest mode is view-only. Sticker list changes are disabled." },
+      { error: "You do not have permission to perform this sticker list action." },
       { status: 403 },
     );
   }
@@ -96,7 +103,7 @@ export async function GET() {
 }
 
 export async function POST(request: NextRequest) {
-  const readOnlyBlock = blockReadOnlyUser(request);
+  const readOnlyBlock = blockUnauthorisedUser(request, canCreateStickerList);
 
   if (readOnlyBlock) {
     return readOnlyBlock;
@@ -131,7 +138,7 @@ export async function POST(request: NextRequest) {
 }
 
 export async function PATCH(request: NextRequest) {
-  const readOnlyBlock = blockReadOnlyUser(request);
+  const readOnlyBlock = blockUnauthorisedUser(request, canEditStickerList);
 
   if (readOnlyBlock) {
     return readOnlyBlock;
@@ -222,7 +229,7 @@ export async function PATCH(request: NextRequest) {
 }
 
 export async function DELETE(request: NextRequest) {
-  const readOnlyBlock = blockReadOnlyUser(request);
+  const readOnlyBlock = blockUnauthorisedUser(request, canDeleteStickerList);
 
   if (readOnlyBlock) {
     return readOnlyBlock;

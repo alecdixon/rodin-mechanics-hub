@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { supabase } from "@/lib/supabase";
-import { getUserRole, type UserRole } from "@/lib/userAccess";
+import { canEditLegality, getUserRole, type UserRole } from "@/lib/userAccess";
 
 type PlankStatus = "legal" | "warning" | "illegal";
 
@@ -682,7 +682,7 @@ export default function PlankLegalityPage() {
     userRole === "chief_mechanic" || userRole === "engineer";
 
   const canDeletePlankReports = userRole === "chief_mechanic";
-  const canSubmitPlankReports = userRole !== "guest";
+  const canSubmitPlankReports = canEditLegality(createdBy);
 
   async function loadRecordsForCar(carId: number) {
     if (!Number.isFinite(carId) || carId <= 0) {

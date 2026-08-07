@@ -269,7 +269,7 @@ export default function ChiefTeamJobsPage() {
   async function deleteJob(job: TeamJob) {
     if (blockReadOnlyAction()) return;
 
-    if (!canCreateJobs) {
+    if (!canPublishJobs) {
       setErrorMessage("You do not have permission to delete team jobs.");
       return;
     }
@@ -303,7 +303,7 @@ export default function ChiefTeamJobsPage() {
   async function resetCompleted(job: TeamJob) {
     if (blockReadOnlyAction()) return;
 
-    if (!canCreateJobs) {
+    if (!canPublishJobs) {
       setErrorMessage("You do not have permission to reset team jobs.");
       return;
     }
@@ -554,14 +554,14 @@ export default function ChiefTeamJobsPage() {
                       </p>
                     </div>
 
-                    <button
+                    {canPublishJobs && <button
                       type="button"
                       onClick={() => deleteJob(job)}
-                      disabled={readOnly || deletingId === job.id || !canCreateJobs}
+                      disabled={readOnly || deletingId === job.id}
                       className="rounded-lg border border-red-800 px-4 py-2 text-sm font-semibold text-red-300 hover:border-red-500 disabled:cursor-not-allowed disabled:opacity-50"
                     >
                       {deletingId === job.id ? "Deleting..." : "Delete"}
-                    </button>
+                    </button>}
                   </div>
                 </div>
               ))}
@@ -626,25 +626,25 @@ export default function ChiefTeamJobsPage() {
                     </div>
 
                     <div className="flex gap-2">
-                      {job.completed && (
+                      {job.completed && canPublishJobs && (
                         <button
                           type="button"
                           onClick={() => resetCompleted(job)}
-                          disabled={readOnly || !canCreateJobs}
+                          disabled={readOnly}
                           className="rounded-lg border border-neutral-700 px-4 py-2 text-sm font-semibold text-neutral-300 hover:border-red-500 disabled:cursor-not-allowed disabled:opacity-50"
                         >
                           Reset
                         </button>
                       )}
 
-                      <button
+                      {canPublishJobs && <button
                         type="button"
                         onClick={() => deleteJob(job)}
-                        disabled={readOnly || deletingId === job.id || !canCreateJobs}
+                        disabled={readOnly || deletingId === job.id}
                         className="rounded-lg border border-red-800 px-4 py-2 text-sm font-semibold text-red-300 hover:border-red-500 disabled:cursor-not-allowed disabled:opacity-50"
                       >
                         {deletingId === job.id ? "Deleting..." : "Delete"}
-                      </button>
+                      </button>}
                     </div>
                   </div>
                 </div>

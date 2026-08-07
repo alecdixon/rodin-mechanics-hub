@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
 import { supabase } from "@/lib/supabase";
+import { canEditClutch } from "@/lib/userAccess";
 
 type PlateRow = {
   no: number;
@@ -385,6 +386,7 @@ export default function ClutchMeasurementPage() {
   const [rows, setRows] = useState<ClutchMeasurementRecord[]>([]);
   const [message, setMessage] = useState("");
   const [saving, setSaving] = useState(false);
+  const [canSaveMeasurement, setCanSaveMeasurement] = useState(false);
 
   const sortedClutchInventory = useMemo(
     () => sortClutchesForCar(clutchInventory, carId),
@@ -557,6 +559,12 @@ export default function ClutchMeasurementPage() {
   }, [carId]);
 
   useEffect(() => {
+    void supabase.auth.getUser().then(({ data }) => {
+      setCanSaveMeasurement(canEditClutch(data.user?.email));
+    });
+  }, []);
+
+  useEffect(() => {
     if (!selectedClutch) {
       setSerialNo("");
       setCurrentShimInstalled("");
@@ -612,6 +620,12 @@ export default function ClutchMeasurementPage() {
 
   async function saveMeasurementAndPdf() {
     setMessage("");
+
+    const { data: accessUserData } = await supabase.auth.getUser();
+    if (!canEditClutch(accessUserData.user?.email)) {
+      setMessage("You do not have permission to save clutch measurements.");
+      return;
+    }
 
     if (!carId) {
       setMessage("Invalid car ID.");
@@ -1057,7 +1071,7 @@ export default function ClutchMeasurementPage() {
 
                 <button
                   onClick={saveMeasurementAndPdf}
-                  disabled={saving}
+                  disabled={saving || !canSaveMeasurement}
                   className="mt-6 w-full rounded-xl bg-red-700 px-5 py-3 text-sm font-semibold text-white hover:bg-red-600 disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   {saving ? "Saving..." : "Save Measurement & Generate PDF"}

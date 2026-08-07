@@ -27,9 +27,11 @@ export type Permission =
   | "drain_out:view"
   | "drain_out:manage"
   | "recorded_issues:view"
+  | "recorded_issues:create"
   | "recorded_issues:edit"
   | "recorded_issues:delete"
   | "sticker_list:view"
+  | "sticker_list:create"
   | "sticker_list:edit"
   | "sticker_list:delete"
   | "sticker_list:send"
@@ -68,9 +70,11 @@ const ALL_PERMISSIONS: Permission[] = [
   "drain_out:view",
   "drain_out:manage",
   "recorded_issues:view",
+  "recorded_issues:create",
   "recorded_issues:edit",
   "recorded_issues:delete",
   "sticker_list:view",
+  "sticker_list:create",
   "sticker_list:edit",
   "sticker_list:delete",
   "sticker_list:send",
@@ -101,6 +105,9 @@ const NUMBER1_MECHANIC_PERMISSIONS: Permission[] = [
   "clutch:view",
   "clutch:edit",
   "drain_out:view",
+  "drain_out:manage",
+  "legality:view",
+  "legality:edit",
   "recorded_issues:view",
   "recorded_issues:edit",
   "sticker_list:view",
@@ -111,6 +118,9 @@ const NUMBER2_MECHANIC_PERMISSIONS: Permission[] = [
   "team_jobs:view",
   "team_jobs:complete",
   "drain_out:view",
+  "drain_out:manage",
+  "legality:view",
+  "legality:edit",
   "recorded_issues:view",
   "recorded_issues:edit",
   "sticker_list:view",
@@ -122,11 +132,15 @@ const ENGINEER_PERMISSIONS: Permission[] = [
   "team_jobs:view",
   "post_event:view",
   "clutch:view",
+  "clutch:edit",
   "calendar:view",
   "drain_out:view",
+  "drain_out:manage",
   "recorded_issues:view",
   "recorded_issues:edit",
   "sticker_list:view",
+  "legality:view",
+  "legality:edit",
 ];
 
 const LOGIN_ALIASES: Record<string, string> = {
@@ -144,9 +158,14 @@ const USER_ACCESS: Record<string, UserAccess> = {
   },
 
   "jimmy@rodinmotorsport.com": {
-    role: "chief_mechanic",
+    role: "engineer",
     assignedCar: null,
-    permissions: ALL_PERMISSIONS,
+    permissions: [
+      ...VIEW_PERMISSIONS,
+      "team_jobs:create",
+      "recorded_issues:create",
+      "sticker_list:create",
+    ],
     readOnly: false,
   },
 
@@ -328,6 +347,15 @@ export function canEditRecordedIssues(
   return canWrite(email, "recorded_issues:edit");
 }
 
+export function canCreateRecordedIssues(
+  email: string | null | undefined,
+): boolean {
+  return (
+    canWrite(email, "recorded_issues:create") ||
+    canEditRecordedIssues(email)
+  );
+}
+
 export function canDeleteRecordedIssues(
   email: string | null | undefined,
 ): boolean {
@@ -336,6 +364,10 @@ export function canDeleteRecordedIssues(
 
 export function canAccessStickerList(email: string | null | undefined): boolean {
   return hasPermission(email, "sticker_list:view");
+}
+
+export function canCreateStickerList(email: string | null | undefined): boolean {
+  return canWrite(email, "sticker_list:create") || canEditStickerList(email);
 }
 
 export function canEditStickerList(email: string | null | undefined): boolean {

@@ -7,6 +7,7 @@ import * as XLSX from "xlsx";
 import LogoutButton from "@/app/components/LogoutButton";
 import { supabase } from "@/lib/supabase";
 import {
+  canCreateRecordedIssues,
   canDeleteRecordedIssues,
   canEditRecordedIssues,
   getAssignedCar,
@@ -319,6 +320,10 @@ export default function RecordedIssuesPage() {
     return !readOnly && canEditRecordedIssues(userEmail);
   }, [readOnly, userEmail]);
 
+  const canCreate = useMemo(() => {
+    return !readOnly && canCreateRecordedIssues(userEmail);
+  }, [readOnly, userEmail]);
+
   const canDelete = useMemo(() => {
     return !readOnly && canDeleteRecordedIssues(userEmail);
   }, [readOnly, userEmail]);
@@ -512,7 +517,7 @@ export default function RecordedIssuesPage() {
 
     if (blockReadOnlyAction()) return;
 
-    if (!canEdit) {
+    if (editingId ? !canEdit : !canCreate) {
       setErrorMessage("You do not have permission to save recorded issues.");
       return;
     }
@@ -836,7 +841,7 @@ export default function RecordedIssuesPage() {
         )}
 
         <section className="mt-6 grid gap-6 lg:grid-cols-[420px_1fr]">
-          {canEdit ? (
+          {canCreate || canEdit ? (
             <form
               onSubmit={saveIssue}
               className="rounded-3xl border border-zinc-800 bg-[#14181d] p-6 shadow-xl"

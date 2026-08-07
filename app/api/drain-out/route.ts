@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import nodemailer from "nodemailer";
-import { isReadOnlyUser } from "@/lib/userAccess";
+import { canManageDrainOut } from "@/lib/userAccess";
 
 export const runtime = "nodejs";
 
@@ -33,7 +33,7 @@ function getRequestUserEmail(request: NextRequest) {
 function blockReadOnlyUser(request: NextRequest) {
   const userEmail = getRequestUserEmail(request);
 
-  if (isReadOnlyUser(userEmail)) {
+  if (!canManageDrainOut(userEmail)) {
     return NextResponse.json(
       {
         error:
