@@ -1056,41 +1056,65 @@ export default function ChiefJobListEditorPage() {
 
   return (
     <main className="min-h-screen bg-[#0d0f12] p-6 text-zinc-100">
-      <div className="mb-8 flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <p className="text-xs uppercase tracking-[0.3em] text-red-400">
-            Chief Mechanic Control
-          </p>
+      <header className="mb-6">
+        <div className="flex min-w-0 flex-wrap items-start justify-between gap-4">
+          <div className="min-w-0">
+            <p className="text-xs uppercase tracking-[0.3em] text-red-400">
+              Chief Mechanic Control
+            </p>
 
-          <h1 className="mt-3 text-4xl font-semibold tracking-tight">
-            Car {carId} Workshop Job List
-          </h1>
+            <div className="mt-3 flex flex-wrap items-center gap-3">
+              <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">
+                Car {carId} Workshop Job List
+              </h1>
+              <PublishStatusPill status={releaseInfo?.status} />
+            </div>
+          </div>
 
-          <p className="mt-3 max-w-3xl text-sm leading-6 text-zinc-400">
-            Create, update, clear and publish the workshop preparation list.
-            Mechanics receive a blocking acknowledgement popup when the list is
-            published or cleared.
-          </p>
+          <div className="flex flex-wrap items-center justify-end gap-2 sm:gap-3">
+            <button
+              type="button"
+              onClick={loadEverything}
+              className="rounded-lg border border-zinc-700 px-3 py-2 text-xs font-semibold text-zinc-300 transition hover:border-zinc-500 hover:text-white"
+            >
+              Refresh
+            </button>
+
+            <Link
+              href={`/dashboard/car/${carId}/viewer`}
+              className="rounded-xl border border-zinc-700 bg-[#14181d] px-4 py-2.5 text-sm font-semibold text-zinc-200 hover:border-red-500 hover:text-red-300"
+            >
+              Open Car Viewer
+            </Link>
+
+            <Link
+              href={`/car/${carId}/job-list`}
+              className="rounded-xl border border-zinc-700 bg-[#14181d] px-4 py-2.5 text-sm font-semibold text-zinc-200 hover:border-red-500 hover:text-red-300"
+            >
+              Open Mechanic View
+            </Link>
+
+            <LogoutButton />
+          </div>
         </div>
 
-        <div className="flex flex-wrap gap-3">
-          <Link
-            href={`/dashboard/car/${carId}/viewer`}
-            className="rounded-xl border border-zinc-700 bg-[#14181d] px-5 py-3 text-sm font-semibold text-zinc-200 hover:border-red-500 hover:text-red-300"
-          >
-            Open Car Viewer
-          </Link>
-
-          <Link
-            href={`/car/${carId}/job-list`}
-            className="rounded-xl border border-zinc-700 bg-[#14181d] px-5 py-3 text-sm font-semibold text-zinc-200 hover:border-red-500 hover:text-red-300"
-          >
-            Open Mechanic View
-          </Link>
-
-          <LogoutButton />
-        </div>
-      </div>
+        <dl className="mt-4 grid min-w-0 grid-cols-2 gap-x-5 gap-y-3 border-t border-zinc-800 pt-4 text-sm sm:grid-cols-3 lg:grid-cols-5">
+          {[
+            { label: "Job List Date", value: niceDate(releaseInfo?.job_date) },
+            { label: "Required Completion Date", value: niceDate(releaseInfo?.completion_date) },
+            { label: "Version", value: versionNumber || "Not published" },
+            { label: "Published", value: niceDateTime(releaseInfo?.published_at) },
+            { label: "Publisher", value: releaseInfo?.published_by || "Not published" },
+          ].map((item) => (
+            <div key={item.label} className="min-w-0">
+              <dt className="text-xs font-medium text-zinc-500">{item.label}</dt>
+              <dd className="mt-1 break-words font-medium text-zinc-300 [overflow-wrap:anywhere]">
+                {item.value}
+              </dd>
+            </div>
+          ))}
+        </dl>
+      </header>
 
       {message && (
         <div className="mb-6 rounded-2xl border border-green-800 bg-green-950/20 p-4 text-sm text-green-300">
@@ -1183,149 +1207,100 @@ export default function ChiefJobListEditorPage() {
         </div>
       </section>
 
-      <section className="mb-6 rounded-3xl border border-zinc-800 bg-[#14181d] p-6 shadow-xl">
-        <div className="flex flex-wrap items-start justify-between gap-4">
+      <section className="mb-6 overflow-hidden rounded-3xl border border-zinc-800 bg-[#14181d] shadow-xl">
+        <div className="p-5 sm:p-6">
           <div>
-            <div className="flex flex-wrap items-center gap-3">
-              <p className="text-xs font-semibold uppercase tracking-[0.3em] text-red-400">
-                Publication
-              </p>
-
-              <PublishStatusPill status={releaseInfo?.status} />
-            </div>
-
-            <h2 className="mt-3 text-3xl font-semibold">
-              {releaseInfo?.after_event || "No event name set"}
-            </h2>
-
-            <div className="mt-3 flex flex-wrap gap-4 text-sm text-zinc-400">
-              <span>
-                Date:{" "}
-                <span className="font-semibold text-zinc-100">
-                  {niceDate(releaseInfo?.job_date)}
-                </span>
-              </span>
-
-              <span>
-                Complete by:{" "}
-                <span className="font-semibold text-zinc-100">
-                  {niceDate(releaseInfo?.completion_date)}
-                </span>
-              </span>
-
-              <span>
-                Version:{" "}
-                <span className="font-semibold text-zinc-100">
-                  {versionNumber || "Not published"}
-                </span>
-              </span>
-
-              <span>
-                Published:{" "}
-                <span className="font-semibold text-zinc-100">
-                  {niceDateTime(releaseInfo?.published_at)}
-                </span>
-              </span>
-
-              {releaseInfo?.published_by && (
-                <span>
-                  By:{" "}
-                  <span className="font-semibold text-zinc-100">
-                    {releaseInfo.published_by}
-                  </span>
-                </span>
-              )}
-            </div>
-
-            {!isPublished && (
-              <div className="mt-4 rounded-2xl border border-yellow-800/60 bg-yellow-950/20 p-4 text-sm text-yellow-200">
-                This job list is currently a draft. Mechanics should not treat it
-                as the official list until you publish it.
-              </div>
-            )}
+            <p className="text-xs font-semibold uppercase tracking-[0.24em] text-red-400">
+              Job List Details
+            </p>
+            <p className="mt-1 text-sm text-zinc-500">
+              Set the event and dates shown on the released job list.
+            </p>
           </div>
 
-          <button
-            type="button"
-            onClick={loadEverything}
-            className="rounded-xl border border-zinc-700 px-5 py-3 text-sm font-semibold text-zinc-200 hover:border-red-500 hover:text-red-300"
-          >
-            Refresh
-          </button>
+          {!isPublished && (
+            <p className="mt-4 rounded-xl border border-yellow-900/60 bg-yellow-950/20 px-4 py-3 text-sm text-yellow-200">
+              Draft list. Publish it before mechanics treat it as the official list.
+            </p>
+          )}
+
+          <div className="mt-5 grid min-w-0 grid-cols-1 gap-4 lg:grid-cols-3">
+            <label className="block">
+              <span className="text-sm font-semibold text-zinc-300">
+                After Event Name
+              </span>
+
+              <input
+                value={afterEvent}
+                onChange={(event) => setAfterEvent(event.target.value)}
+                placeholder="Example: After Silverstone"
+                disabled={readOnly}
+                className="mt-2 w-full min-w-0 rounded-xl border border-zinc-700 bg-[#0d0f12] px-4 py-3 text-sm text-zinc-100 outline-none focus:border-red-500"
+              />
+            </label>
+
+            <label className="block">
+              <span className="text-sm font-semibold text-zinc-300">
+                Job List Date
+              </span>
+
+              <input
+                type="date"
+                value={jobDate}
+                onChange={(event) => setJobDate(event.target.value)}
+                disabled={readOnly}
+                className="mt-2 w-full min-w-0 rounded-xl border border-zinc-700 bg-[#0d0f12] px-4 py-3 text-sm text-zinc-100 outline-none focus:border-red-500"
+              />
+            </label>
+
+            <label className="block">
+              <span className="text-sm font-semibold text-zinc-300">
+                Required Completion Date
+              </span>
+
+              <input
+                type="date"
+                value={completionDate}
+                onChange={(event) => setCompletionDate(event.target.value)}
+                disabled={readOnly}
+                className="mt-2 w-full min-w-0 rounded-xl border border-zinc-700 bg-[#0d0f12] px-4 py-3 text-sm text-zinc-100 outline-none focus:border-red-500"
+              />
+            </label>
+          </div>
+
+          <div className="mt-5 flex flex-wrap items-center gap-3">
+            <button
+              type="button"
+              onClick={() => saveReleaseInfo()}
+              disabled={readOnly || savingReleaseInfo}
+              className="rounded-xl border border-zinc-700 bg-[#0d0f12] px-5 py-3 text-sm font-semibold text-zinc-200 hover:border-red-500 hover:text-red-300 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              Save Draft
+            </button>
+
+            <button
+              type="button"
+              onClick={publishJobList}
+              disabled={readOnly || publishingJobList || jobs.length === 0}
+              className="rounded-xl bg-green-700 px-5 py-3 text-sm font-semibold text-white hover:bg-green-600 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              Publish
+            </button>
+          </div>
         </div>
 
-        <div className="mt-6 grid gap-4 md:grid-cols-3">
-          <label className="block">
-            <span className="text-sm font-semibold text-zinc-300">
-              After Event Name
-            </span>
-
-            <input
-              value={afterEvent}
-              onChange={(event) => setAfterEvent(event.target.value)}
-              placeholder="Example: After Silverstone"
-              disabled={readOnly}
-              className="mt-2 w-full rounded-xl border border-zinc-700 bg-[#0d0f12] px-4 py-3 text-sm text-zinc-100 outline-none focus:border-red-500"
-            />
-          </label>
-
-          <label className="block">
-            <span className="text-sm font-semibold text-zinc-300">
-              Job List Date
-            </span>
-
-            <input
-              type="date"
-              value={jobDate}
-              onChange={(event) => setJobDate(event.target.value)}
-              disabled={readOnly}
-              className="mt-2 w-full rounded-xl border border-zinc-700 bg-[#0d0f12] px-4 py-3 text-sm text-zinc-100 outline-none focus:border-red-500"
-            />
-          </label>
-
-          <label className="block">
-            <span className="text-sm font-semibold text-zinc-300">
-              Required Completion Date
-            </span>
-
-            <input
-              type="date"
-              value={completionDate}
-              onChange={(event) => setCompletionDate(event.target.value)}
-              disabled={readOnly}
-              className="mt-2 w-full rounded-xl border border-zinc-700 bg-[#0d0f12] px-4 py-3 text-sm text-zinc-100 outline-none focus:border-red-500"
-            />
-          </label>
-        </div>
-
-        <div className="mt-5 flex flex-wrap items-center gap-3">
-          <button
-            type="button"
-            onClick={() => saveReleaseInfo()}
-            disabled={readOnly || savingReleaseInfo}
-            className="rounded-xl border border-zinc-700 bg-[#0d0f12] px-5 py-3 text-sm font-semibold text-zinc-200 hover:border-red-500 hover:text-red-300 disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            {savingReleaseInfo ? "Saving..." : "Save Draft Details"}
-          </button>
-
-          <button
-            type="button"
-            onClick={publishJobList}
-            disabled={readOnly || publishingJobList || jobs.length === 0}
-            className="rounded-xl bg-green-700 px-5 py-3 text-sm font-semibold text-white hover:bg-green-600 disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            {publishingJobList
-              ? "Publishing..."
-              : "Publish Job List + Notify Mechanics"}
-          </button>
-
+        <div className="border-t border-red-950/70 bg-red-950/10 p-5 sm:flex sm:items-center sm:justify-between sm:gap-5 sm:p-6">
+          <div>
+            <p className="text-sm font-semibold text-red-300">Danger zone</p>
+            <p className="mt-1 text-sm text-zinc-500">Clears all current jobs</p>
+          </div>
           <button
             type="button"
             onClick={clearAllJobs}
             disabled={readOnly || clearingAllJobs}
-            className="rounded-xl border border-red-900/70 px-5 py-3 text-sm font-semibold text-red-300 hover:bg-red-950/40 disabled:cursor-not-allowed disabled:opacity-50"
+            className="mt-4 rounded-xl border border-red-800 px-5 py-2.5 text-sm font-semibold text-red-300 transition hover:border-red-600 hover:bg-red-950/40 disabled:cursor-not-allowed disabled:opacity-50 sm:mt-0"
           >
-            {clearingAllJobs ? "Clearing..." : "Clear All Jobs + Notify"}
+            Clear
           </button>
         </div>
       </section>
