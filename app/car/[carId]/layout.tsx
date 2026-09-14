@@ -31,6 +31,7 @@ export default function CarLayout({ children }: Props) {
   const router = useRouter();
   const params = useParams();
   const pathname = usePathname();
+  const isPostEventPage = pathname.endsWith("/post-event");
 
   const carId = String(params.carId ?? "");
   const numericCarId = Number(carId);
@@ -191,8 +192,8 @@ export default function CarLayout({ children }: Props) {
   }
 
   return (
-    <div className="flex min-h-screen bg-black text-white">
-      <aside className="w-64 shrink-0 border-r border-neutral-800 bg-neutral-950 p-5">
+    <div className={`flex min-h-screen bg-black text-white ${isPostEventPage ? "flex-col lg:flex-row" : ""}`}>
+      <aside className={`${isPostEventPage ? "w-full lg:w-64" : "w-64"} shrink-0 border-r border-neutral-800 bg-neutral-950 p-5`}>
         {role === "chief_mechanic" || role === "engineer" ? (
           <Link
             href={role === "engineer" ? "/engineer-dashboard" : "/dashboard"}
@@ -285,7 +286,7 @@ export default function CarLayout({ children }: Props) {
         </nav>
       </aside>
 
-      <main className="flex-1 p-6">{children}</main>
+      <main className={isPostEventPage ? "min-w-0 flex-1 p-2 sm:p-6" : "flex-1 p-6"}>{children}</main>
 
       <JobListNotificationModal
         carId={numericCarId}

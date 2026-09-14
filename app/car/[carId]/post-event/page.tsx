@@ -12,6 +12,8 @@ import {
 import LogoutButton from "@/app/components/LogoutButton";
 
 type PostEventForm = {
+  post_event_date: string;
+  track_name: string;
   chassis: string;
   driver: string;
   engine_no: string;
@@ -26,6 +28,8 @@ type PostEventForm = {
 };
 
 const EMPTY_FORM: PostEventForm = {
+  post_event_date: "",
+  track_name: "",
   chassis: "",
   driver: "",
   engine_no: "",
@@ -38,6 +42,55 @@ const EMPTY_FORM: PostEventForm = {
   diff_dynamic: "",
   notes: "",
 };
+
+const CHECK_LABELS = {
+  chassis: "Chassis", driver: "Driver", engine_no: "Engine No.",
+  hours_remaining: "Hours Remaining", gearbox_no: "Gearbox No.",
+  fuel_drained_kg: "Fuel Drained KG", front_ride_height: "Front Ride Height",
+  rear_ride_height: "Rear Ride Height", diff_break_off: "Diff Break-Off",
+  diff_dynamic: "Diff Dynamic", notes: "Notes",
+} as const;
+
+type SubmissionSnapshot = {
+  version: 1;
+  submitted_by: string;
+  user_id: string;
+  checks: { name: string; value: string }[];
+};
+
+type HistoricSheet = Partial<PostEventForm> & {
+  id: string;
+  car_id: number;
+  created_by: string | null;
+  created_at: string;
+  submission_snapshot?: SubmissionSnapshot | null;
+};
+
+function newForm(): PostEventForm {
+  const today = new Date();
+  return { ...EMPTY_FORM, post_event_date: `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}` };
+}
+
+function sheetDate(value?: string) {
+  return value ? new Date(`${value}T12:00:00`).toLocaleDateString("en-GB", {
+    day: "numeric", month: "long", year: "numeric",
+  }) : "Date not recorded";
+}
+
+async function fetchHistory(carId: number): Promise<HistoricSheet[]> {
+  const sheets: HistoricSheet[] = [];
+  // Fetch every page, including cars with more than Supabase's response limit.
+  const pageSize = 100;
+  for (let offset = 0; ; offset += pageSize) {
+    const { data, error } = await supabase.from("post_event_sheets")
+      .select("*").eq("car_id", carId)
+      .order("created_at", { ascending: false }).order("id", { ascending: false })
+      .range(offset, offset + pageSize - 1);
+    if (error) throw new Error(error.message);
+    sheets.push(...(data as HistoricSheet[]));
+    if (data.length < pageSize) return sheets;
+  }
+}
 
 async function generatePostEventPdf({
   carId,
@@ -196,6 +249,11 @@ async function generatePostEventPdf({
     grey,
   );
 
+  const eventPage = pdfDoc.addPage([595.28, 841.89]);
+  eventPage.drawText("Post-Event Details", { x: 40, y: 790, size: 20, font: boldFont });
+  eventPage.drawText(`Car ${carId} | Date: ${form.post_event_date}`, { x: 40, y: 755, size: 11, font: regularFont });
+  eventPage.drawText("After Event", { x: 40, y: 725, size: 11, font: boldFont });
+  eventPage.drawText(form.track_name, { x: 40, y: 700, size: 11, font: regularFont, maxWidth: 515, lineHeight: 16 });
   return pdfDoc.save();
 }
 
@@ -205,7 +263,10 @@ export default function PostEventSheetPage() {
 
   const carId = Number(params.carId);
 
-  const [form, setForm] = useState<PostEventForm>(EMPTY_FORM);
+  const [form, setForm] = useState<PostEventForm>(newForm);
+  const [history, setHistory] = useState<HistoricSheet[]>([]);
+  const [historyError, setHistoryError] = useState("");
+  const [selectedSheet, setSelectedSheet] = useState<HistoricSheet | null>(null);
   const [userEmail, setUserEmail] = useState("");
   const [saving, setSaving] = useState(false);
   const [loadingLatest, setLoadingLatest] = useState(true);
@@ -290,34 +351,22 @@ export default function PostEventSheetPage() {
         return;
       }
 
-      const { data, error } = await supabase
-        .from("post_event_sheets")
-        .select("*")
-        .eq("car_id", carId)
-        .order("created_at", { ascending: false })
-        .limit(1)
-        .maybeSingle();
-
-      if (error) {
-        setErrorMessage(error.message);
-        setLoadingLatest(false);
-        return;
-      }
-
-      if (data) {
-        setForm({
-          chassis: String(data.chassis ?? ""),
-          driver: String(data.driver ?? ""),
-          engine_no: String(data.engine_no ?? ""),
-          hours_remaining: String(data.hours_remaining ?? ""),
-          gearbox_no: String(data.gearbox_no ?? ""),
-          fuel_drained_kg: String(data.fuel_drained_kg ?? ""),
-          front_ride_height: String(data.front_ride_height ?? ""),
-          rear_ride_height: String(data.rear_ride_height ?? ""),
-          diff_break_off: String(data.diff_break_off ?? ""),
-          diff_dynamic: String(data.diff_dynamic ?? ""),
-          notes: String(data.notes ?? ""),
-        });
+      setSelectedSheet(null);
+      setHistory([]);
+      setForm(newForm());
+      setHistoryError("");
+      try {
+        const sheets = await fetchHistory(carId);
+        setHistory(sheets);
+        const latest = sheets[0];
+        if (latest) {
+          // Preserve the existing carry-forward of check values, with fresh event details.
+          setForm({ ...newForm(), ...Object.fromEntries(
+            Object.keys(CHECK_LABELS).map((key) => [key, String(latest[key as keyof typeof CHECK_LABELS] ?? "")]),
+          ) });
+        }
+      } catch (error) {
+        setHistoryError(error instanceof Error ? error.message : "Could not load previous sheets.");
       }
 
       setLoadingLatest(false);
@@ -341,6 +390,11 @@ export default function PostEventSheetPage() {
       return;
     }
 
+    if (saving) return;
+    if (!form.post_event_date || !form.track_name.trim()) {
+      setErrorMessage("Enter Date and After Event before saving.");
+      return;
+    }
     setSaving(true);
     setMessage("");
     setErrorMessage("");
@@ -353,6 +407,16 @@ export default function PostEventSheetPage() {
         return;
       }
 
+      const { data: identity, error: identityError } = await supabase.auth.getUser();
+      if (identityError || !identity.user) throw new Error("Could not verify the submitting user.");
+      const submissionSnapshot: SubmissionSnapshot = {
+        version: 1,
+        user_id: identity.user.id,
+        submitted_by: identity.user.user_metadata?.full_name || identity.user.user_metadata?.name || email,
+        checks: Object.entries(CHECK_LABELS).map(([key, name]) => ({
+          name, value: form[key as keyof typeof CHECK_LABELS],
+        })),
+      };
       const pdfBytes = await generatePostEventPdf({
         carId,
         form,
@@ -379,6 +443,9 @@ export default function PostEventSheetPage() {
         .from("post_event_sheets")
         .insert({
           car_id: carId,
+          post_event_date: form.post_event_date,
+          track_name: form.track_name.trim(),
+          submission_snapshot: submissionSnapshot,
           chassis: form.chassis.trim(),
           driver: form.driver.trim(),
           engine_no: form.engine_no.trim(),
@@ -400,7 +467,13 @@ export default function PostEventSheetPage() {
         throw new Error(insertError.message);
       }
 
-      setMessage("Post-event sheet saved as a PDF successfully.");
+      setMessage("Post-event sheet saved as a new submission and PDF successfully.");
+      try {
+        setHistory(await fetchHistory(carId));
+        setHistoryError("");
+      } catch (error) {
+        setHistoryError(`Sheet saved, but history could not refresh: ${error instanceof Error ? error.message : "Unknown error"}`);
+      }
     } catch (error) {
       setErrorMessage(
         error instanceof Error
@@ -424,14 +497,14 @@ export default function PostEventSheetPage() {
 
     if (!confirmed) return;
 
-    setForm(EMPTY_FORM);
+    setForm(newForm());
     setMessage("");
     setErrorMessage("");
   }
 
   if (loadingLatest) {
     return (
-      <main className="min-h-screen bg-[#0d0f12] p-6 text-zinc-100">
+      <main className="min-h-screen min-w-0 bg-[#0d0f12] p-3 text-zinc-100 [overflow-wrap:anywhere] sm:p-6">
         <div className="rounded-3xl border border-zinc-800 bg-[#14181d] p-6">
           Loading post-event sheet...
         </div>
@@ -440,7 +513,7 @@ export default function PostEventSheetPage() {
   }
 
   return (
-    <main className="min-h-screen bg-[#0d0f12] p-6 text-zinc-100">
+    <main className="min-h-screen min-w-0 bg-[#0d0f12] p-3 text-zinc-100 [overflow-wrap:anywhere] sm:p-6">
       <header className="mb-8 flex flex-wrap items-start justify-between gap-4 rounded-3xl border border-zinc-800 bg-[#14181d] p-6 shadow-xl">
         <div>
           <p className="text-xs uppercase tracking-[0.35em] text-red-400">
@@ -479,7 +552,7 @@ export default function PostEventSheetPage() {
         </div>
       )}
 
-      <section className="mb-6 grid gap-6 lg:grid-cols-[1fr_320px]">
+      <section className="mb-6 grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
         <div className="rounded-3xl border border-zinc-800 bg-[#14181d] p-6 shadow-xl">
           <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
             <div>
@@ -501,12 +574,16 @@ export default function PostEventSheetPage() {
             </div>
           </div>
 
-          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
+          <div className="mb-4 grid min-w-0 grid-cols-1 gap-4 sm:grid-cols-2">
+            <InputCard label="Date" type="date" value={form.post_event_date} disabled={!canEditPostEvent || saving} onChange={(value) => updateField("post_event_date", value)} />
+            <InputCard label="After Event" value={form.track_name} disabled={!canEditPostEvent || saving} onChange={(value) => updateField("track_name", value)} />
+          </div>
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 2xl:grid-cols-3">
             <InputCard
               label="Chassis"
               value={form.chassis}
               placeholder="#022"
-              disabled={!canEditPostEvent}
+              disabled={!canEditPostEvent || saving}
               onChange={(value) => updateField("chassis", value)}
             />
 
@@ -514,7 +591,7 @@ export default function PostEventSheetPage() {
               label="Driver"
               value={form.driver}
               placeholder="M. Rehm"
-              disabled={!canEditPostEvent}
+              disabled={!canEditPostEvent || saving}
               onChange={(value) => updateField("driver", value)}
             />
 
@@ -522,7 +599,7 @@ export default function PostEventSheetPage() {
               label="Engine No."
               value={form.engine_no}
               placeholder="Engine number"
-              disabled={!canEditPostEvent}
+              disabled={!canEditPostEvent || saving}
               onChange={(value) => updateField("engine_no", value)}
             />
 
@@ -530,7 +607,7 @@ export default function PostEventSheetPage() {
               label="Hours Remaining"
               value={form.hours_remaining}
               placeholder="0.0"
-              disabled={!canEditPostEvent}
+              disabled={!canEditPostEvent || saving}
               onChange={(value) => updateField("hours_remaining", value)}
             />
 
@@ -538,7 +615,7 @@ export default function PostEventSheetPage() {
               label="Gearbox No."
               value={form.gearbox_no}
               placeholder="Gearbox number"
-              disabled={!canEditPostEvent}
+              disabled={!canEditPostEvent || saving}
               onChange={(value) => updateField("gearbox_no", value)}
             />
           </div>
@@ -577,7 +654,7 @@ export default function PostEventSheetPage() {
         </div>
       </section>
 
-      <section className="mb-6 grid gap-6 lg:grid-cols-3">
+      <section className="mb-6 grid grid-cols-1 gap-6 lg:grid-cols-3">
         <div className="rounded-3xl border border-zinc-800 bg-[#14181d] p-6 shadow-xl">
           <div className="mb-5">
             <p className="text-xs uppercase tracking-[0.3em] text-red-400">
@@ -598,13 +675,13 @@ export default function PostEventSheetPage() {
                 onChange={(event) =>
                   updateField("fuel_drained_kg", event.target.value)
                 }
-                disabled={!canEditPostEvent}
+                disabled={!canEditPostEvent || saving}
                 placeholder="0.00"
                 inputMode="decimal"
-                className="w-full rounded-xl border border-zinc-700 bg-[#111418] px-4 py-4 text-3xl font-semibold text-zinc-100 outline-none transition focus:border-red-500 disabled:cursor-not-allowed disabled:opacity-50"
+                className="min-w-0 w-full rounded-xl border border-zinc-700 bg-[#111418] px-4 py-4 text-3xl font-semibold text-zinc-100 outline-none transition focus:border-red-500 disabled:cursor-not-allowed disabled:opacity-50"
               />
 
-              <span className="pb-4 text-sm font-semibold uppercase tracking-widest text-zinc-500">
+              <span className="shrink-0 pb-4 text-sm font-semibold uppercase tracking-widest text-zinc-500">
                 KG
               </span>
             </div>
@@ -620,12 +697,12 @@ export default function PostEventSheetPage() {
             <h2 className="mt-2 text-2xl font-semibold">Ride Heights</h2>
           </div>
 
-          <div className="grid gap-4 md:grid-cols-2">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
             <InputCard
               label="Front Ride Height"
               value={form.front_ride_height}
               placeholder="Front ride height"
-              disabled={!canEditPostEvent}
+              disabled={!canEditPostEvent || saving}
               onChange={(value) => updateField("front_ride_height", value)}
             />
 
@@ -633,7 +710,7 @@ export default function PostEventSheetPage() {
               label="Rear Ride Height"
               value={form.rear_ride_height}
               placeholder="Rear ride height"
-              disabled={!canEditPostEvent}
+              disabled={!canEditPostEvent || saving}
               onChange={(value) => updateField("rear_ride_height", value)}
             />
           </div>
@@ -649,12 +726,12 @@ export default function PostEventSheetPage() {
           <h2 className="mt-2 text-2xl font-semibold">Diff Checks</h2>
         </div>
 
-        <div className="grid gap-4 md:grid-cols-2">
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
           <InputCard
             label="Diff Break-Off"
             value={form.diff_break_off}
             placeholder="Value / comment"
-            disabled={!canEditPostEvent}
+            disabled={!canEditPostEvent || saving}
             onChange={(value) => updateField("diff_break_off", value)}
           />
 
@@ -662,7 +739,7 @@ export default function PostEventSheetPage() {
             label="Diff Dynamic"
             value={form.diff_dynamic}
             placeholder="Value / comment"
-            disabled={!canEditPostEvent}
+            disabled={!canEditPostEvent || saving}
             onChange={(value) => updateField("diff_dynamic", value)}
           />
         </div>
@@ -679,7 +756,7 @@ export default function PostEventSheetPage() {
         <textarea
           value={form.notes}
           onChange={(event) => updateField("notes", event.target.value)}
-          disabled={!canEditPostEvent}
+          disabled={!canEditPostEvent || saving}
           placeholder="Type post-event notes here..."
           rows={6}
           className="mt-5 w-full resize-none rounded-2xl border border-zinc-700 bg-[#0d0f12] px-4 py-4 text-sm text-zinc-100 outline-none transition focus:border-red-500 disabled:cursor-not-allowed disabled:opacity-50"
@@ -700,7 +777,7 @@ export default function PostEventSheetPage() {
             <button
               type="button"
               onClick={clearForm}
-              disabled={!canEditPostEvent}
+              disabled={!canEditPostEvent || saving}
               className="rounded-xl border border-zinc-700 px-5 py-3 text-sm font-semibold text-zinc-300 hover:border-red-500 hover:text-red-300 disabled:cursor-not-allowed disabled:opacity-50"
             >
               Clear Form
@@ -717,6 +794,45 @@ export default function PostEventSheetPage() {
           </div>
         </div>
       </section>
+      <section className="mt-6 min-w-0 rounded-3xl border border-zinc-800 bg-[#14181d] p-4 shadow-xl sm:p-6">
+        <h2 className="text-2xl font-semibold">Previous Post-Event Sheets</h2>
+        {historyError && <p role="alert" className="mt-4 break-words text-red-300">{historyError}</p>}
+        {!historyError && history.length === 0 && <p className="mt-4 text-zinc-400">No previous sheets for this car.</p>}
+        <div className="mt-4 grid min-w-0 grid-cols-1 gap-3">
+          {history.map((sheet) => (
+            <div key={sheet.id} className="min-w-0 rounded-2xl border border-zinc-700">
+              <button type="button" aria-expanded={selectedSheet?.id === sheet.id}
+                onClick={() => setSelectedSheet(selectedSheet?.id === sheet.id ? null : sheet)}
+                className="w-full min-w-0 rounded-2xl p-4 text-left hover:bg-zinc-800 focus-visible:outline-2 focus-visible:outline-red-500">
+                <span className="block whitespace-pre-wrap break-words font-semibold [overflow-wrap:anywhere]">{sheet.track_name || "After Event not recorded"}</span>
+                <span className="mt-1 block break-words text-sm text-zinc-400 [overflow-wrap:anywhere]">{sheetDate(sheet.post_event_date)} &middot; {sheet.submission_snapshot?.submitted_by || sheet.created_by || "Unknown mechanic"}</span>
+              </button>
+              {selectedSheet?.id === sheet.id && (
+                <div className="min-w-0 border-t border-zinc-700 p-4">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <h3 className="text-lg font-semibold">Car {sheet.car_id} &middot; Read-only submitted sheet</h3>
+                    <button type="button" onClick={() => setSelectedSheet(null)} className="rounded-xl border border-zinc-600 px-5 py-3">Close</button>
+                  </div>
+                  <dl className="mt-4 grid min-w-0 grid-cols-1 gap-4 sm:grid-cols-2">
+                    {[
+                      { name: "After Event", value: sheet.track_name || "Not recorded" },
+                      { name: "Date", value: sheetDate(sheet.post_event_date) },
+                      { name: "Submitted by", value: sheet.submission_snapshot?.submitted_by || sheet.created_by || "Unknown mechanic" },
+                      { name: "Submission timestamp", value: new Date(sheet.created_at).toLocaleString("en-GB") },
+                      ...(sheet.submission_snapshot?.checks ?? Object.entries(CHECK_LABELS).map(([key, name]) => ({ name, value: String(sheet[key as keyof typeof CHECK_LABELS] ?? "") }))),
+                    ].map(({ name, value }) => (
+                      <div key={name} className="min-w-0 rounded-xl bg-[#0d0f12] p-3">
+                        <dt className="break-words text-sm text-zinc-400">{name}</dt>
+                        <dd className="mt-1 whitespace-pre-wrap break-words [overflow-wrap:anywhere]">{value || "Not recorded"}</dd>
+                      </div>
+                    ))}
+                  </dl>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      </section>
     </main>
   );
 }
@@ -725,27 +841,30 @@ function InputCard({
   label,
   value,
   placeholder,
+  type = "text",
   disabled,
   onChange,
 }: {
   label: string;
   value: string;
-  placeholder: string;
+  placeholder?: string;
+  type?: "text" | "date";
   disabled?: boolean;
   onChange: (value: string) => void;
 }) {
   return (
-    <label className="block rounded-2xl border border-zinc-800 bg-[#0d0f12] p-4">
+    <label className="block min-w-0 rounded-2xl border border-zinc-800 bg-[#0d0f12] p-4">
       <span className="text-xs font-semibold uppercase tracking-[0.22em] text-zinc-500">
         {label}
       </span>
 
       <input
+        type={type}
         value={value}
         onChange={(event) => onChange(event.target.value)}
         placeholder={placeholder}
         disabled={disabled}
-        className="mt-3 w-full border-none bg-transparent text-lg font-semibold text-zinc-100 outline-none placeholder:text-zinc-700 disabled:cursor-not-allowed disabled:opacity-50"
+        className="mt-3 min-w-0 w-full max-w-full [color-scheme:dark] border-none bg-transparent text-lg font-semibold text-zinc-100 outline-none placeholder:text-zinc-700 disabled:cursor-not-allowed disabled:opacity-50"
       />
     </label>
   );
