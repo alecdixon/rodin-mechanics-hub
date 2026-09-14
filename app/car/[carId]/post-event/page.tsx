@@ -10,6 +10,7 @@ import {
   hasPermission,
 } from "@/lib/userAccess";
 import LogoutButton from "@/app/components/LogoutButton";
+import { parseAdditionalRecipients } from "@/lib/postEventEmail";
 
 type PostEventForm = {
   post_event_date: string;
@@ -271,6 +272,7 @@ export default function PostEventSheetPage() {
   const [saving, setSaving] = useState(false);
   const [loadingLatest, setLoadingLatest] = useState(true);
   const [canEditPostEvent, setCanEditPostEvent] = useState(false);
+  const [additionalRecipients, setAdditionalRecipients] = useState("");
 
   const [message, setMessage] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
@@ -397,6 +399,13 @@ export default function PostEventSheetPage() {
       setErrorMessage("Enter Date and After Event before saving.");
       return;
     }
+    const parsedRecipients = parseAdditionalRecipients(additionalRecipients);
+    if (parsedRecipients.invalid.length > 0) {
+      setErrorMessage(
+        `Invalid additional email address${parsedRecipients.invalid.length === 1 ? "" : "es"}: ${parsedRecipients.invalid.join(", ")}`,
+      );
+      return;
+    }
     setSaving(true);
     setMessage("");
     setErrorMessage("");
@@ -425,7 +434,8 @@ export default function PostEventSheetPage() {
         userEmail: email,
       });
 
-      const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+      const submissionTimestamp = new Date().toISOString();
+      const timestamp = submissionTimestamp.replace(/[:.]/g, "-");
 
       const pdfFilename = `car-${carId}-post-event-${timestamp}.pdf`;
       const pdfPath = `car-${carId}/${pdfFilename}`;
@@ -460,7 +470,7 @@ export default function PostEventSheetPage() {
           diff_dynamic: form.diff_dynamic.trim(),
           notes: form.notes.trim(),
           created_by: email || null,
-          created_at: new Date().toISOString(),
+          created_at: submissionTimestamp,
           pdf_path: pdfPath,
           pdf_filename: pdfFilename,
         });
@@ -470,13 +480,53 @@ export default function PostEventSheetPage() {
       }
 
       setForm({ ...EMPTY_FORM });
-      setMessage("Post-event sheet saved as a new submission and PDF successfully. The form has been reset for the next event.");
+      setMessage("Post Event sheet saved successfully. Sending PDF email...");
+      const historyRefresh = fetchHistory(carId)
+        .then((sheets) => {
+          setHistory(sheets);
+          setHistoryError("");
+        })
+        .catch((error: unknown) => {
+          setHistoryError(`Sheet saved, but history could not refresh: ${error instanceof Error ? error.message : "Unknown error"}`);
+        });
+
       try {
-        setHistory(await fetchHistory(carId));
-        setHistoryError("");
-      } catch (error) {
-        setHistoryError(`Sheet saved, but history could not refresh: ${error instanceof Error ? error.message : "Unknown error"}`);
+        const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+        const accessToken = sessionData.session?.access_token;
+        if (sessionError || !accessToken) {
+          throw new Error("Could not authenticate the Post Event email request.");
+        }
+
+        const emailResponse = await fetch("/api/post-event-email", {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            car_id: carId,
+            circuit: form.track_name.trim(),
+            post_event_date: form.post_event_date,
+            submitted_at: submissionTimestamp,
+            additional_recipients: parsedRecipients.recipients,
+            pdf_base64: pdfBytesToBase64(pdfBytes),
+            pdf_filename: pdfFilename,
+          }),
+        });
+        const emailResult = (await emailResponse.json()) as { error?: string };
+        if (!emailResponse.ok) {
+          throw new Error(emailResult.error || "The PDF email could not be sent.");
+        }
+
+        setAdditionalRecipients("");
+        setMessage("Post Event sheet saved and PDF emailed successfully.");
+      } catch (emailError) {
+        setMessage("Post Event sheet saved successfully, but the PDF email could not be sent.");
+        setErrorMessage(
+          emailError instanceof Error ? emailError.message : "The PDF email could not be sent.",
+        );
       }
+      await historyRefresh;
     } catch (error) {
       setErrorMessage(
         error instanceof Error
@@ -501,6 +551,7 @@ export default function PostEventSheetPage() {
     if (!confirmed) return;
 
     setForm(newForm());
+    setAdditionalRecipients("");
     setMessage("");
     setErrorMessage("");
   }
@@ -767,16 +818,37 @@ export default function PostEventSheetPage() {
       </section>
 
       <section className="rounded-3xl border border-zinc-800 bg-[#14181d] p-6 shadow-xl">
-        <div className="flex flex-wrap items-center justify-between gap-4">
+        <div className="grid grid-cols-1 gap-5 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
           <div>
             <h2 className="text-2xl font-semibold">Save Sheet</h2>
 
             <p className="mt-1 text-sm text-zinc-500">
               Saves this as a new post-event sheet record for Car {carId}.
             </p>
+
+            <label className="mt-5 block max-w-2xl">
+              <span className="block text-sm font-semibold text-zinc-300">
+                Additional email recipients
+              </span>
+              <span className="mt-1 block text-xs text-zinc-500">
+                Optional. Separate multiple addresses with commas or semicolons.
+              </span>
+              <input
+                type="text"
+                value={additionalRecipients}
+                onChange={(event) => setAdditionalRecipients(event.target.value)}
+                disabled={!canEditPostEvent || saving}
+                placeholder="name@example.com; another@example.com"
+                autoComplete="email"
+                className="mt-3 w-full min-w-0 rounded-xl border border-zinc-700 bg-[#0d0f12] px-4 py-3 text-sm text-zinc-100 outline-none transition placeholder:text-zinc-700 focus:border-red-500 disabled:cursor-not-allowed disabled:opacity-50"
+              />
+              <span className="mt-2 block text-xs text-zinc-500">
+                Always emailed to dan.crain@rodinmotorsport.com and jimmy@rodinmotorsport.com.
+              </span>
+            </label>
           </div>
 
-          <div className="flex flex-wrap gap-3">
+          <div className="flex flex-wrap gap-3 lg:justify-end">
             <button
               type="button"
               onClick={clearForm}
@@ -871,4 +943,13 @@ function InputCard({
       />
     </label>
   );
+}
+
+function pdfBytesToBase64(bytes: Uint8Array) {
+  let binary = "";
+  const chunkSize = 32_768;
+  for (let offset = 0; offset < bytes.length; offset += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(offset, offset + chunkSize));
+  }
+  return btoa(binary);
 }

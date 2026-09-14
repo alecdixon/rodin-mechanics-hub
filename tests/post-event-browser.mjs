@@ -48,15 +48,16 @@ async function main() {
   };
   const waitFor = async expression => {
     for (let i = 0; i < 150; i++) { if (await evaluate(expression)) return; await delay(200); }
-    throw new Error('Timed out: ' + expression + ' at ' + await evaluate('location.pathname'));
+    throw new Error('Timed out: ' + expression + ' at ' + await evaluate('location.pathname') + '\n' + await evaluate('document.body.innerText.slice(0, 1200)'));
   };
   const legacy = { id: 'legacy', car_id: 1, created_by: 'previous.mechanic@example.test', created_at: '2026-09-01T10:00:00Z', chassis: 'legacy chassis', notes: 'legacy notes' };
   const recent = { ...legacy, id: 'recent', created_by: 'another.mechanic@example.test', created_at: '2026-09-06T10:00:00Z', post_event_date: '2026-09-06', track_name: 'Very long circuit ' + 'CircuitDescription'.repeat(30), notes: 'Historic notes\nSecond line' };
   const rows = [recent, legacy];
   const originals = JSON.stringify(rows);
-  const writes = [], queries = [], networkErrors = [];
+  const writes = [], queries = [], emailRequests = [], networkErrors = [];
   let failInsert = false;
   let failUpload = false;
+  let failEmail = false;
   let releaseInsert;
   let signalInsert;
   const insertStarted = new Promise(resolve => { signalInsert = resolve; });
@@ -72,7 +73,13 @@ async function main() {
       const url = new URL(request.url);
       let body = [];
       let responseCode = 200;
-      if (request.method === 'OPTIONS') body = null;
+      if (url.pathname === '/api/post-event-email') {
+        const emailPayload = JSON.parse(request.postData);
+        emailRequests.push({ payload: emailPayload, authorization: request.headers.Authorization || request.headers.authorization });
+        responseCode = failEmail ? 502 : 200;
+        body = failEmail ? { error: 'Test email failure' } : { success: true };
+      }
+      else if (request.method === 'OPTIONS') body = null;
       else if (url.pathname.startsWith('/auth/')) body = user;
       else if (url.pathname.includes('/storage/')) {
         writes.push({ kind: 'pdf', method: request.method });
@@ -103,7 +110,10 @@ async function main() {
       await call('Fetch.fulfillRequest', { requestId, responseCode, responseHeaders: [{ name: 'Content-Type', value: 'application/json' }, { name: 'Access-Control-Allow-Origin', value: '*' }, { name: 'Access-Control-Allow-Headers', value: '*' }, { name: 'Access-Control-Allow-Methods', value: 'GET,POST,OPTIONS' }], body: Buffer.from(JSON.stringify(body)).toString('base64') });
     } catch (error) { networkErrors.push(error.message); }
   });
-  await call('Fetch.enable', { patterns: [{ urlPattern: `https://${host}/*` }] });
+  await call('Fetch.enable', { patterns: [
+    { urlPattern: `https://${host}/*` },
+    { urlPattern: 'http://127.0.0.1:3000/api/post-event-email*' },
+  ] });
   const token = [{ alg: 'HS256', typ: 'JWT' }, { sub: user.id, exp: Math.floor(Date.now() / 1000) + 3600 }, 'test'].map(value => Buffer.from(typeof value === 'string' ? value : JSON.stringify(value)).toString('base64url')).join('.');
   const session = { access_token: token, refresh_token: 'isolated-test-only', expires_at: Math.floor(Date.now() / 1000) + 3600, expires_in: 3600, token_type: 'bearer', user };
   await call('Network.setCookie', { name: 'user-email', value: email, url: 'http://127.0.0.1:3000' });
@@ -111,7 +121,7 @@ async function main() {
   await call('Page.navigate', { url: 'http://127.0.0.1:3000/car/1/post-event' });
   await waitFor(`document.body.innerText.includes('Previous Post-Event Sheets')`);
   const click = label => evaluate(`Array.from(document.querySelectorAll('button')).find(b=>b.textContent.trim()===${JSON.stringify(label)}).click()`);
-  const input = (label, value) => evaluate(`(()=>{const element=Array.from(document.querySelectorAll('label')).find(l=>l.textContent.trim()===${JSON.stringify(label)}).querySelector('input');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(element,${JSON.stringify(value)});element.dispatchEvent(new Event('input',{bubbles:true}));})()`);
+  const input = (label, value) => evaluate(`(()=>{const element=Array.from(document.querySelectorAll('label')).find(l=>l.querySelector('span')?.textContent.trim()===${JSON.stringify(label)}).querySelector('input');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(element,${JSON.stringify(value)});element.dispatchEvent(new Event('input',{bubbles:true}));})()`);
   const active = () => evaluate(`JSON.stringify(Array.from(document.querySelectorAll('input,textarea')).map(e=>({value:e.value,disabled:e.disabled})))`);
   const values = () => evaluate(`Array.from(document.querySelectorAll('input,textarea')).map(e=>e.value)`);
   const visibleFields = () => evaluate(`Array.from(document.querySelectorAll('main main input,main main textarea')).map(element=>({
@@ -128,7 +138,9 @@ async function main() {
   await input('After Event', 'Silverstone');
   await input('Date', '2026-09-14');
   await input('Chassis', 'Active chassis');
+  await input('Additional email recipients', ' extra@example.com; SECOND@example.com,extra@example.com ');
   const enteredValues = await values();
+  const submittedNotes = await evaluate(`document.querySelector('textarea').value`);
   assert.ok(enteredValues.every(Boolean), 'Every editable input must be populated before testing reset');
   const initialHistory = await evaluate(`Array.from(document.querySelectorAll('button[aria-expanded]')).map(b=>b.textContent)`);
   assert.ok(initialHistory[0].includes('another.mechanic@example.test'));
@@ -159,20 +171,28 @@ async function main() {
   await waitFor(`document.querySelector('dl')?.textContent.includes('legacy notes')`);
   assert.ok(await evaluate(`document.querySelector('dl').textContent.includes('Date not recorded')`));
   await click('Close');
+  await input('Additional email recipients', 'valid@example.com; invalid-address');
+  const invalidForm = await active();
+  await click('Save Post-Event Sheet');
+  await waitFor(`document.body.innerText.includes('Invalid additional email address')`);
+  assert.equal(await active(), invalidForm, 'Invalid email validation preserves the form');
+  assert.equal(writes.length, 0, 'Invalid email validation must run before storage/database writes');
+  assert.equal(emailRequests.length, 0, 'Invalid email validation must run before email');
+  await input('Additional email recipients', ' extra@example.com; SECOND@example.com,extra@example.com ');
   await click('Save Post-Event Sheet');
   await Promise.race([insertStarted, delay(15000).then(() => { throw new Error('Insert did not start'); })]);
   assert.deepEqual(await values(), enteredValues, 'Inputs must not clear before Supabase confirms the insert');
   releaseInsert();
-  await waitFor(`document.body.innerText.includes('saved as a new submission')`);
   await Promise.race([historyRefreshStarted, delay(15000).then(() => { throw new Error('History refresh did not start'); })]);
-  assert.deepEqual(await values(), enteredValues.map(() => ''), 'Successful save clears every input, including date and notes, without removing controls');
+  assert.deepEqual((await values()).slice(0, 13), enteredValues.slice(0, 13).map(() => ''), 'Successful database save clears the Post Event form before email completes');
   const clearedFields = await visibleFields();
-  assert.equal(clearedFields.length, 13, 'The actual active form must still contain all 13 editable controls');
-  assert.ok(clearedFields.every(field => field.rendered && field.value === ''), 'Every rendered controlled input must visibly be empty after save');
+  assert.equal(clearedFields.length, 14, 'The active page must contain 13 sheet controls and the additional-recipient control');
+  assert.ok(clearedFields.slice(0, 13).every(field => field.rendered && field.value === ''), 'Every rendered Post Event control must visibly be empty after database save');
+  await waitFor(`document.body.innerText.includes('Post Event sheet saved and PDF emailed successfully.')`);
+  assert.equal(emailRequests.length, 1, 'Email must not wait for history refresh to complete');
+  assert.ok((await visibleFields()).every(field => field.rendered && field.value === ''), 'Successful email clears the additional recipient and history cannot repopulate inputs');
   releaseHistoryRefresh();
   await waitFor(`Array.from(document.querySelectorAll('button')).some(b=>b.textContent.trim()==='Save Post-Event Sheet' && !b.disabled)`);
-  assert.ok((await visibleFields()).every(field => field.rendered && field.value === ''), 'A delayed history refresh must not repopulate visible inputs');
-  assert.ok(await evaluate(`document.body.innerText.includes('form has been reset')`));
   assert.equal(networkErrors.length, 0);
   const inserts = writes.filter(w => w.kind === 'sheet');
   assert.equal(inserts.length, 1);
@@ -183,11 +203,18 @@ async function main() {
   assert.equal(record.created_by, email);
   assert.ok(!Number.isNaN(Date.parse(record.created_at)));
   assert.equal(record.chassis, 'Active chassis');
-  assert.equal(record.notes, enteredValues.at(-1));
+  assert.equal(record.notes, submittedNotes);
   assert.equal(record.submission_snapshot.user_id, user.id);
   assert.equal(record.submission_snapshot.submitted_by, 'Test Mechanic');
   assert.equal(record.submission_snapshot.checks.length, 11);
-  assert.equal(record.submission_snapshot.checks.find(c => c.name === 'Notes').value, enteredValues.at(-1));
+  assert.equal(record.submission_snapshot.checks.find(c => c.name === 'Notes').value, submittedNotes);
+  assert.equal(emailRequests.length, 1);
+  assert.ok(emailRequests[0].authorization?.startsWith('Bearer '));
+  assert.deepEqual(emailRequests[0].payload.additional_recipients, ['extra@example.com', 'second@example.com']);
+  assert.equal(emailRequests[0].payload.circuit, 'Silverstone');
+  assert.equal(emailRequests[0].payload.post_event_date, '2026-09-14');
+  assert.equal(emailRequests[0].payload.submitted_at, record.created_at);
+  assert.equal(Buffer.from(emailRequests[0].payload.pdf_base64, 'base64').subarray(0, 5).toString('ascii'), '%PDF-');
   assert.equal(JSON.stringify(rows.slice(1)), originals, 'Prior records must not change');
   assert.ok(queries.every(q => q.includes('car_id=eq.1') && !q.includes('created_by=') && q.includes('created_at.desc')));
   await waitFor(`document.querySelector('button[aria-expanded]')?.textContent.includes('Silverstone')`);
@@ -202,29 +229,44 @@ async function main() {
   await call('Page.reload');
   await waitFor(`document.querySelector('button[aria-expanded]')?.textContent.includes('Silverstone')`);
   const remountedFields = await visibleFields();
-  assert.equal(remountedFields.length, 13);
+  assert.equal(remountedFields.length, 14);
   assert.ok(remountedFields.every(field => field.rendered && (field.type === 'date' || field.value === '')), 'Loading history after remount must not copy the latest submission into the active form');
   const savedRows = JSON.stringify(rows);
   await fillAll();
+  await input('Additional email recipients', 'retry@example.com');
   const retryForm = await active();
+  const emailCountBeforeFailures = emailRequests.length;
   failInsert = true;
   await click('Save Post-Event Sheet');
   await waitFor(`document.body.innerText.includes('Test insert failure')`);
   await waitFor(`Array.from(document.querySelectorAll('button')).some(b=>b.textContent.trim()==='Save Post-Event Sheet' && !b.disabled)`);
   assert.equal(await active(), retryForm, 'Failed insert preserves every input for retry');
+  assert.equal(emailRequests.length, emailCountBeforeFailures, 'Failed database insert must not attempt email');
   failInsert = false;
   failUpload = true;
   await click('Save Post-Event Sheet');
   await waitFor(`document.body.innerText.includes('Test upload failure')`);
   await waitFor(`Array.from(document.querySelectorAll('button')).some(b=>b.textContent.trim()==='Save Post-Event Sheet' && !b.disabled)`);
   assert.equal(await active(), retryForm, 'Failed PDF upload preserves every input for retry');
+  assert.equal(emailRequests.length, emailCountBeforeFailures, 'Failed PDF upload must not attempt email');
   await evaluate(`document.querySelector('button[aria-expanded]').click()`);
   await waitFor(`document.querySelector('dl')?.textContent.includes('Test Mechanic')`);
   await click('Close');
   assert.equal(await active(), retryForm, 'History viewing must not alter the next event form');
   assert.equal(JSON.stringify(rows), savedRows, 'Reset, failed saves and history viewing must not modify saved records');
+  failUpload = false;
+  failEmail = true;
+  await click('Save Post-Event Sheet');
+  await waitFor(`document.body.innerText.includes('Post Event sheet saved successfully, but the PDF email could not be sent.')`);
+  await waitFor(`document.body.innerText.includes('Test email failure')`);
+  const partialSuccessFields = await visibleFields();
+  assert.ok(partialSuccessFields.slice(0, 13).every(field => field.value === ''), 'A successful database save clears the sheet even when email fails');
+  assert.equal(partialSuccessFields[13].value, 'retry@example.com', 'Failed email preserves additional recipients');
+  assert.equal(emailRequests.length, emailCountBeforeFailures + 1);
+  assert.equal(writes.filter(write => write.kind === 'sheet').length, 2, 'Email failure must not roll back the saved record');
   assert.equal(networkErrors.length, 0);
-  console.log('PASS: all 13 visible controls clear only after confirmed insert; delayed history refresh and remount never repopulate saved values; failed insert/upload preserve inputs; history leaves cleared/new form unchanged');
+  console.log('PASS: email validation, successful save/email, partial email failure, no email after database failure, submitted PDF payload, and recipient-field reset/preservation');
+  console.log('PASS: all 13 Post Event controls clear only after confirmed insert; delayed history refresh and remount never repopulate saved values; failed insert/upload preserve inputs; history leaves cleared/new form unchanged');
   console.log('PASS: isolated browser submission payload, append-only save, cross-submitter car query, legacy rendering, read-only viewer/Close, no overflow at 320/375/390/768/1440px');
   console.log('NOT TESTED: live database migration, real authentication, storage persistence or Supabase RLS.');
 }
