@@ -28,6 +28,8 @@ type JobTemplate = {
   jobs: string[];
 };
 
+const STANDARD_WORKSHOP_TEMPLATE_NAME = "Standard Post Event Job List";
+
 type JobRelease = {
   car_id: number;
   after_event: string | null;
@@ -137,7 +139,6 @@ export default function ChiefJobListEditorPage() {
 
   const [jobs, setJobs] = useState<JobRow[]>([]);
   const [templates, setTemplates] = useState<JobTemplate[]>([]);
-  const [selectedTemplateId, setSelectedTemplateId] = useState("");
 
   const [afterEvent, setAfterEvent] = useState("");
   const [jobDate, setJobDate] = useState("");
@@ -268,10 +269,6 @@ export default function ChiefJobListEditorPage() {
 
     const cleanTemplates = (data ?? []) as JobTemplate[];
     setTemplates(cleanTemplates);
-
-    if (cleanTemplates.length > 0) {
-      setSelectedTemplateId((current) => current || cleanTemplates[0].id);
-    }
   }
 
   async function loadReleaseInfo() {
@@ -539,17 +536,19 @@ export default function ChiefJobListEditorPage() {
     setMessage("");
     setErrorMessage("");
 
-    const selectedTemplate = templates.find(
-      (template) => template.id === selectedTemplateId,
+    const standardTemplate = templates.find(
+      (template) => template.name === STANDARD_WORKSHOP_TEMPLATE_NAME,
     );
 
-    if (!selectedTemplate) {
-      setErrorMessage("Select a template first.");
+    if (!standardTemplate) {
+      setErrorMessage(
+        `The "${STANDARD_WORKSHOP_TEMPLATE_NAME}" template could not be found.`,
+      );
       return;
     }
 
     const confirmed = window.confirm(
-      `Update Car ${carId} from "${selectedTemplate.name}"?\n\nThis will create or update the STANDARD workshop jobs for this car. Special and personal jobs will be kept.\n\nAny manually added standard jobs above the template range may be overwritten if they use the same job number. Publish the list after checking it.`,
+      `Build the standard workshop list for Car ${carId}?\n\nThis uses "${STANDARD_WORKSHOP_TEMPLATE_NAME}" and creates or updates the STANDARD workshop jobs for this car. Special and personal jobs will be kept.\n\nAny manually added standard jobs above the template range may be overwritten if they use the same job number. Publish the list after checking it.`,
     );
 
     if (!confirmed) return;
@@ -561,10 +560,10 @@ export default function ChiefJobListEditorPage() {
     );
 
     const newTemplateTexts = new Set(
-      selectedTemplate.jobs.map((job) => job.trim()).filter(Boolean),
+      standardTemplate.jobs.map((job) => job.trim()).filter(Boolean),
     );
 
-    const addedStandardJobs = selectedTemplate.jobs.filter(
+    const addedStandardJobs = standardTemplate.jobs.filter(
       (job) => !currentStandardTexts.has(job.trim()),
     );
 
@@ -576,7 +575,7 @@ export default function ChiefJobListEditorPage() {
 
     const now = new Date().toISOString();
 
-    const rows = selectedTemplate.jobs.map((text, index) => ({
+    const rows = standardTemplate.jobs.map((text, index) => ({
       car_id: carId,
       job_id: index + 1,
       job_text: text,
@@ -607,7 +606,7 @@ export default function ChiefJobListEditorPage() {
       .delete()
       .eq("car_id", carId)
       .eq("section", "standard")
-      .gt("job_id", selectedTemplate.jobs.length);
+      .gt("job_id", standardTemplate.jobs.length);
 
     if (cleanupError) {
       setErrorMessage(
@@ -627,7 +626,7 @@ export default function ChiefJobListEditorPage() {
     });
 
     await markDraft(
-      `Updated Car ${carId} workshop list from "${selectedTemplate.name}". Publish it when ready.`,
+      `Updated Car ${carId} workshop list from "${STANDARD_WORKSHOP_TEMPLATE_NAME}". Publish it when ready.`,
     );
 
     await loadJobs();
@@ -1039,9 +1038,11 @@ export default function ChiefJobListEditorPage() {
   const outstandingJobs = totalJobs - completedJobs;
   const noteCount = jobs.filter((job) => job.notes?.trim()).length;
 
-  const selectedTemplate = useMemo(() => {
-    return templates.find((template) => template.id === selectedTemplateId);
-  }, [templates, selectedTemplateId]);
+  const standardTemplate = useMemo(() => {
+    return templates.find(
+      (template) => template.name === STANDARD_WORKSHOP_TEMPLATE_NAME,
+    );
+  }, [templates]);
 
   const isPublished = releaseInfo?.status === "published";
   const versionNumber = releaseInfo?.version_number ?? 0;
@@ -1307,70 +1308,36 @@ export default function ChiefJobListEditorPage() {
 
       <section className="mb-6 grid gap-6 xl:grid-cols-[1fr_420px]">
         <div className="rounded-3xl border border-zinc-800 bg-[#14181d] p-6 shadow-xl">
-          <p className="text-xs font-semibold uppercase tracking-[0.3em] text-red-400">
-            Job List Creation
-          </p>
-
-          <h2 className="mt-3 text-2xl font-semibold">
-            Create / Update Standard Workshop List
-          </h2>
+          <h2 className="text-2xl font-semibold">Workshop Job List</h2>
 
           <p className="mt-2 text-sm leading-6 text-zinc-500">
-            Choose a template to build the main workshop list, or add one
-            standard job manually. Publishing is a separate final step, and that
-            is when mechanics are notified.
+            Build the standard workshop list and add any extra jobs required.
           </p>
 
-          <div className="mt-5 flex flex-wrap gap-3">
-            <select
-              value={selectedTemplateId}
-              onChange={(event) => setSelectedTemplateId(event.target.value)}
-              disabled={readOnly}
-              className="min-w-[280px] flex-1 rounded-xl border border-zinc-700 bg-[#0d0f12] px-4 py-3 text-sm outline-none focus:border-red-500"
-            >
-              {templates.length === 0 ? (
-                <option value="">No templates found</option>
-              ) : (
-                templates.map((template) => (
-                  <option key={template.id} value={template.id}>
-                    {template.name}
-                  </option>
-                ))
-              )}
-            </select>
-
+          <div className="mt-5">
             <button
               type="button"
               onClick={updateFromTemplate}
-              disabled={readOnly || updatingTemplate || templates.length === 0}
+              disabled={readOnly || updatingTemplate || !standardTemplate}
               className="rounded-xl bg-red-700 px-5 py-3 text-sm font-semibold text-white hover:bg-red-600 disabled:cursor-not-allowed disabled:opacity-50"
             >
-              {updatingTemplate ? "Updating..." : "Update From Template"}
+              {updatingTemplate ? "Building..." : "Build Standard List"}
             </button>
+          </div>
 
+          <div className="mt-6 flex flex-wrap items-center justify-between gap-3 border-t border-zinc-800 pt-4">
+            <p className="text-xs text-zinc-600">
+              Removes standard jobs while keeping special and personal jobs.
+            </p>
             <button
               type="button"
               onClick={clearStandardJobs}
               disabled={readOnly || clearingStandardJobs || standardJobs.length === 0}
-              className="rounded-xl border border-zinc-700 px-5 py-3 text-sm font-semibold text-zinc-300 hover:border-red-500 hover:text-red-300 disabled:cursor-not-allowed disabled:opacity-50"
+              className="rounded-lg border border-red-900/70 px-3 py-2 text-xs font-semibold text-red-300 hover:border-red-700 hover:bg-red-950/30 disabled:cursor-not-allowed disabled:opacity-50"
             >
               {clearingStandardJobs ? "Clearing..." : "Clear Standard Jobs"}
             </button>
           </div>
-
-          {selectedTemplate && (
-            <div className="mt-5 rounded-2xl border border-zinc-800 bg-[#0d0f12] p-4 text-sm text-zinc-400">
-              Selected template:{" "}
-              <span className="font-semibold text-zinc-100">
-                {selectedTemplate.name}
-              </span>{" "}
-              ·{" "}
-              <span className="font-semibold text-zinc-100">
-                {selectedTemplate.jobs.length}
-              </span>{" "}
-              standard jobs
-            </div>
-          )}
 
           <div className="mt-6 rounded-2xl border border-zinc-800 bg-[#0d0f12] p-4">
             <h3 className="text-sm font-semibold text-zinc-100">
