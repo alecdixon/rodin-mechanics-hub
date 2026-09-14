@@ -55,26 +55,52 @@ async function main() {
   const rows = [recent, legacy];
   const originals = JSON.stringify(rows);
   const writes = [], queries = [], networkErrors = [];
+  let failInsert = false;
+  let failUpload = false;
+  let releaseInsert;
+  let signalInsert;
+  const insertStarted = new Promise(resolve => { signalInsert = resolve; });
+  const insertConfirmation = new Promise(resolve => { releaseInsert = resolve; });
+  let releaseHistoryRefresh;
+  let signalHistoryRefresh;
+  const historyRefreshStarted = new Promise(resolve => { signalHistoryRefresh = resolve; });
+  const historyRefreshResponse = new Promise(resolve => { releaseHistoryRefresh = resolve; });
   const email = 'simon.crain@rodinmotorsport.com';
   const user = { id: '00000000-0000-4000-8000-000000000001', aud: 'authenticated', role: 'authenticated', email, user_metadata: { full_name: 'Test Mechanic' }, app_metadata: { provider: 'email' }, created_at: '2026-01-01T00:00:00Z' };
   handlers.set('Fetch.requestPaused', async ({ requestId, request }) => {
     try {
       const url = new URL(request.url);
       let body = [];
+      let responseCode = 200;
       if (request.method === 'OPTIONS') body = null;
       else if (url.pathname.startsWith('/auth/')) body = user;
-      else if (url.pathname.includes('/storage/')) { writes.push({ kind: 'pdf', method: request.method }); body = { Key: 'test.pdf' }; }
+      else if (url.pathname.includes('/storage/')) {
+        writes.push({ kind: 'pdf', method: request.method });
+        responseCode = failUpload ? 500 : 200;
+        body = failUpload ? { message: 'Test upload failure' } : { Key: 'test.pdf' };
+      }
       else if (url.pathname.endsWith('/post_event_sheets')) {
         if (request.method === 'POST') {
           const record = JSON.parse(request.postData);
-          writes.push({ kind: 'sheet', method: request.method, record }); rows.unshift({ ...record, id: 'new-submission' }); body = null;
+          signalInsert();
+          await insertConfirmation;
+          if (failInsert) {
+            responseCode = 500;
+            body = { message: 'Test insert failure' };
+          } else {
+            writes.push({ kind: 'sheet', method: request.method, record }); rows.unshift({ ...record, id: `new-submission-${rows.length}` }); body = null;
+          }
         } else {
           queries.push(url.search);
+          if (writes.some(write => write.kind === 'sheet')) {
+            signalHistoryRefresh();
+            await historyRefreshResponse;
+          }
           const offset = Number(url.searchParams.get('offset') || 0);
           body = rows.slice(offset, offset + Number(url.searchParams.get('limit') || 100));
         }
       }
-      await call('Fetch.fulfillRequest', { requestId, responseCode: 200, responseHeaders: [{ name: 'Content-Type', value: 'application/json' }, { name: 'Access-Control-Allow-Origin', value: '*' }, { name: 'Access-Control-Allow-Headers', value: '*' }, { name: 'Access-Control-Allow-Methods', value: 'GET,POST,OPTIONS' }], body: Buffer.from(JSON.stringify(body)).toString('base64') });
+      await call('Fetch.fulfillRequest', { requestId, responseCode, responseHeaders: [{ name: 'Content-Type', value: 'application/json' }, { name: 'Access-Control-Allow-Origin', value: '*' }, { name: 'Access-Control-Allow-Headers', value: '*' }, { name: 'Access-Control-Allow-Methods', value: 'GET,POST,OPTIONS' }], body: Buffer.from(JSON.stringify(body)).toString('base64') });
     } catch (error) { networkErrors.push(error.message); }
   });
   await call('Fetch.enable', { patterns: [{ urlPattern: `https://${host}/*` }] });
@@ -87,9 +113,23 @@ async function main() {
   const click = label => evaluate(`Array.from(document.querySelectorAll('button')).find(b=>b.textContent.trim()===${JSON.stringify(label)}).click()`);
   const input = (label, value) => evaluate(`(()=>{const element=Array.from(document.querySelectorAll('label')).find(l=>l.textContent.trim()===${JSON.stringify(label)}).querySelector('input');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(element,${JSON.stringify(value)});element.dispatchEvent(new Event('input',{bubbles:true}));})()`);
   const active = () => evaluate(`JSON.stringify(Array.from(document.querySelectorAll('input,textarea')).map(e=>({value:e.value,disabled:e.disabled})))`);
+  const values = () => evaluate(`Array.from(document.querySelectorAll('input,textarea')).map(e=>e.value)`);
+  const visibleFields = () => evaluate(`Array.from(document.querySelectorAll('main main input,main main textarea')).map(element=>({
+    value:element.value,
+    type:element.type,
+    rendered:element.getClientRects().length > 0 && getComputedStyle(element).visibility !== 'hidden'
+  }))`);
+  const fillAll = () => evaluate(`Array.from(document.querySelectorAll('input,textarea')).forEach((element,index)=>{
+    const prototype = element.tagName === 'TEXTAREA' ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+    Object.getOwnPropertyDescriptor(prototype,'value').set.call(element,element.type === 'date' ? '2026-09-14' : 'Entered value '+index);
+    element.dispatchEvent(new Event('input',{bubbles:true}));
+  })`);
+  await fillAll();
   await input('After Event', 'Silverstone');
   await input('Date', '2026-09-14');
   await input('Chassis', 'Active chassis');
+  const enteredValues = await values();
+  assert.ok(enteredValues.every(Boolean), 'Every editable input must be populated before testing reset');
   const initialHistory = await evaluate(`Array.from(document.querySelectorAll('button[aria-expanded]')).map(b=>b.textContent)`);
   assert.ok(initialHistory[0].includes('another.mechanic@example.test'));
   assert.ok(initialHistory[1].includes('previous.mechanic@example.test'));
@@ -120,7 +160,19 @@ async function main() {
   assert.ok(await evaluate(`document.querySelector('dl').textContent.includes('Date not recorded')`));
   await click('Close');
   await click('Save Post-Event Sheet');
+  await Promise.race([insertStarted, delay(15000).then(() => { throw new Error('Insert did not start'); })]);
+  assert.deepEqual(await values(), enteredValues, 'Inputs must not clear before Supabase confirms the insert');
+  releaseInsert();
   await waitFor(`document.body.innerText.includes('saved as a new submission')`);
+  await Promise.race([historyRefreshStarted, delay(15000).then(() => { throw new Error('History refresh did not start'); })]);
+  assert.deepEqual(await values(), enteredValues.map(() => ''), 'Successful save clears every input, including date and notes, without removing controls');
+  const clearedFields = await visibleFields();
+  assert.equal(clearedFields.length, 13, 'The actual active form must still contain all 13 editable controls');
+  assert.ok(clearedFields.every(field => field.rendered && field.value === ''), 'Every rendered controlled input must visibly be empty after save');
+  releaseHistoryRefresh();
+  await waitFor(`Array.from(document.querySelectorAll('button')).some(b=>b.textContent.trim()==='Save Post-Event Sheet' && !b.disabled)`);
+  assert.ok((await visibleFields()).every(field => field.rendered && field.value === ''), 'A delayed history refresh must not repopulate visible inputs');
+  assert.ok(await evaluate(`document.body.innerText.includes('form has been reset')`));
   assert.equal(networkErrors.length, 0);
   const inserts = writes.filter(w => w.kind === 'sheet');
   assert.equal(inserts.length, 1);
@@ -131,11 +183,11 @@ async function main() {
   assert.equal(record.created_by, email);
   assert.ok(!Number.isNaN(Date.parse(record.created_at)));
   assert.equal(record.chassis, 'Active chassis');
-  assert.equal(record.notes, recent.notes);
+  assert.equal(record.notes, enteredValues.at(-1));
   assert.equal(record.submission_snapshot.user_id, user.id);
   assert.equal(record.submission_snapshot.submitted_by, 'Test Mechanic');
   assert.equal(record.submission_snapshot.checks.length, 11);
-  assert.equal(record.submission_snapshot.checks.find(c => c.name === 'Notes').value, recent.notes);
+  assert.equal(record.submission_snapshot.checks.find(c => c.name === 'Notes').value, enteredValues.at(-1));
   assert.equal(JSON.stringify(rows.slice(1)), originals, 'Prior records must not change');
   assert.ok(queries.every(q => q.includes('car_id=eq.1') && !q.includes('created_by=') && q.includes('created_at.desc')));
   await waitFor(`document.querySelector('button[aria-expanded]')?.textContent.includes('Silverstone')`);
@@ -145,7 +197,34 @@ async function main() {
   assert.equal(await active(), afterSave, 'Snapshot viewer must preserve active values');
   assert.ok(await evaluate(`document.querySelector('dl').textContent.includes('Active chassis')`));
   await click('Close');
+  assert.equal(await active(), afterSave, 'Closing history must leave the newly cleared form unchanged');
   assert.equal(writes.filter(w => w.kind === 'sheet').length, 1, 'Snapshot viewing cannot resubmit');
+  await call('Page.reload');
+  await waitFor(`document.querySelector('button[aria-expanded]')?.textContent.includes('Silverstone')`);
+  const remountedFields = await visibleFields();
+  assert.equal(remountedFields.length, 13);
+  assert.ok(remountedFields.every(field => field.rendered && (field.type === 'date' || field.value === '')), 'Loading history after remount must not copy the latest submission into the active form');
+  const savedRows = JSON.stringify(rows);
+  await fillAll();
+  const retryForm = await active();
+  failInsert = true;
+  await click('Save Post-Event Sheet');
+  await waitFor(`document.body.innerText.includes('Test insert failure')`);
+  await waitFor(`Array.from(document.querySelectorAll('button')).some(b=>b.textContent.trim()==='Save Post-Event Sheet' && !b.disabled)`);
+  assert.equal(await active(), retryForm, 'Failed insert preserves every input for retry');
+  failInsert = false;
+  failUpload = true;
+  await click('Save Post-Event Sheet');
+  await waitFor(`document.body.innerText.includes('Test upload failure')`);
+  await waitFor(`Array.from(document.querySelectorAll('button')).some(b=>b.textContent.trim()==='Save Post-Event Sheet' && !b.disabled)`);
+  assert.equal(await active(), retryForm, 'Failed PDF upload preserves every input for retry');
+  await evaluate(`document.querySelector('button[aria-expanded]').click()`);
+  await waitFor(`document.querySelector('dl')?.textContent.includes('Test Mechanic')`);
+  await click('Close');
+  assert.equal(await active(), retryForm, 'History viewing must not alter the next event form');
+  assert.equal(JSON.stringify(rows), savedRows, 'Reset, failed saves and history viewing must not modify saved records');
+  assert.equal(networkErrors.length, 0);
+  console.log('PASS: all 13 visible controls clear only after confirmed insert; delayed history refresh and remount never repopulate saved values; failed insert/upload preserve inputs; history leaves cleared/new form unchanged');
   console.log('PASS: isolated browser submission payload, append-only save, cross-submitter car query, legacy rendering, read-only viewer/Close, no overflow at 320/375/390/768/1440px');
   console.log('NOT TESTED: live database migration, real authentication, storage persistence or Supabase RLS.');
 }

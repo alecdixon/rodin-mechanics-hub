@@ -339,6 +339,8 @@ export default function PostEventSheetPage() {
   }
 
   useEffect(() => {
+    let cancelled = false;
+
     async function init() {
       if (!carId) return;
 
@@ -347,7 +349,7 @@ export default function PostEventSheetPage() {
 
       const email = await checkAccess();
 
-      if (!email) {
+      if (!email || cancelled) {
         return;
       }
 
@@ -357,22 +359,22 @@ export default function PostEventSheetPage() {
       setHistoryError("");
       try {
         const sheets = await fetchHistory(carId);
-        setHistory(sheets);
-        const latest = sheets[0];
-        if (latest) {
-          // Preserve the existing carry-forward of check values, with fresh event details.
-          setForm({ ...newForm(), ...Object.fromEntries(
-            Object.keys(CHECK_LABELS).map((key) => [key, String(latest[key as keyof typeof CHECK_LABELS] ?? "")]),
-          ) });
-        }
-      } catch (error) {
-        setHistoryError(error instanceof Error ? error.message : "Could not load previous sheets.");
-      }
+        if (cancelled) return;
 
-      setLoadingLatest(false);
+        // Submitted sheets belong only in history, never in the active form.
+        setHistory(sheets);
+      } catch (error) {
+        if (!cancelled) {
+          setHistoryError(error instanceof Error ? error.message : "Could not load previous sheets.");
+        }
+      } finally {
+        if (!cancelled) setLoadingLatest(false);
+      }
     }
 
     init();
+
+    return () => { cancelled = true; };
 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [carId]);
@@ -467,7 +469,8 @@ export default function PostEventSheetPage() {
         throw new Error(insertError.message);
       }
 
-      setMessage("Post-event sheet saved as a new submission and PDF successfully.");
+      setForm({ ...EMPTY_FORM });
+      setMessage("Post-event sheet saved as a new submission and PDF successfully. The form has been reset for the next event.");
       try {
         setHistory(await fetchHistory(carId));
         setHistoryError("");
