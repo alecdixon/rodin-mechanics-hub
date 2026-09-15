@@ -155,6 +155,22 @@ type WingShimSettings = {
   spare_rh: string;
 };
 
+type SurfaceTableEmailSnapshot = {
+  car_id: number;
+  car_name: string;
+  driver: string;
+  circuit: string;
+  check_date: string;
+  engineer_name: string;
+  engineer_email: string;
+  created_by: string;
+  submitted_at: string;
+  corner_weights: CornerWeights;
+  camber_measurements: CamberMeasurements;
+  wing_shims: WingShimSettings;
+  items: ReportItemPayload[];
+};
+
 const DEFAULT_CAR_COLOUR = "#b91c1c";
 
 const EMPTY_CORNER_WEIGHTS: CornerWeights = {
@@ -1921,28 +1937,42 @@ export default function LegalityPage() {
     });
   }
 
-  async function sendLegalityReportLink(checkId: string, items: ReportItemPayload[]) {
+  function createEmailSnapshot(items: ReportItemPayload[], submittedAt: string): SurfaceTableEmailSnapshot {
     const carLabel = selectedCar ? carDisplayName(selectedCar) : `Car ${selectedCarId}`;
+
+    return {
+      car_id: selectedCarId,
+      car_name: carLabel,
+      driver: driver.trim() || selectedCar?.name || `Car ${selectedCarId}`,
+      circuit: finalCircuit,
+      check_date: checkDate,
+      engineer_name: selectedEngineer.engineerName,
+      engineer_email: selectedEngineer.engineerEmail,
+      created_by: userEmail ?? "Unknown",
+      submitted_at: submittedAt,
+      corner_weights: { ...cornerWeights },
+      camber_measurements: { ...camberMeasurements },
+      wing_shims: { ...wingShimSettings },
+      items: items.map((item) => ({ ...item })),
+    };
+  }
+
+  async function sendLegalityPdf(checkId: string, snapshot: SurfaceTableEmailSnapshot) {
+    const { data: sessionData } = await supabase.auth.getSession();
+    const accessToken = sessionData.session?.access_token;
+    if (!accessToken) {
+      throw new Error("Your session has expired. Sign in again, then resend the PDF.");
+    }
 
     const notifyResponse = await fetch("/api/legality", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
+        Authorization: `Bearer ${accessToken}`,
       },
       body: JSON.stringify({
         check_id: checkId,
-        car_id: selectedCarId,
-        car_name: carLabel,
-        driver: driver.trim() || selectedCar?.name || `Car ${selectedCarId}`,
-        circuit: finalCircuit,
-        check_date: checkDate,
-        engineer_name: selectedEngineer.engineerName,
-        engineer_email: selectedEngineer.engineerEmail,
-        corner_weights: cornerWeights,
-        camber_measurements: camberMeasurements,
-        wing_shims: wingShimSettings,
-        created_by: userEmail,
-        items,
+        ...snapshot,
       }),
     });
 
@@ -1959,7 +1989,7 @@ export default function LegalityPage() {
         .join("\n\n");
 
       throw new Error(
-        readableError || "Surface table check saved, but the report link email failed.",
+        readableError || "Surface table check saved, but the PDF email failed.",
       );
     }
 
@@ -1979,7 +2009,6 @@ export default function LegalityPage() {
       ok: boolean;
       sent_to: string;
       engineer_name: string;
-      report_url?: string;
     }>;
   }
 
@@ -2006,6 +2035,8 @@ export default function LegalityPage() {
       const cleanDriver = driver.trim() || selectedCar?.name || `Car ${selectedCarId}`;
       const now = new Date().toISOString();
       const existingCheckId = activeCheckId ?? activeExistingCheckForCarDateCircuit?.id ?? null;
+      const itemPayload = createItemPayload();
+      const emailSnapshot = createEmailSnapshot(itemPayload, now);
 
       let savedCheckId = existingCheckId;
 
@@ -2083,8 +2114,6 @@ export default function LegalityPage() {
         throw new Error("The surface table sheet was saved without returning an ID. Please reload and try again.");
       }
 
-      const itemPayload = createItemPayload();
-
       const { error: itemError } = await supabase
         .from("legality_check_items")
         .upsert(
@@ -2111,15 +2140,15 @@ export default function LegalityPage() {
       setActiveCheckId(savedCheckId);
 
       try {
-        const notifyResult = await sendLegalityReportLink(savedCheckId, itemPayload);
+        const notifyResult = await sendLegalityPdf(savedCheckId, emailSnapshot);
         setMessage(
-          `${existingCheckId ? "Surface table check updated" : "Surface table check saved"}. Report link sent to ${notifyResult.sent_to}.${notifyResult.report_url ? ` Open link: ${notifyResult.report_url}` : ""}`,
+          `${existingCheckId ? "Surface table check updated" : "Surface table check saved"}. PDF sent to ${notifyResult.sent_to}.`,
         );
       } catch (error) {
         setErrorMessage(
           error instanceof Error
-            ? `Surface table check saved, but the engineer report link was not sent.\n\n${error.message}`
-            : "Surface table check saved, but the engineer report link was not sent.",
+            ? `Surface table check saved, but the engineer PDF was not sent.\n\n${error.message}`
+            : "Surface table check saved, but the engineer PDF was not sent.",
         );
       }
 
@@ -2135,14 +2164,14 @@ export default function LegalityPage() {
     }
   }
 
-  async function resendCurrentReportLink() {
+  async function resendCurrentPdf() {
     if (readOnly) {
-      setErrorMessage("Guest/read-only users cannot send surface table report links.");
+      setErrorMessage("Guest/read-only users cannot send surface table PDFs.");
       return;
     }
 
     if (!activeCheckId) {
-      setErrorMessage("Save the surface table check before sending the report link.");
+      setErrorMessage("Save the surface table check before sending the PDF.");
       return;
     }
 
@@ -2159,14 +2188,17 @@ export default function LegalityPage() {
     setSending(true);
 
     try {
-      const notifyResult = await sendLegalityReportLink(activeCheckId, createItemPayload());
-      setMessage(`Surface table report link sent to ${notifyResult.sent_to}.${notifyResult.report_url ? ` Open link: ${notifyResult.report_url}` : ""}`);
+      const activeRecord = history.find((check) => check.id === activeCheckId);
+      const submittedAt = activeRecord?.updated_at || activeRecord?.created_at || new Date().toISOString();
+      const items = createItemPayload();
+      const notifyResult = await sendLegalityPdf(activeCheckId, createEmailSnapshot(items, submittedAt));
+      setMessage(`Surface table PDF sent to ${notifyResult.sent_to}.`);
       await loadHistory(activeLayoutPoints);
     } catch (error) {
       setErrorMessage(
         error instanceof Error
           ? error.message
-          : "Failed to send surface table report link.",
+          : "Failed to send surface table PDF.",
       );
     } finally {
       setSending(false);
@@ -2216,7 +2248,7 @@ export default function LegalityPage() {
               </h1>
 
               <p className="mt-3 max-w-3xl text-sm leading-6 text-zinc-400">
-                Choose the car, circuit and date. The assigned engineer is selected automatically and receives a browser report link when the sheet is saved.
+                Choose the car, circuit and date. The assigned engineer is selected automatically and receives a PDF when the sheet is saved.
               </p>
             </div>
 
@@ -2235,7 +2267,7 @@ export default function LegalityPage() {
 
       {readOnly && (
         <div className="mb-6 rounded-2xl border border-amber-800 bg-amber-950/25 p-4 text-sm text-amber-200">
-          Guest/read-only mode is enabled. You can open and view previous surface table checks, but editing, saving and report link sending are disabled.
+          Guest/read-only mode is enabled. You can open and view previous surface table checks, but editing, saving and PDF sending are disabled.
         </div>
       )}
 
@@ -2390,7 +2422,7 @@ export default function LegalityPage() {
             </div>
             {lastSentToEngineerAt && (
               <p className="mt-3 text-xs text-zinc-500">
-                Last report link sent: {niceDateTime(lastSentToEngineerAt)}
+                Last PDF sent: {niceDateTime(lastSentToEngineerAt)}
               </p>
             )}
           </div>
@@ -2608,21 +2640,21 @@ export default function LegalityPage() {
                 className="rounded-2xl bg-red-700 px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-red-950/30 transition hover:bg-red-600 disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {saving
-                  ? "Saving & sending link..."
+                  ? "Saving & sending PDF..."
                   : activeCheckId
-                    ? "Update & Send Link"
-                    : "Save & Send Link"}
+                    ? "Update & Send PDF"
+                    : "Save & Send PDF"}
               </button>
             )}
 
             {!readOnly && activeCheckId && (
               <button
                 type="button"
-                onClick={resendCurrentReportLink}
+                onClick={resendCurrentPdf}
                 disabled={saving || sending || !selectedCarHasEmail}
                 className="rounded-2xl border border-red-800 bg-red-950/30 px-6 py-3 text-sm font-semibold text-red-100 transition hover:border-red-500 hover:bg-red-900/40 disabled:cursor-not-allowed disabled:opacity-60"
               >
-                {sending ? "Sending..." : "Resend Link"}
+                {sending ? "Sending..." : "Resend PDF"}
               </button>
             )}
 
@@ -2685,7 +2717,7 @@ export default function LegalityPage() {
                     </div>
                     <div className="mt-3 flex flex-wrap justify-between gap-2 text-[11px] uppercase tracking-[0.18em] text-zinc-600">
                       <span>Updated {niceDateTime(check.updated_at || check.created_at)}</span>
-                      <span>{check.sent_to_engineer_at ? `Link ${niceDateTime(check.sent_to_engineer_at)}` : "Link not sent"}</span>
+                      <span>{check.sent_to_engineer_at ? `PDF ${niceDateTime(check.sent_to_engineer_at)}` : "PDF not sent"}</span>
                     </div>
                   </button>
                 );

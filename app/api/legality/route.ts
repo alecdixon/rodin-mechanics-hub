@@ -1,13 +1,18 @@
-// SURFACE TABLE CHECKS API ROUTE - REPORT LINK VERSION - v21 browser report link / no driver requirement
+// SURFACE TABLE CHECKS API ROUTE - emails one selected check as a PDF attachment.
 import { NextRequest, NextResponse } from "next/server";
 import nodemailer from "nodemailer";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { canEditLegality } from "@/lib/userAccess";
+import {
+  buildSurfaceTableMail,
+  buildSurfaceTablePdf,
+  surfaceTablePdfFilename,
+} from "@/lib/surfaceTablePdf";
 
 export const runtime = "nodejs";
 
-// SURFACE TABLE CHECKS API ROUTE - sends a clickable browser report link, not a PDF or HTML attachment.
+// The PDF is generated from the submitted saved-check payload and requires no browser session.
 
 type LegalityStatus = "legal" | "illegal";
 
@@ -76,6 +81,7 @@ type LegalityEmailPayload = {
   engineer_name?: string | null;
   engineer_email?: string | null;
   created_by?: string | null;
+  submitted_at?: string | null;
   corner_weights?: Partial<CornerWeights> | null;
   camber_measurements?: Partial<CamberMeasurements> | null;
   wing_shims?: Partial<WingShims> | null;
@@ -93,29 +99,30 @@ type NormalisedLegalityEmailPayload = {
   engineer_name: string;
   engineer_email: string;
   created_by: string;
+  submitted_at: string;
   corner_weights: NormalisedCornerWeights;
   camber_measurements: NormalisedCamberMeasurements;
   wing_shims: NormalisedWingShims;
   items: LegalityReportItem[];
 };
 
-function getRequestUserEmail(request: NextRequest) {
-  return request.cookies.get("user-email")?.value?.trim().toLowerCase() ?? "";
-}
+type AuthUser = { email?: string };
 
-function blockUnauthorisedUser(request: NextRequest) {
-  const userEmail = getRequestUserEmail(request);
+async function getAuthenticatedUser(request: NextRequest): Promise<AuthUser | null> {
+  const authorization = request.headers.get("authorization");
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  if (!authorization?.startsWith("Bearer ") || !supabaseUrl || !anonKey) return null;
 
-  if (!userEmail || !canEditLegality(userEmail)) {
-    return NextResponse.json(
-      {
-        error: "Only authorised users can send surface table check emails.",
-      },
-      { status: 403 },
-    );
+  try {
+    const response = await fetch(`${supabaseUrl}/auth/v1/user`, {
+      headers: { Authorization: authorization, apikey: anonKey },
+      cache: "no-store",
+    });
+    return response.ok ? (await response.json()) as AuthUser : null;
+  } catch {
+    return null;
   }
-
-  return null;
 }
 
 function clean(value: string | number | null | undefined) {
@@ -295,9 +302,9 @@ function buildFriendlyEmailError(rawMessage: string) {
   }
 
   return {
-    error: "Surface table check HTML notification failed while sending the engineer email.",
+    error: "Surface table check PDF notification failed while sending the engineer email.",
     likely_cause:
-      "The surface table check may have saved, but the browser report link email failed.",
+      "The surface table check may have saved, but the PDF attachment email failed.",
     fix: "Check the technical_error value, then verify Gmail/Vercel environment variables.",
   };
 }
@@ -1092,68 +1099,26 @@ async function buildLegalityHtml(payload: NormalisedLegalityEmailPayload) {
 }
 
 
-function buildReportLinkEmailHtml(args: {
-  payload: NormalisedLegalityEmailPayload;
-  summary: string;
-  reportUrl: string;
-}) {
-  const { payload, summary, reportUrl } = args;
-  const statusColor = summary.toLowerCase().includes("illegal") ? "#ef4444" : "#22c55e";
-  const safeReportUrl = escapeHtml(reportUrl);
-
-  return `
-    <div style="margin:0;padding:24px;background:#0d0f12;color:#e5e7eb;font-family:Arial,Helvetica,sans-serif;line-height:1.5">
-      <div style="max-width:760px;margin:0 auto;border:1px solid #27272a;border-radius:24px;overflow:hidden;background:#111418">
-        <div style="padding:24px 26px;background:linear-gradient(135deg,#030507,#14181d 55%,#1a0d10);border-bottom:1px solid #27272a">
-          <div style="font-size:11px;font-weight:700;letter-spacing:0.28em;color:#f87171;text-transform:uppercase">Rodin Motorsport</div>
-          <h1 style="margin:10px 0 0;font-size:28px;line-height:1.15;color:#ffffff">Surface Table Checks</h1>
-          <div style="margin-top:10px;color:${statusColor};font-weight:700">${escapeHtml(summary)}</div>
-        </div>
-
-        <div style="padding:24px 26px">
-          <p style="margin:0 0 18px;color:#d4d4d8;font-size:15px">
-            A surface table check has been saved for <strong>${escapeHtml(payload.car_name)}</strong> at <strong>${escapeHtml(payload.circuit)}</strong>.
-          </p>
-
-          <table style="width:100%;border-collapse:collapse;margin:0 0 24px;font-size:14px;color:#e5e7eb">
-            <tr><td style="padding:9px 0;color:#a1a1aa;width:150px;border-bottom:1px solid #27272a">Date</td><td style="padding:9px 0;border-bottom:1px solid #27272a">${escapeHtml(formatReportDate(payload.check_date))}</td></tr>
-            <tr><td style="padding:9px 0;color:#a1a1aa;border-bottom:1px solid #27272a">Car</td><td style="padding:9px 0;border-bottom:1px solid #27272a">${escapeHtml(payload.car_name)}</td></tr>
-            <tr><td style="padding:9px 0;color:#a1a1aa;border-bottom:1px solid #27272a">Driver</td><td style="padding:9px 0;border-bottom:1px solid #27272a">${escapeHtml(payload.driver)}</td></tr>
-            <tr><td style="padding:9px 0;color:#a1a1aa;border-bottom:1px solid #27272a">Engineer</td><td style="padding:9px 0;border-bottom:1px solid #27272a">${escapeHtml(payload.engineer_name)}</td></tr>
-          </table>
-
-          <a href="${safeReportUrl}" style="display:inline-block;background:#dc2626;color:#ffffff;text-decoration:none;font-weight:800;border-radius:14px;padding:14px 20px">
-            Open Surface Table Check
-          </a>
-
-          <p style="margin:18px 0 0;color:#a1a1aa;font-size:12px">
-            If the button does not open, copy this link into a browser:<br />
-            <span style="word-break:break-all;color:#d4d4d8">${safeReportUrl}</span>
-          </p>
-        </div>
-      </div>
-    </div>
-  `;
-}
 
 export async function POST(request: NextRequest) {
   try {
+    const user = await getAuthenticatedUser(request);
+    const authenticatedEmail = user?.email?.trim().toLowerCase() ?? "";
+    if (!authenticatedEmail || !canEditLegality(authenticatedEmail)) {
+      return NextResponse.json(
+        { error: "Only authorised users can send surface table check emails." },
+        { status: 403 },
+      );
+    }
+
     const rawPayload = (await request.json()) as LegalityEmailPayload;
     const downloadOnly = rawPayload.download_only === true;
 
-    if (!downloadOnly) {
-      const authBlock = blockUnauthorisedUser(request);
-
-      if (authBlock) {
-        return authBlock;
-      }
-    }
-
-    if (!rawPayload.car_id || !rawPayload.check_date || !rawPayload.circuit) {
+    if (!rawPayload.check_id || !rawPayload.car_id || !rawPayload.check_date || !rawPayload.circuit) {
       return NextResponse.json(
         {
           error: "Missing surface table check payload fields.",
-          details: "The request must include car_id, check_date and circuit.",
+          details: "Save the check first; the request must include check_id, car_id, check_date and circuit.",
         },
         { status: 400 },
       );
@@ -1164,7 +1129,7 @@ export async function POST(request: NextRequest) {
     if (items.length === 0) {
       return NextResponse.json(
         {
-          error: "No surface table check items were supplied for the HTML report.",
+          error: "No surface table check items were supplied for the PDF report.",
         },
         { status: 400 },
       );
@@ -1210,38 +1175,35 @@ export async function POST(request: NextRequest) {
       engineer_name:
         clean(rawPayload.engineer_name) || getFallbackEngineerNameForCar(Number(rawPayload.car_id)),
       engineer_email: to || clean(rawPayload.engineer_email) || "Not supplied",
-      created_by: clean(rawPayload.created_by) || getRequestUserEmail(request) || "Unknown",
+      created_by: authenticatedEmail,
+      submitted_at: !Number.isNaN(Date.parse(clean(rawPayload.submitted_at)))
+        ? new Date(clean(rawPayload.submitted_at)).toISOString()
+        : new Date().toISOString(),
       corner_weights: normaliseCornerWeights(rawPayload.corner_weights),
       camber_measurements: normaliseCamberMeasurements(rawPayload.camber_measurements),
       wing_shims: normaliseWingShims(rawPayload.wing_shims),
       items,
     };
 
-    const illegalCount = payload.items.filter((item) => item.status === "illegal").length;
-    const summary =
-      illegalCount === 0
-        ? `${payload.items.length}/${payload.items.length} legal`
-        : `${illegalCount} illegal Â· ${payload.items.length - illegalCount} legal`;
+
+    const generatedAt = new Date().toISOString();
+    const pdfBuffer = await buildSurfaceTablePdf(payload, generatedAt);
+    const safeFileName = surfaceTablePdfFilename(payload);
+    if (downloadOnly) {
+      return new NextResponse(new Uint8Array(pdfBuffer), {
+        headers: {
+          "Content-Type": "application/pdf",
+          "Content-Disposition": `inline; filename="${safeFileName}"`,
+          "Cache-Control": "no-store",
+        },
+      });
+    }
 
     const requestOrigin = new URL(request.url).origin;
     const configuredOrigin = process.env.NEXT_PUBLIC_SITE_URL?.trim() || process.env.NEXT_PUBLIC_APP_URL?.trim();
-    const origin = configuredOrigin || requestOrigin;
-    if (!payload.check_id) {
-      return NextResponse.json(
-        {
-          error: "No surface table check ID was supplied, so a browser report link could not be created.",
-          details: "Save the surface table check first, then send or resend the email.",
-        },
-        { status: 400 },
-      );
-    }
-
-    const reportUrl = `${origin}/legality/report/${encodeURIComponent(payload.check_id)}?v=${Date.now()}`;
-    if (downloadOnly) {
-      return NextResponse.redirect(reportUrl, 303);
-    }
-
-    const html = buildReportLinkEmailHtml({ payload, summary, reportUrl });
+    const reportUrl = payload.check_id
+      ? `${configuredOrigin || requestOrigin}/legality/report/${encodeURIComponent(payload.check_id)}`
+      : undefined;
 
     const gmailUser = process.env.GMAIL_USER?.trim();
     const gmailAppPassword = process.env.GMAIL_APP_PASSWORD?.replace(/\s/g, "");
@@ -1272,30 +1234,10 @@ export async function POST(request: NextRequest) {
       },
     });
 
+    const mail = buildSurfaceTableMail({ payload, recipient: to, pdf: pdfBuffer, reportUrl });
     const mailResult = await transporter.sendMail({
       from: `"Surface Table Checks" <${gmailUser}>`,
-      to,
-      subject: `Surface Table Checks Report Link - ${payload.circuit} - ${payload.car_name} - ${summary}`,
-      text: [
-        "Surface Table Checks Report",
-        "",
-        `Sent to: ${payload.engineer_name} <${to}>`,
-        "",
-        "Event Details",
-        `Date: ${formatReportDate(payload.check_date)}`,
-        `Circuit: ${payload.circuit}`,
-        `Car: ${payload.car_name}`,
-        `Driver: ${payload.driver}`,
-        `Corner weights: FL ${formatWeight(payload.corner_weights.fl)} Â· FR ${formatWeight(payload.corner_weights.fr)} Â· RL ${formatWeight(payload.corner_weights.rl)} Â· RR ${formatWeight(payload.corner_weights.rr)} Â· Total ${formatWeight(payload.corner_weights.total)}`,
-        `Camber: FL ${formatCamber(payload.camber_measurements.fl)} Â· FR ${formatCamber(payload.camber_measurements.fr)} Â· RL ${formatCamber(payload.camber_measurements.rl)} Â· RR ${formatCamber(payload.camber_measurements.rr)}`,
-        `Wing shims: Main LH ${formatShim(payload.wing_shims.main_lh)} Â· Main RH ${formatShim(payload.wing_shims.main_rh)} Â· Spare LH ${formatShim(payload.wing_shims.spare_lh)} Â· Spare RH ${formatShim(payload.wing_shims.spare_rh)}`,
-        "",
-        "Status Summary",
-        summary,
-        "",
-        `Open report: ${reportUrl}`,
-      ].join("\n"),
-      html,
+      ...mail,
     });
 
     const accepted = Array.isArray(mailResult.accepted)
@@ -1324,8 +1266,9 @@ export async function POST(request: NextRequest) {
       engineer_name: payload.engineer_name,
       circuit: payload.circuit,
       check_date: payload.check_date,
-      delivery_mode: "browser_report_link",
-      report_url: reportUrl,
+      delivery_mode: "pdf_attachment",
+      attachment_filename: safeFileName,
+      report_url: reportUrl ?? null,
       accepted,
       rejected,
       message_id: mailResult.messageId ?? null,
