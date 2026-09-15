@@ -30,14 +30,17 @@ type PlateRow = {
 
 const CLUTCH_PDF_BUCKET = "clutch-measurement-pdfs";
 
-function niceDate(value: unknown) {
+function compactDate(value: unknown) {
   if (!value || typeof value !== "string") return "No date";
 
   const date = new Date(value);
-
   if (Number.isNaN(date.getTime())) return value;
 
-  return date.toLocaleDateString("en-GB");
+  return date.toLocaleDateString("en-GB", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  });
 }
 
 function niceDateTime(value: unknown) {
@@ -99,6 +102,21 @@ function getRecordId(record: ClutchRecord, fallback: number) {
 
 function hasPdf(record: ClutchRecord) {
   return Boolean(record.pdf_url || record.pdf_path);
+}
+
+function recordTitle(record: ClutchRecord, fallbackNumber?: number) {
+  const outingName = getFirstValue(record, [
+    "outing_name",
+    "outing",
+    "record_name",
+    "session_name",
+  ]);
+  if (outingName) return cleanValue(outingName);
+
+  const serialNumber = getFirstValue(record, ["serial_no", "clutch_no"]);
+  if (serialNumber) return `Clutch ${cleanValue(serialNumber)}`;
+
+  return fallbackNumber ? `Saved measurement ${fallbackNumber}` : "Saved clutch measurement";
 }
 
 function shouldHideFromGenericData(key: string) {
@@ -202,8 +220,8 @@ function PlateTable({
           No plate data saved.
         </div>
       ) : (
-        <div className="overflow-hidden rounded-2xl border border-zinc-800">
-          <table className="w-full border-collapse text-sm">
+        <div className="max-w-full overflow-x-auto rounded-2xl border border-zinc-800">
+          <table className="w-full min-w-[430px] border-collapse text-sm">
             <thead className="bg-[#14181d] text-xs uppercase tracking-[0.18em] text-zinc-500">
               <tr>
                 <th className="border-b border-zinc-800 px-4 py-3 text-left">
@@ -383,6 +401,24 @@ export default function ChiefClutchMeasurementPage() {
     });
   }, [records, dateFilter, searchText]);
 
+  function toggleSelectedRecord(record: ClutchRecord) {
+    setSelectedRecord((previous) => {
+      if (!previous) return record;
+
+      const previousId = previous.id;
+      const clickedId = record.id;
+      const isSameRecord =
+        previous === record ||
+        (previousId !== null &&
+          previousId !== undefined &&
+          clickedId !== null &&
+          clickedId !== undefined &&
+          String(previousId) === String(clickedId));
+
+      return isSameRecord ? null : record;
+    });
+  }
+
   const latestRecord = records[0] ?? null;
 
   const latestCreatedAt = latestRecord
@@ -556,155 +592,113 @@ export default function ChiefClutchMeasurementPage() {
         </div>
       </section>
 
-      <section className="rounded-3xl border border-zinc-800 bg-[#14181d] p-6 shadow-xl">
-        <div className="mb-5 flex flex-wrap items-start justify-between gap-4">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.3em] text-red-400">
-              Clutch Measurement History
-            </p>
+      <section className="grid min-w-0 gap-5 lg:grid-cols-[minmax(0,38fr)_minmax(0,62fr)] lg:items-start">
+        <div className="min-w-0 rounded-3xl border border-zinc-800 bg-[#14181d] p-4 shadow-xl sm:p-5">
+          <div className="mb-4 flex items-start justify-between gap-3">
+            <div>
+              <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-red-400">
+                Clutch Measurement History
+              </p>
 
-            <h2 className="mt-3 text-3xl font-semibold">
-              Saved Measurements
-            </h2>
+              <h2 className="mt-2 text-xl font-semibold">
+                Saved Measurements
+              </h2>
 
-            <p className="mt-2 text-sm text-zinc-400">
-              Open the saved PDF or click a record to inspect the stored data.
-            </p>
+              <p className="mt-1 text-xs leading-5 text-zinc-500">
+                Select an outing to view its saved sheet.
+              </p>
+            </div>
+
+            <div className="shrink-0 rounded-lg border border-zinc-700 bg-[#0d0f12] px-2.5 py-1.5 text-xs font-semibold text-zinc-400">
+              {filteredRecords.length} / {records.length}
+            </div>
           </div>
 
-          <div className="rounded-2xl border border-zinc-700 bg-[#0d0f12] px-4 py-3 text-sm font-semibold text-red-300">
-            {filteredRecords.length} / {records.length}
-          </div>
-        </div>
-
-        {filteredRecords.length === 0 ? (
-          <div className="rounded-2xl border border-dashed border-zinc-700 bg-[#0d0f12] p-8 text-sm text-zinc-500">
-            No clutch measurement records found.
-          </div>
-        ) : (
-          <div className="space-y-3">
-            {filteredRecords.map((record, index) => {
+          {filteredRecords.length === 0 ? (
+            <div className="rounded-xl border border-dashed border-zinc-700 bg-[#0d0f12] p-5 text-sm text-zinc-500">
+              No clutch measurement records found.
+            </div>
+          ) : (
+            <div className="max-h-[420px] space-y-2 overflow-y-auto overscroll-contain pr-1 sm:max-h-[520px] lg:max-h-[680px]">
+              {filteredRecords.map((record, index) => {
               const id = getRecordId(record, index);
-              const createdAt = getFirstValue(record, ["created_at"]);
+              const recordDate = getFirstValue(record, [
+                "measurement_date",
+                "created_at",
+              ]);
               const createdBy = getFirstValue(record, [
                 "created_by",
                 "updated_by",
                 "submitted_by",
               ]);
-
-              const trackName = getFirstValue(record, [
-                "track_name",
-                "track",
-                "circuit",
-              ]);
-
               const driver = getFirstValue(record, ["driver", "driver_name"]);
-              const chassis = getFirstValue(record, ["chassis", "chassis_no"]);
-              const pdfKey = `card-${id}`;
+              const isSelected =
+                selectedRecord === record ||
+                (selectedRecord?.id !== null &&
+                  selectedRecord?.id !== undefined &&
+                  record.id !== null &&
+                  record.id !== undefined &&
+                  String(selectedRecord.id) === String(record.id));
 
               return (
-                <div
+                <button
                   key={`${id}-${index}`}
-                  className="rounded-2xl border border-zinc-800 bg-[#0d0f12] p-5 transition hover:border-red-500/70 hover:bg-[#15191f]"
+                  type="button"
+                  aria-pressed={isSelected}
+                  onClick={() => toggleSelectedRecord(record)}
+                  className={`block w-full rounded-xl border px-4 py-3 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500/70 ${
+                    isSelected
+                      ? "border-red-700/70 bg-red-950/20"
+                      : "border-zinc-800 bg-[#0d0f12] hover:border-zinc-600 hover:bg-[#171b20]"
+                  }`}
                 >
-                  <button
-                    type="button"
-                    onClick={() => setSelectedRecord(record)}
-                    className="block w-full text-left"
-                  >
-                    <div className="flex flex-wrap items-start justify-between gap-4">
-                      <div>
-                        <p className="text-xs font-semibold uppercase tracking-[0.22em] text-red-400">
-                          {cleanValue(trackName)}
-                        </p>
-
-                        <h3 className="mt-2 text-2xl font-semibold text-zinc-100">
-                          {cleanValue(chassis) !== "—"
-                            ? `Chassis ${cleanValue(chassis)}`
-                            : `Record ${index + 1}`}
-                        </h3>
-
-                        <p className="mt-1 text-sm text-zinc-400">
-                          Driver:{" "}
-                          <span className="font-semibold text-zinc-200">
-                            {cleanValue(driver)}
-                          </span>
-                        </p>
-                      </div>
-
-                      <div className="rounded-xl border border-zinc-700 bg-[#111418] px-4 py-3 text-right text-sm">
-                        <p className="text-xs text-zinc-500">Saved</p>
-
-                        <p className="font-semibold text-zinc-100">
-                          {niceDate(createdAt)}
-                        </p>
-                      </div>
+                  <div className="flex min-w-0 items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <h3 className="truncate text-sm font-semibold text-zinc-100">
+                        {recordTitle(record, filteredRecords.length - index)}
+                      </h3>
+                      <p className="mt-1 truncate text-xs text-zinc-400">
+                        {cleanValue(createdBy)}
+                      </p>
                     </div>
 
-                    <div className="mt-4 grid gap-2 text-sm text-zinc-400 md:grid-cols-3">
-                      <p>
-                        Submitted by:{" "}
-                        <span className="font-semibold text-zinc-200">
-                          {cleanValue(createdBy)}
-                        </span>
-                      </p>
-
-                      <p>
-                        Time:{" "}
-                        <span className="font-semibold text-zinc-200">
-                          {niceDateTime(createdAt)}
-                        </span>
-                      </p>
-
-                      <p>
-                        PDF:{" "}
+                    <div className="flex shrink-0 items-center gap-2">
+                      {hasPdf(record) && (
                         <span
-                          className={`font-semibold ${
-                            hasPdf(record) ? "text-green-300" : "text-zinc-500"
-                          }`}
+                          aria-label="PDF available"
+                          title="PDF available"
+                          className="rounded-md border border-emerald-900/70 bg-emerald-950/30 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-[0.12em] text-emerald-300"
                         >
-                          {hasPdf(record) ? "Linked" : "Not linked"}
+                          PDF
                         </span>
-                      </p>
+                      )}
+                      <span className="text-xs font-medium text-zinc-400">
+                        {compactDate(recordDate)}
+                      </span>
                     </div>
-                  </button>
-
-                  <div className="mt-4 flex flex-wrap justify-end gap-3 border-t border-zinc-800 pt-4">
-                    <button
-                      type="button"
-                      onClick={() => setSelectedRecord(record)}
-                      className="rounded-xl border border-zinc-700 px-4 py-3 text-sm font-semibold text-zinc-200 transition hover:border-red-500 hover:text-red-300"
-                    >
-                      View Data
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => openPdf(record, pdfKey)}
-                      disabled={openingPdfKey === pdfKey}
-                      className="rounded-xl border border-red-900/60 bg-red-950/30 px-4 py-3 text-sm font-semibold text-red-200 transition hover:border-red-500 hover:bg-red-950/50 disabled:cursor-not-allowed disabled:opacity-50"
-                    >
-                      {openingPdfKey === pdfKey ? "Opening..." : "Open PDF"}
-                    </button>
                   </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </section>
 
-      {selectedRecord && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4">
-          <div className="max-h-[90vh] w-full max-w-6xl overflow-y-auto rounded-3xl border border-zinc-800 bg-[#14181d] p-6 shadow-2xl">
+                  <p className="mt-2 truncate text-xs text-zinc-500">
+                    Driver: <span className="text-zinc-300">{cleanValue(driver)}</span>
+                  </p>
+                </button>
+              );
+              })}
+            </div>
+          )}
+        </div>
+
+        {selectedRecord ? (
+          <div className="min-w-0 lg:sticky lg:top-6">
+            <div className="max-h-none min-w-0 overflow-hidden rounded-3xl border border-zinc-800 bg-[#14181d] p-4 shadow-xl sm:p-5 lg:max-h-[calc(100vh-3rem)] lg:overflow-y-auto">
             <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
               <div>
                 <p className="text-xs font-semibold uppercase tracking-[0.3em] text-red-400">
                   Clutch Measurement Record
                 </p>
 
-                <h2 className="mt-3 text-4xl font-semibold text-zinc-100">
-                  Car {carId}
+                <h2 className="mt-2 break-words text-2xl font-semibold text-zinc-100">
+                  {recordTitle(selectedRecord)}
                 </h2>
 
                 <p className="mt-2 text-sm text-zinc-400">
@@ -730,7 +724,7 @@ export default function ChiefClutchMeasurementPage() {
                   type="button"
                   onClick={() => openPdf(selectedRecord, "modal")}
                   disabled={openingPdfKey === "modal"}
-                  className="rounded-xl border border-red-900/60 bg-red-950/30 px-5 py-3 text-sm font-semibold text-red-200 transition hover:border-red-500 hover:bg-red-950/50 disabled:cursor-not-allowed disabled:opacity-50"
+                  className="rounded-xl border border-red-900/60 bg-red-950/30 px-4 py-2.5 text-sm font-semibold text-red-200 transition hover:border-red-500 hover:bg-red-950/50 disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   {openingPdfKey === "modal" ? "Opening..." : "Open PDF"}
                 </button>
@@ -738,14 +732,14 @@ export default function ChiefClutchMeasurementPage() {
                 <button
                   type="button"
                   onClick={() => setSelectedRecord(null)}
-                  className="rounded-xl border border-zinc-700 px-5 py-3 text-sm font-semibold text-zinc-200 hover:border-red-500 hover:text-red-300"
+                  className="rounded-xl border border-zinc-700 px-4 py-2.5 text-sm font-semibold text-zinc-200 hover:border-red-500 hover:text-red-300"
                 >
                   Close
                 </button>
               </div>
             </div>
 
-            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
               <DetailField
                 label="Track"
                 value={getFirstValue(selectedRecord, [
@@ -790,7 +784,7 @@ export default function ChiefClutchMeasurementPage() {
               </div>
             </div>
 
-            <div className="mt-6 grid gap-6 xl:grid-cols-2">
+            <div className="mt-5 grid min-w-0 gap-5 xl:grid-cols-2">
               <PlateTable
                 title="Driven Plates"
                 value={selectedRecord.driven_plates}
@@ -802,7 +796,7 @@ export default function ChiefClutchMeasurementPage() {
               />
             </div>
 
-            <div className="mt-6 rounded-3xl border border-zinc-800 bg-[#0d0f12] p-5">
+            <div className="mt-5 rounded-3xl border border-zinc-800 bg-[#0d0f12] p-5">
               <p className="mb-4 text-xs font-semibold uppercase tracking-[0.3em] text-red-400">
                 Measurement Summary
               </p>
@@ -825,13 +819,18 @@ export default function ChiefClutchMeasurementPage() {
                 Raw Record
               </summary>
 
-              <pre className="mt-4 max-h-[320px] overflow-auto rounded-2xl border border-zinc-800 bg-black p-4 text-xs leading-5 text-zinc-300">
+              <pre className="mt-4 max-h-[320px] max-w-full overflow-auto whitespace-pre-wrap break-all rounded-2xl border border-zinc-800 bg-black p-4 text-xs leading-5 text-zinc-300">
                 {JSON.stringify(selectedRecord, null, 2)}
               </pre>
             </details>
+            </div>
           </div>
-        </div>
-      )}
+        ) : (
+          <p className="px-1 py-3 text-sm text-zinc-600 lg:px-3 lg:py-5">
+            Select a saved outing to view its measurements.
+          </p>
+        )}
+      </section>
     </main>
   );
 }
