@@ -164,6 +164,11 @@ export default function ChiefCarNavigation({ carId }: { carId: string }) {
 
   const carToolLinks: NavLinkItem[] = [
     {
+      href: `/dashboard/car/${carId}/gear-ratio`,
+      label: "Gear Ratio",
+      description: "Requested gearbox configuration",
+    },
+    {
       href: `/dashboard/car/${carId}/viewer`,
       label: "Overview",
       description: "Progress, notes and saved records",
@@ -261,13 +266,13 @@ export default function ChiefCarNavigation({ carId }: { carId: string }) {
           </div>
         </div>
 
-        <div className="mt-3 hidden grid-cols-6 gap-2 xl:grid">
+        <div className="mt-3 hidden grid-cols-7 gap-2 xl:grid">
           {carToolLinks.map((item) => (
             <NavPill key={item.href} item={item} />
           ))}
         </div>
 
-        <div className="mt-3 hidden gap-2 lg:flex xl:hidden">
+        <div className="mt-3 hidden flex-wrap gap-2 lg:flex xl:hidden">
           {carToolLinks.map((item) => (
             <NavPill key={item.href} item={item} compact />
           ))}

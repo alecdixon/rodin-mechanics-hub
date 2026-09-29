@@ -12,6 +12,8 @@ import {
 } from "@/lib/userAccess";
 import JobListNotificationModal from "@/app/components/JobListNotificationModal";
 import TeamJobsNotificationModal from "@/app/components/TeamJobsNotificationModal";
+import GearRatioProvider from "@/app/components/GearRatioProvider";
+import { GearRatioBadge, GearRatioNavigationLink } from "@/app/components/GearRatioDetails";
 
 type Props = {
   children: React.ReactNode;
@@ -31,7 +33,7 @@ export default function CarLayout({ children }: Props) {
   const router = useRouter();
   const params = useParams();
   const pathname = usePathname();
-  const isPostEventPage = pathname.endsWith("/post-event");
+  const isResponsivePage = pathname.endsWith("/post-event") || pathname.endsWith("/gear-ratio");
 
   const carId = String(params.carId ?? "");
   const numericCarId = Number(carId);
@@ -100,6 +102,11 @@ export default function CarLayout({ children }: Props) {
         name: "Evening Job List",
         href: `/car/${carId}/evening-job-list`,
         description: "Evening prep checklist",
+      },
+      {
+        name: "Gear Ratio",
+        href: `/car/${carId}/gear-ratio`,
+        description: "Requested gearbox configuration",
       },
       {
         name: "Team Jobs",
@@ -192,8 +199,9 @@ export default function CarLayout({ children }: Props) {
   }
 
   return (
-    <div className={`flex min-h-screen bg-black text-white ${isPostEventPage ? "flex-col lg:flex-row" : ""}`}>
-      <aside className={`${isPostEventPage ? "w-full lg:w-64" : "w-64"} shrink-0 border-r border-neutral-800 bg-neutral-950 p-5`}>
+    <GearRatioProvider key={carId} carId={numericCarId}>
+    <div className={`flex min-h-screen bg-black text-white ${isResponsivePage ? "flex-col lg:flex-row" : ""}`}>
+      <aside className={`${isResponsivePage ? "w-full lg:w-64" : "w-64"} shrink-0 border-r border-neutral-800 bg-neutral-950 p-5`}>
         {role === "chief_mechanic" || role === "engineer" ? (
           <Link
             href={role === "engineer" ? "/engineer-dashboard" : "/dashboard"}
@@ -234,9 +242,10 @@ export default function CarLayout({ children }: Props) {
         <nav className="mt-8 space-y-2">
           {navItems.map((item) => {
             const active = isRouteActive(pathname, item.href);
+            const NavigationLink = item.name === "Gear Ratio" ? GearRatioNavigationLink : Link;
 
             return (
-              <Link
+              <NavigationLink
                 key={item.name}
                 href={item.href}
                 className={[
@@ -246,14 +255,14 @@ export default function CarLayout({ children }: Props) {
                     : "border-neutral-800 bg-[#0b0d10] text-neutral-200 hover:border-red-500 hover:bg-[#15191f] hover:text-white",
                 ].join(" ")}
               >
-                <span className="block font-semibold">{item.name}</span>
+                <span className="block font-semibold">{item.name}{item.name === "Gear Ratio" && <GearRatioBadge />}</span>
 
                 {item.description && (
                   <span className="mt-1 block text-xs font-normal leading-4 text-neutral-500">
                     {item.description}
                   </span>
                 )}
-              </Link>
+              </NavigationLink>
             );
           })}
 
@@ -286,7 +295,7 @@ export default function CarLayout({ children }: Props) {
         </nav>
       </aside>
 
-      <main className={isPostEventPage ? "min-w-0 flex-1 p-2 sm:p-6" : "flex-1 p-6"}>{children}</main>
+      <main className={isResponsivePage ? "min-w-0 flex-1 p-2 sm:p-6" : "flex-1 p-6"}>{children}</main>
 
       <JobListNotificationModal
         carId={numericCarId}
@@ -295,5 +304,6 @@ export default function CarLayout({ children }: Props) {
 
       <TeamJobsNotificationModal enabled={role === "number1_mechanic"} />
     </div>
+    </GearRatioProvider>
   );
 }

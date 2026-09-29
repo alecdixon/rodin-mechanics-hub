@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import LogoutButton from "@/app/components/LogoutButton";
+import { GearRatioSummary } from "@/app/components/GearRatioDetails";
 
 const STANDARD_JOBS = [
   "Fill out post event sheet",
@@ -819,6 +820,7 @@ export default function MechanicJobListPage() {
           <p className="mt-3 text-sm font-semibold">
             {completionUrgency.label}
           </p>
+          <div className="mt-3"><GearRatioSummary /></div>
         </section>
       )}
 
@@ -845,6 +847,8 @@ export default function MechanicJobListPage() {
               {niceDate(releaseInfo?.completion_date)}
             </span>
           </span>
+
+          {!releaseInfo?.completion_date && <GearRatioSummary />}
 
           {releaseInfo?.version_number !== null &&
             releaseInfo?.version_number !== undefined && (

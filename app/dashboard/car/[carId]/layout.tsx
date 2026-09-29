@@ -6,6 +6,7 @@ import { useParams, useRouter } from "next/navigation";
 import ChiefCarNavigation from "@/app/components/ChiefCarNavigation";
 import { supabase } from "@/lib/supabase";
 import { hasPermission } from "@/lib/userAccess";
+import GearRatioProvider from "@/app/components/GearRatioProvider";
 
 type Props = {
   children: ReactNode;
@@ -66,9 +67,11 @@ export default function ChiefCarLayout({ children }: Props) {
   }
 
   return (
+    <GearRatioProvider key={carId} carId={numericCarId}>
     <div className="min-h-screen bg-[#0d0f12] text-zinc-100">
       <ChiefCarNavigation carId={carId} />
       {children}
     </div>
+    </GearRatioProvider>
   );
 }

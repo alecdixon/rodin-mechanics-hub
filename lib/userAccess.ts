@@ -420,6 +420,19 @@ export function canAccessCarPages(
   return false;
 }
 
+export function canChangeGearRatio(email: string | null | undefined): boolean {
+  return getUserRole(email) === "chief_mechanic" && !isReadOnlyUser(email);
+}
+
+export function canAcknowledgeGearRatio(
+  email: string | null | undefined,
+  carId: number,
+): boolean {
+  const role = getUserRole(email);
+  return (role === "number1_mechanic" || role === "number2_mechanic") &&
+    canAccessCarPages(email, carId);
+}
+
 export function getLoginRedirect(email: string | null | undefined): string {
   const access = getUserAccess(email);
 
