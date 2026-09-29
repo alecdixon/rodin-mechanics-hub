@@ -152,136 +152,6 @@ async function main() {
     await call("Network.setCookie", { name: "user-email", value: email, url: base });
     await navigate(route);
   }
-  async function checkModal(pairs) {
-    await waitFor("document.querySelector('dialog[open]') !== null");
-    assert.deepEqual(await evaluate("Array.from(document.querySelectorAll('dialog[open] tbody td')).map(e=>e.textContent)"), pairs);
-    await click("Close");
-    await waitFor("document.querySelector('dialog[open]') === null");
-  }
-
-  await login("dan.crain", 1, "/dashboard/car/1/gear-ratio");
-  await waitFor(currentLabel("NOT SET"));
-  assert.equal(await evaluate("Array.from(document.querySelectorAll('button')).some(b=>b.textContent==='View ratios')"), false);
-  for (const [label, ratio, pairs] of [
-    ["STD", "STD", ["12:37", "15:35", "18:33", "18:27", "22:28", "20:23"]],
-    ["LONG", "LONG", ["12:37", "15:35", "18:33", "18:27", "20:25", "20:22"]],
-    ["EXTRA LONG", "EXTRA_LONG", ["12:37", "15:35", "18:33", "18:27", "19:23", "25:26"]],
-  ]) {
-    const before = writes.length;
-    await click(label);
-    assert.equal(writes.length, before, "Selecting requires a separate save");
-    await click("Save Gear Ratio");
-    await waitFor(currentLabel(label));
-    assert.equal(configs.get(1).selected_ratio, ratio);
-    await click("View ratios");
-    await checkModal(pairs);
-    await click(label);
-    assert.equal(await evaluate("Array.from(document.querySelectorAll('button')).find(b=>b.textContent==='Save Gear Ratio').disabled"), true);
-  }
-  await call("Page.reload");
-  await waitFor(currentLabel("EXTRA LONG"));
-  assert.equal(configs.get(1).version, 3);
-  await navigate("/dashboard/car/2/gear-ratio");
-  await waitFor(currentLabel("NOT SET"));
-  await click("LONG"); await click("Save Gear Ratio");
-  await waitFor(currentLabel("LONG"));
-  assert.equal(configs.get(1).selected_ratio, "EXTRA_LONG");
-  assert.equal(configs.get(2).version, 1);
-  failSave = true;
-  await click("STD"); await click("Save Gear Ratio");
-  await waitFor("document.body.innerText.includes('Test save failure')");
-  assert.equal(configs.get(2).selected_ratio, "LONG");
-  failSave = false;
-  console.log("PASS: all Chief selections, deliberate save, refresh, independent cars, details, no-op UI and failed save.");
-
-  const chiefWriteCount = writes.filter(w => w.table === "set_car_gear_ratio").length;
-  await login("simon.crain", 2, "/car/1/job-list");
-  await waitFor(`${badge} && document.body.innerText.includes('Gear Ratio:')`);
-  assert.equal(writes.filter(w => w.table === "acknowledge_car_gear_ratio").length, 0);
-  assert.equal(await evaluate("Array.from(document.querySelectorAll('section')).find(s=>s.textContent.includes('Required Completion Date')).innerText.includes('12:37')"), false);
-  await click("EXTRA LONG");
-  await checkModal(["12:37", "15:35", "18:33", "18:27", "19:23", "25:26"]);
-  assert.equal(writes.filter(w => w.table === "acknowledge_car_gear_ratio").length, 0, "Summary details must not acknowledge the sidebar");
-  await evaluate("window.__testHidden=true; document.querySelector('aside a[href=\"/car/1/gear-ratio\"]').click()");
-  await waitFor(currentLabel("EXTRA LONG"));
-  await delay(200);
-  assert.equal(writes.filter(w => w.table === "acknowledge_car_gear_ratio").length, 0, "Hidden panel must not acknowledge");
-  await evaluate("window.__testHidden=false; document.dispatchEvent(new Event('visibilitychange'))");
-  await waitFor(`!${badge}`);
-  assert.equal(acknowledgements.get(`${user.id}:1`), 3);
-  assert.equal(await evaluate("document.body.innerText.includes('Save Gear Ratio')"), false);
-  await call("Page.reload");
-  await waitFor(currentLabel("EXTRA LONG"));
-  assert.equal(await evaluate(`!!${badge}`), false);
-  change(1, "STD");
-  await refresh();
-  await waitFor(`${badge} && ${currentLabel("STD")}`);
-  failAck = true;
-  await click("Acknowledge change");
-  await waitFor("document.body.innerText.includes('Test acknowledgement failure')");
-  assert.equal(await evaluate(`!!${badge}`), true);
-  failAck = false;
-  await click("Acknowledge change");
-  await waitFor(`!${badge}`);
-  assert.equal(acknowledgements.get(`${user.id}:1`), 4);
-  change(1, "LONG"); await refresh();
-  await waitFor(`${badge} && ${currentLabel("LONG")}`);
-  await evaluate("document.querySelector('aside a[href=\"/car/1/gear-ratio\"]').click()");
-  await waitFor(`!${badge}`);
-  assert.equal(acknowledgements.get(`${user.id}:1`), 5, "Clicking the already-open section acknowledges the displayed change");
-  change(1, "STD"); await refresh();
-  await waitFor(currentLabel("STD"));
-  console.log("PASS: summary details, hidden-page protection, acknowledgement persistence, subsequent change and acknowledgement failure/retry.");
-
-  for (const width of [320, 390, 768, 1440]) {
-    await call("Emulation.setDeviceMetricsOverride", { width, height: 900, deviceScaleFactor: 1, mobile: false });
-    await click("View ratios");
-    await waitFor("document.querySelector('dialog[open]') !== null");
-    const bounds = await evaluate("(()=>{const r=document.querySelector('dialog[open]').getBoundingClientRect();return {left:r.left,right:r.right,top:r.top,bottom:r.bottom,scroll:document.documentElement.scrollWidth}})()");
-    assert.ok(bounds.left >= 0 && bounds.right <= width && bounds.top >= 0 && bounds.bottom <= 900, JSON.stringify(bounds));
-    assert.ok(bounds.scroll <= width, `Page overflow at ${width}: ${bounds.scroll}`);
-    if (width === 390 || width === 1440) {
-      const screenshot = await call("Page.captureScreenshot", { format: "png" });
-      fs.mkdirSync("coverage/gear-ratio", { recursive: true });
-      fs.writeFileSync(`coverage/gear-ratio/modal-${width}.png`, Buffer.from(screenshot.data, "base64"));
-    }
-    await click("Close");
-    await waitFor("document.querySelector('dialog[open]') === null");
-    await evaluate("new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))");
-  }
-  failConfig = true; await refresh();
-  await waitFor("document.body.innerText.includes('Test configuration unavailable')");
-  assert.equal(await evaluate(currentLabel("NOT SET")), false, "Load errors must not become NOT SET");
-  failConfig = false; await click("Retry");
-  await waitFor(currentLabel("STD"));
-  completionDate = null;
-  await navigate("/car/1/job-list");
-  await waitFor("document.body.innerText.includes('Gear Ratio:') && document.body.innerText.includes('No date set')");
-  await click("STD");
-  await checkModal(["12:37", "15:35", "18:33", "18:27", "22:28", "20:23"]);
-  await login("olli.moss", 3, "/car/2/gear-ratio");
-  await waitFor(currentLabel("LONG"));
-  assert.equal(configs.get(1).selected_ratio, "STD");
-  await login("jack.carter", 4, "/car/3/gear-ratio");
-  await waitFor(currentLabel("NOT SET"));
-  assert.equal(await evaluate(`!!${badge}`), false);
-  await navigate("/car/1/gear-ratio");
-  await waitFor("location.pathname === '/car/3/job-list'");
-  for (const [name, id] of [["jimmy", 5], ["guest", 6]]) {
-    await login(name, id, "/dashboard/car/1/gear-ratio");
-    await waitFor(currentLabel("STD"));
-    assert.equal(await evaluate("document.body.innerText.includes('Save Gear Ratio')"), false);
-    assert.equal(await evaluate("document.body.innerText.includes('Gear Ratio History')"), false);
-    await click("View ratios");
-    await checkModal(["12:37", "15:35", "18:33", "18:27", "22:28", "20:23"]);
-  }
-  await login("ben.southern", 7, "/car/1/gear-ratio");
-  await waitFor("location.pathname === '/drain-out'");
-  assert.equal(writes.filter(w => w.table === "set_car_gear_ratio").length, chiefWriteCount);
-  assert.deepEqual(networkErrors, []);
-  console.log("PASS: 320/390/768/1440px layout/modal, errors, no deadline, NOT SET, assigned-car isolation, read-only engineer/guest and Number 2 redirect.");
-
-  // The overview uses the same provider/RPC as the dedicated gear-ratio page.
   const selectQuery = car => `document.querySelector('select[aria-label="Gear ratio for Car ${car}"]')`;
   const selectRatio = (car, ratio) => evaluate(`(()=>{
     const select=${selectQuery(car)};
@@ -289,50 +159,60 @@ async function main() {
     select.dispatchEvent(new Event('change',{bubbles:true}));
   })()`);
   const dialogOpen = "document.querySelector('dialog[open]') !== null";
-  await login("dan.crain", 1, "/dashboard");
-  await waitFor(`${selectQuery(1)}?.value === 'STD' && !${selectQuery(1)}.disabled && ${selectQuery(2)}?.value === 'LONG' && !${selectQuery(3)}?.disabled`);
-  assert.equal(await evaluate(`${selectQuery(3)}.value`), "", "Unconfigured car displays NOT SET");
+  const ratioCases = [
+    ["STD", "STD", ["12:37", "15:35", "18:33", "18:27", "22:28", "20:23"]],
+    ["LONG", "LONG", ["12:37", "15:35", "18:33", "18:27", "20:25", "20:22"]],
+    ["EXTRA LONG", "EXTRA_LONG", ["12:37", "15:35", "18:33", "18:27", "19:23", "25:26"]],
+  ];
+
+  await login("dan.crain", 1, "/dashboard/car/1/job-list");
+  await waitFor(`${selectQuery(1)}?.value === '' && !${selectQuery(1)}.disabled`);
   assert.deepEqual(await evaluate(`Array.from(${selectQuery(1)}.options).map(o=>o.text)`), ["NOT SET", "STD", "LONG", "EXTRA LONG"]);
   assert.equal(await evaluate(`${selectQuery(1)}.options[0].disabled`), true, "NOT SET does not bypass the existing three-value data model");
-  assert.equal(await evaluate("Array.from(document.querySelectorAll('article p')).some(p=>p.textContent.trim()==='Clutch')"), false);
+  assert.equal(await evaluate("document.querySelector('a[href=\"/dashboard/car/1/gear-ratio\"]')"), null, "Chief Gear Ratio navigation is removed");
+  assert.deepEqual(
+    await evaluate("['Build Standard List','Save Draft','Publish','Add Standard Job','Add Special Job'].map(label=>Array.from(document.querySelectorAll('button')).some(button=>button.textContent.trim()===label))"),
+    [true, true, true, true, true],
+    "Existing Workshop controls remain available",
+  );
+  for (const [label, ratio] of ratioCases) {
+    const before = writes.length;
+    await selectRatio(1, ratio);
+    await waitFor(dialogOpen);
+    assert.equal(writes.length, before, "Selecting requires confirmation");
+    assert.ok(await evaluate(`document.querySelector('dialog[open]').innerText.includes(${JSON.stringify(label)})`));
+    await click("Confirm");
+    await waitFor(`!(${dialogOpen}) && ${selectQuery(1)}.value === ${JSON.stringify(ratio)}`);
+    assert.equal(configs.get(1).selected_ratio, ratio);
+  }
+  assert.equal(configs.get(1).version, 3);
   const beforeCancel = writes.length;
-  await selectRatio(1, "LONG");
+  await selectRatio(1, "STD");
   await waitFor(dialogOpen);
   assert.equal(writes.length, beforeCancel, "Selecting alone must not write");
-  assert.equal(await evaluate(`${selectQuery(1)}.value`), "STD", "Card retains persisted value before confirmation");
-  assert.ok(await evaluate("document.querySelector('dialog[open]').innerText.includes('STD → LONG')"));
+  assert.equal(await evaluate(`${selectQuery(1)}.value`), "EXTRA_LONG", "Selector retains persisted value before confirmation");
   await click("Cancel");
   await waitFor(`!(${dialogOpen})`);
   assert.equal(writes.length, beforeCancel, "Cancel must not write");
-  await selectRatio(1, "STD");
+  await selectRatio(1, "EXTRA_LONG");
   assert.equal(await evaluate(dialogOpen), false, "Same selection must not open confirmation");
   assert.equal(writes.length, beforeCancel);
-  const otherCars = JSON.stringify([configs.get(2), configs.get(3)]);
-  const previousVersion = configs.get(1).version;
-  await selectRatio(1, "LONG");
+
+  await navigate("/dashboard/car/2/job-list");
+  await waitFor(`${selectQuery(2)}?.value === ''`);
+  await selectRatio(2, "LONG"); await waitFor(dialogOpen); await click("Confirm");
+  await waitFor(`!(${dialogOpen}) && ${selectQuery(2)}.value === 'LONG'`);
+  assert.equal(configs.get(1).selected_ratio, "EXTRA_LONG", "Cars remain independent");
+  const previousVersion = configs.get(2).version;
+  await selectRatio(2, "STD");
   await waitFor(dialogOpen);
   failSave = true;
   await click("Confirm");
   await waitFor("document.querySelector('dialog[open]')?.innerText.includes('Test save failure')");
-  assert.equal(await evaluate(`${selectQuery(1)}.value`), "STD");
-  assert.equal(configs.get(1).version, previousVersion);
+  assert.equal(await evaluate(`${selectQuery(2)}.value`), "LONG");
+  assert.equal(configs.get(2).version, previousVersion);
   failSave = false;
-  await click("Confirm");
-  await waitFor(`!(${dialogOpen}) && ${selectQuery(1)}.value === 'LONG'`);
-  assert.equal(configs.get(1).version, previousVersion + 1);
-  assert.equal(histories.get(1)[0].previous_ratio, "STD");
-  assert.equal(JSON.stringify([configs.get(2), configs.get(3)]), otherCars);
-  const afterSave = writes.length;
-  await selectRatio(1, "LONG");
-  assert.equal(writes.length, afterSave, "LONG to LONG must not make a save request");
-  await selectRatio(3, "STD"); await waitFor(dialogOpen); await click("Confirm");
-  await waitFor(`${selectQuery(3)}.value === 'STD' && !(${dialogOpen})`);
-  await selectRatio(3, "EXTRA_LONG"); await waitFor(dialogOpen); await click("Confirm");
-  await waitFor(`${selectQuery(3)}.value === 'EXTRA_LONG' && !(${dialogOpen})`);
-  await call("Page.reload");
-  await waitFor(`${selectQuery(1)}?.value === 'LONG' && ${selectQuery(2)}?.value === 'LONG' && ${selectQuery(3)}?.value === 'EXTRA_LONG'`);
-
-  // An external change while confirmation is open must not overwrite unseen state.
+  await click("Cancel"); await waitFor(`!(${dialogOpen})`);
   await selectRatio(2, "STD"); await waitFor(dialogOpen);
   change(2, "EXTRA_LONG"); await refresh();
   await waitFor("document.querySelector('dialog[open]')?.innerText.includes('The current ratio changed')");
@@ -340,48 +220,92 @@ async function main() {
   await click("Cancel");
   await waitFor(`!(${dialogOpen})`);
 
-  for (const width of [320, 375, 390, 768, 1024, 1280, 1440, 1920]) {
+  for (const width of [320, 390, 768, 1440]) {
     await call("Emulation.setDeviceMetricsOverride", { width, height: 900, deviceScaleFactor: 1, mobile: false });
-    const layout = await evaluate(`(()=>{const select=${selectQuery(3)}, box=select.parentElement, grid=box.parentElement;
-      const r=select.getBoundingClientRect(), b=box.getBoundingClientRect();
-      const style=getComputedStyle(select);const canvas=document.createElement('canvas');const context=canvas.getContext('2d');context.font=style.font;
-      return {selectWidth:r.width,boxWidth:b.width,inside:r.left>=b.left&&r.right<=b.right,columns:getComputedStyle(grid).gridTemplateColumns.split(' ').length,
-        textWidth:context.measureText('EXTRA LONG').width,padding:parseFloat(style.paddingLeft)+parseFloat(style.paddingRight)};})()`);
-    assert.ok(layout.inside, `Selector overflow at ${width}: ${JSON.stringify(layout)}`);
-    assert.equal(layout.columns, width >= 768 ? 3 : 1, `Keep existing summary grid at ${width}`);
-    assert.ok(layout.textWidth + layout.padding + 20 <= layout.selectWidth, `Selected text clips at ${width}: ${JSON.stringify(layout)}`);
-    await selectRatio(3, "STD"); await waitFor(dialogOpen);
+    const selectorBounds = await evaluate(`(()=>{const select=${selectQuery(2)},r=select.getBoundingClientRect();return {left:r.left,right:r.right,width:r.width,viewport:innerWidth}})()`);
+    assert.ok(selectorBounds.left >= 0 && selectorBounds.right <= width, `Workshop selector overflow at ${width}: ${JSON.stringify(selectorBounds)}`);
+    await selectRatio(2, "LONG"); await waitFor(dialogOpen);
     const bounds = await evaluate("(()=>{const r=document.querySelector('dialog[open]').getBoundingClientRect();return {left:r.left,right:r.right,top:r.top,bottom:r.bottom}})()");
     assert.ok(bounds.left >= 0 && bounds.right <= width && bounds.top >= 0 && bounds.bottom <= 900, `Confirmation overflows at ${width}`);
-    if (width === 390 || width === 1440) {
-      fs.mkdirSync("coverage/gear-ratio", { recursive: true });
-      fs.writeFileSync(`coverage/gear-ratio/dashboard-confirm-${width}.png`, Buffer.from((await call("Page.captureScreenshot", { format: "png" })).data, "base64"));
-    }
     await click("Cancel"); await waitFor(`!(${dialogOpen})`);
-    if (width === 390 || width === 1280 || width === 1440) {
-      await evaluate("document.querySelector('article').scrollIntoView({block:'start'})");
-      fs.writeFileSync(`coverage/gear-ratio/dashboard-cards-${width}.png`, Buffer.from((await call("Page.captureScreenshot", { format: "png" })).data, "base64"));
-    }
   }
+  console.log("PASS: Chief Workshop selector options, confirmation, cancel, no-op, failure, stale state, car isolation and responsive layout.");
+
+  const chiefWriteCount = writes.filter(w => w.table === "set_car_gear_ratio").length;
+  await login("simon.crain", 2, "/car/1/job-list");
+  const completeBySection = "Array.from(document.querySelectorAll('section')).find(s=>s.textContent.includes('Required Completion Date'))";
+  await waitFor(`${badge} && ${completeBySection}?.innerText.includes('EXTRA LONG')`);
+  assert.deepEqual(await evaluate(`Array.from(${completeBySection}.querySelectorAll('dd')).map(e=>e.textContent)`), ratioCases[2][2]);
+  assert.equal(await evaluate(`${completeBySection}.querySelectorAll('button').length`), 0, "Complete By ratio is non-interactive");
+  assert.equal(await evaluate(dialogOpen), false);
+  assert.equal(writes.filter(w => w.table === "acknowledge_car_gear_ratio").length, 0, "Inline details must not acknowledge the change");
+  for (const [, ratio, pairs] of ratioCases) {
+    change(1, ratio); await refresh();
+    await waitFor(`${completeBySection}?.innerText.includes(${JSON.stringify(ratio === "EXTRA_LONG" ? "EXTRA LONG" : ratio)})`);
+    assert.deepEqual(await evaluate(`Array.from(${completeBySection}.querySelectorAll('dd')).map(e=>e.textContent)`), pairs);
+  }
+  for (const width of [320, 390, 768, 1440]) {
+    await call("Emulation.setDeviceMetricsOverride", { width, height: 900, deviceScaleFactor: 1, mobile: false });
+    const layout = await evaluate(`(()=>{const section=${completeBySection},grid=section.firstElementChild,r=section.getBoundingClientRect();return {columns:getComputedStyle(grid).gridTemplateColumns.split(' ').length,left:r.left,right:r.right,client:section.clientWidth,scroll:section.scrollWidth}})()`);
+    assert.equal(layout.columns, width >= 768 ? 2 : 1, `Complete By split at ${width}`);
+    assert.ok(layout.left >= 0 && layout.right <= width && layout.scroll <= layout.client, `Complete By overflow at ${width}: ${JSON.stringify(layout)}`);
+  }
+
+  await evaluate("window.__testHidden=true; document.querySelector('aside a[href=\"/car/1/gear-ratio\"]').click()");
+  await waitFor(currentLabel("EXTRA LONG"));
+  await delay(200);
+  assert.equal(writes.filter(w => w.table === "acknowledge_car_gear_ratio").length, 0, "Hidden panel must not acknowledge");
+  await evaluate("window.__testHidden=false; document.dispatchEvent(new Event('visibilitychange'))");
+  await waitFor(`!${badge}`);
+  assert.equal(acknowledgements.get(`${user.id}:1`), configs.get(1).version);
+  assert.equal(await evaluate("document.body.innerText.includes('Save Gear Ratio')"), false, "Mechanics cannot edit ratios");
+  change(1, "STD"); await refresh();
+  await waitFor(`${badge} && ${currentLabel("STD")}`);
+  failAck = true; await click("Acknowledge change");
+  await waitFor("document.body.innerText.includes('Test acknowledgement failure')");
+  assert.equal(await evaluate(`!!${badge}`), true);
+  failAck = false; await click("Acknowledge change");
+  await waitFor(`!${badge}`);
+  assert.equal(acknowledgements.get(`${user.id}:1`), configs.get(1).version);
+
+  failConfig = true; await refresh();
+  await waitFor("document.body.innerText.includes('Test configuration unavailable')");
+  failConfig = false; await click("Retry");
+  await waitFor(currentLabel("STD"));
+  completionDate = null;
+  await navigate("/car/1/job-list");
+  await waitFor(`${completeBySection}?.innerText.includes('No date set') && ${completeBySection}?.innerText.includes('STD')`);
+  assert.deepEqual(await evaluate(`Array.from(${completeBySection}.querySelectorAll('dd')).map(e=>e.textContent)`), ratioCases[0][2]);
+
+  await login("jack.carter", 4, "/car/3/job-list");
+  await waitFor(`${completeBySection}?.innerText.includes('NOT SET') && ${completeBySection}?.innerText.includes('No ratio selected')`);
+  assert.equal(await evaluate(`${completeBySection}.querySelectorAll('dd').length`), 0, "NOT SET shows no misleading ratios");
+  await navigate("/car/1/gear-ratio");
+  await waitFor("location.pathname === '/car/3/job-list'");
+
+  for (const [name, id] of [["jimmy", 5], ["guest", 6]]) {
+    await login(name, id, "/dashboard/car/1/job-list");
+    await waitFor(`${selectQuery(1)}?.value === 'STD'`);
+    assert.equal(await evaluate(`${selectQuery(1)}.disabled`), true, `${name} remains read-only`);
+  }
+  await login("ben.southern", 7, "/car/1/gear-ratio");
+  await waitFor("location.pathname === '/drain-out'");
+  assert.equal(writes.filter(w => w.table === "set_car_gear_ratio").length, chiefWriteCount);
+
+  await login("dan.crain", 1, "/dashboard");
+  await waitFor("document.querySelectorAll('article').length > 0");
+  assert.equal(await evaluate("document.querySelectorAll('article select[aria-label^=\"Gear ratio for Car\"]').length"), 0, "Dashboard has no duplicate Gear Ratio editor");
+  assert.equal(await evaluate("Array.from(document.querySelectorAll('article')).every(a=>getComputedStyle(a.querySelector('.grid')).gridTemplateColumns.split(' ').length >= 1)"), true);
   await evaluate("Array.from(document.querySelectorAll('article button')).find(b=>b.textContent==='Open Car Links').click()");
   await waitFor("document.querySelector('article a[href=\"/dashboard/car/1/clutch-measurement\"]') !== null");
   assert.ok(await evaluate("document.querySelector('article').innerText.includes('Clutch Records')"));
-  await navigate("/dashboard/car/1/gear-ratio");
-  await waitFor(currentLabel("LONG"));
-  assert.ok(await evaluate("document.body.innerText.includes('Gear Ratio History') && document.body.innerText.includes('STD → LONG')"));
   await login("simon.crain", 2, "/car/1/job-list");
-  await waitFor(`${badge} && document.body.innerText.includes('Gear Ratio:')`);
+  change(1, "LONG"); await refresh();
+  await waitFor(`${badge} && ${completeBySection}?.innerText.includes('LONG')`);
   await evaluate("document.querySelector('aside a[href=\"/car/1/gear-ratio\"]').click()");
   await waitFor(`${currentLabel("LONG")} && !${badge}`);
-  await login("guest", 6, "/dashboard");
-  await waitFor(`${selectQuery(1)}?.value === 'LONG'`);
-  assert.equal(await evaluate(`Array.from(document.querySelectorAll('article select')).every(s=>s.disabled)`), true);
-  const guestWrites = writes.length;
-  await selectRatio(1, "STD");
-  assert.equal(await evaluate(dialogOpen), false);
-  assert.equal(writes.length, guestWrites);
   assert.deepEqual(networkErrors, []);
-  console.log("PASS: dashboard current values/NOT SET, confirmation/cancel, save failure, no-op, shared versions/history/notification, car isolation, refresh, stale confirmation, responsive dropdown/dialog, guest read-only and preserved Clutch Records link.");
+  console.log("PASS: direct Complete By ratios/NOT SET, mobile stack, desktop split, no modal trigger, acknowledgement badge, role restrictions, dashboard deduplication and Clutch link regression.");
 }
 
 main().catch(error => { console.error(error); process.exitCode = 1; })

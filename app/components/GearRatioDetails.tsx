@@ -13,7 +13,7 @@ export function GearRatioNavigationLink(props: ComponentProps<typeof Link>) {
   }} />;
 }
 
-export function GearRatioDetailsButton({ ratio, summary = false }: { ratio: GearRatioType; summary?: boolean }) {
+export function GearRatioDetailsButton({ ratio }: { ratio: GearRatioType }) {
   const [open, setOpen] = useState(false);
   const dialog = useRef<HTMLDialogElement>(null);
   const titleId = useId();
@@ -25,10 +25,9 @@ export function GearRatioDetailsButton({ ratio, summary = false }: { ratio: Gear
 
   return (
     <>
-      <button type="button" onClick={() => setOpen(true)} className={summary
-        ? "font-semibold text-red-300 underline decoration-red-900 underline-offset-4 hover:text-red-200"
-        : "rounded-xl border border-zinc-700 bg-[#0d0f12] px-4 py-3 text-sm font-semibold hover:border-red-500"}>
-        {summary ? gearRatioLabel(ratio) : "View ratios"}
+      <button type="button" onClick={() => setOpen(true)}
+        className="rounded-xl border border-zinc-700 bg-[#0d0f12] px-4 py-3 text-sm font-semibold hover:border-red-500">
+        View ratios
       </button>
       <dialog ref={dialog} aria-labelledby={titleId} onClose={() => setOpen(false)}
         className="fixed inset-0 m-auto max-h-[85dvh] w-[calc(100%-2rem)] max-w-sm overflow-y-auto rounded-2xl border border-zinc-700 bg-[#14181d] p-6 text-zinc-100 shadow-xl backdrop:bg-black/80">
@@ -45,15 +44,32 @@ export function GearRatioDetailsButton({ ratio, summary = false }: { ratio: Gear
   );
 }
 
-export function GearRatioSummary() {
-  const { config, loading, error, refresh } = useGearRatio();
+function gearOrdinal(index: number) {
+  return ["1st", "2nd", "3rd", "4th", "5th", "6th"][index] ?? `Gear ${index + 1}`;
+}
+
+export function GearRatioInlineDetails() {
+  const { config, loading, error } = useGearRatio();
   return (
-    <span className="inline-flex flex-wrap items-center gap-2 text-sm">
-      Gear Ratio:
-      {loading ? <span>Loading…</span> : error ? (
-        <button type="button" title={error} onClick={() => void refresh()} className="text-amber-300 underline">Unavailable — retry</button>
-      ) : config ? <GearRatioDetailsButton ratio={config.selected_ratio} summary /> : <strong>NOT SET</strong>}
-    </span>
+    <div className="min-w-0">
+      <p className="text-xs font-semibold uppercase tracking-[0.3em]">Gear Ratio</p>
+      {loading ? <p className="mt-3 text-sm text-zinc-400">Loading…</p> : error ? (
+        <p role="alert" title={error} className="mt-3 text-sm text-amber-300">Unavailable</p>
+      ) : config ? <>
+        <p className="mt-3 text-2xl font-bold text-zinc-100">{gearRatioLabel(config.selected_ratio)}</p>
+        <dl className="mt-4 grid grid-cols-2 gap-x-6 gap-y-2 text-sm sm:max-w-sm">
+          {GEAR_RATIOS[config.selected_ratio].gears.map((pair, index) => (
+            <div key={pair} className="flex min-w-0 items-baseline justify-between gap-3 border-b border-zinc-800/80 pb-1">
+              <dt className="text-zinc-400">{gearOrdinal(index)}</dt>
+              <dd className="font-semibold text-zinc-100">{pair}</dd>
+            </div>
+          ))}
+        </dl>
+      </> : <>
+        <p className="mt-3 text-2xl font-bold text-zinc-100">NOT SET</p>
+        <p className="mt-2 text-sm text-zinc-400">No ratio selected</p>
+      </>}
+    </div>
   );
 }
 

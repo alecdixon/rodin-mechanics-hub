@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import LogoutButton from "@/app/components/LogoutButton";
-import { GearRatioSummary } from "@/app/components/GearRatioDetails";
+import { GearRatioInlineDetails } from "@/app/components/GearRatioDetails";
 
 const STANDARD_JOBS = [
   "Fill out post event sheet",
@@ -805,24 +805,31 @@ export default function MechanicJobListPage() {
         </div>
       )}
 
-      {releaseInfo?.completion_date && (
-        <section
-          className={`mb-6 rounded-3xl border p-6 shadow-xl ${completionUrgency.className}`}
-        >
-          <p className="text-xs font-semibold uppercase tracking-[0.3em]">
-            Required Completion Date
-          </p>
+      <section
+        className={`mb-6 overflow-hidden rounded-3xl border shadow-xl ${completionUrgency.className}`}
+      >
+        <div className="grid md:grid-cols-2">
+          <div className="p-6">
+            <p className="text-xs font-semibold uppercase tracking-[0.3em]">
+              Required Completion Date
+            </p>
 
-          <h2 className="mt-3 text-4xl font-bold">
-            Complete by {niceDate(releaseInfo.completion_date)}
-          </h2>
+            <h2 className="mt-3 break-words text-3xl font-bold sm:text-4xl">
+              {releaseInfo?.completion_date
+                ? `Complete by ${niceDate(releaseInfo.completion_date)}`
+                : "No date set"}
+            </h2>
 
-          <p className="mt-3 text-sm font-semibold">
-            {completionUrgency.label}
-          </p>
-          <div className="mt-3"><GearRatioSummary /></div>
-        </section>
-      )}
+            <p className="mt-3 text-sm font-semibold">
+              {completionUrgency.label}
+            </p>
+          </div>
+
+          <div className="border-t border-current/15 p-6 md:border-l md:border-t-0">
+            <GearRatioInlineDetails />
+          </div>
+        </div>
+      </section>
 
       <section className="mb-6 rounded-3xl border border-zinc-800 bg-[#14181d] p-6 shadow-xl">
         <p className="text-xs font-semibold uppercase tracking-[0.3em] text-red-400">
@@ -847,8 +854,6 @@ export default function MechanicJobListPage() {
               {niceDate(releaseInfo?.completion_date)}
             </span>
           </span>
-
-          {!releaseInfo?.completion_date && <GearRatioSummary />}
 
           {releaseInfo?.version_number !== null &&
             releaseInfo?.version_number !== undefined && (

@@ -164,11 +164,6 @@ export default function ChiefCarNavigation({ carId }: { carId: string }) {
 
   const carToolLinks: NavLinkItem[] = [
     {
-      href: `/dashboard/car/${carId}/gear-ratio`,
-      label: "Gear Ratio",
-      description: "Requested gearbox configuration",
-    },
-    {
       href: `/dashboard/car/${carId}/viewer`,
       label: "Overview",
       description: "Progress, notes and saved records",

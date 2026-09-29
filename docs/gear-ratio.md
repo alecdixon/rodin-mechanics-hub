@@ -3,7 +3,13 @@
 The application previously had no gear ratio configuration or acknowledgement state.
 This feature uses the existing Supabase browser client, car workspaces, navigation,
 email-based role map and dark UI styling. Gear pairs are defined once in
-`lib/gearRatios.ts`; the panel and Complete By summary share the same native dialog.
+`lib/gearRatios.ts`; every view reads the same shared definition.
+
+The Chief edits a car's ratio from the Workshop Job List controls. The Chief car
+navigation and overview cards do not contain duplicate Gear Ratio editors. Mechanics
+see the selected configuration and all six pairs directly in the responsive Complete
+By panel. Their separate Gear Ratio navigation page remains the acknowledgement point
+for the unread-change badge and retains its optional ratio-details dialog.
 
 ## Database and deployment
 
@@ -13,7 +19,7 @@ The migration is transactional and creates only feature-specific objects:
 
 - `car_gear_ratio_config`: one selected configuration/version per car; no row means NOT SET.
 - `car_gear_ratio_history`: immutable version history with previous/new ratio, user UUID,
-  email snapshot and server timestamp. The Chief sees the latest ten entries.
+  email snapshot and server timestamp.
 - `car_gear_ratio_acknowledgements`: highest seen version per authenticated user/car.
 - Narrow save/acknowledgement RPCs and read policies. Direct client table writes are denied.
 
@@ -44,8 +50,8 @@ Configuration and history are written in the same transaction.
 The sidebar compares the current version with the user's acknowledged version. It
 refreshes every 15 seconds while visible, and when the window regains focus/visibility.
 Opening the visible Gear Ratio panel acknowledges the displayed version. Sidebar
-loading, prefetching and opening Complete By details do not acknowledge anything.
-Hidden tabs wait until visible. A subsequent change while the panel is already open
+loading, prefetching and viewing the read-only Complete By details do not acknowledge
+anything. Hidden tabs wait until visible. A subsequent change while the panel is already open
 remains flagged until the user clicks Gear Ratio again or Acknowledge change.
 
 Acknowledgements persist in Supabase across login/device changes. They never move
@@ -82,10 +88,11 @@ npm.cmd install --prefix coverage/gear-ratio-db --no-save --package-lock=false -
 
 Browser tests follow the repository's existing headless Chrome/CDP pattern. They run
 the built app with intercepted Supabase responses and blocked external/websocket
-traffic. They verify all three selections and exact modal contents, deliberate saves,
+traffic. They verify all three Workshop selections, confirmation/cancel/no-op behavior,
 refresh, separate cars, unread/acknowledgement lifecycle, hidden tabs, failed requests,
-Complete By with/without a deadline, NOT SET, role routing, and modal/page sizing at
-320, 390, 768 and 1440 pixels. Test fixtures are confined to test code.
+direct Complete By ratios with/without a deadline, NOT SET, role routing, dashboard
+deduplication, and stacked/split sizing at 320, 390, 768 and 1440 pixels. Test fixtures
+are confined to test code.
 
 Not yet verified against live Supabase: the complete deployed policies/schema,
 authenticated role operations, real sessions across devices and concurrent saves.
@@ -108,12 +115,14 @@ publication; authenticated live behaviour is therefore still unverified.
 - `app/components/GearRatioProvider.tsx`
 - `app/components/GearRatioDetails.tsx`
 - `app/components/GearRatioPanel.tsx`
+- `app/components/WorkshopGearRatioSelector.tsx`
 - `app/components/ChiefCarNavigation.tsx`
 - `app/car/[carId]/layout.tsx`
 - `app/car/[carId]/job-list/page.tsx`
 - `app/car/[carId]/gear-ratio/page.tsx`
 - `app/dashboard/car/[carId]/layout.tsx`
-- `app/dashboard/car/[carId]/gear-ratio/page.tsx`
+- `app/dashboard/car/[carId]/job-list/page.tsx`
+- `app/dashboard/page.tsx`
 - `supabase-gear-ratio.sql`
 - `tests/gear-ratios.test.mjs`
 - `tests/gear-ratio-browser.mjs`

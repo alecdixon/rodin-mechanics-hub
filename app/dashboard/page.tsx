@@ -4,8 +4,6 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import LogoutButton from "@/app/components/LogoutButton";
-import GearRatioProvider from "@/app/components/GearRatioProvider";
-import DashboardGearRatioSelector from "@/app/components/DashboardGearRatioSelector";
 import { supabase } from "@/lib/supabase";
 import { getCurrentUserEmail } from "@/lib/authHelpers";
 import {
@@ -1540,7 +1538,7 @@ export default function DashboardPage() {
                   />
                 </div>
 
-                <div className="mt-6 grid gap-3 md:grid-cols-3">
+                <div className="mt-6 grid gap-3 md:grid-cols-2">
                   <div className="rounded-2xl border border-zinc-800 bg-[#0d0f12] p-4">
                     <p className="text-xs uppercase tracking-[0.22em] text-zinc-500">
                       Workshop
@@ -1568,10 +1566,6 @@ export default function DashboardPage() {
                       {car.eveningProgress}% complete
                     </p>
                   </div>
-
-                  <GearRatioProvider key={car.id} carId={car.id}>
-                    <DashboardGearRatioSelector />
-                  </GearRatioProvider>
                 </div>
 
                 <button

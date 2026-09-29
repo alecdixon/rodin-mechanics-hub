@@ -4,7 +4,7 @@ import { useEffect, useId, useRef, useState } from "react";
 import { GEAR_RATIOS, gearRatioLabel, type GearRatioType } from "@/lib/gearRatios";
 import { useGearRatio } from "./GearRatioProvider";
 
-export default function DashboardGearRatioSelector() {
+export default function WorkshopGearRatioSelector() {
   const { carId, config, loading, error, canChange, save, refresh } = useGearRatio();
   const [pending, setPending] = useState<{
     ratio: GearRatioType;
@@ -43,11 +43,13 @@ export default function DashboardGearRatioSelector() {
   }
 
   return (
-    <div className="min-w-0 rounded-2xl border border-zinc-800 bg-[#0d0f12] p-4">
-      <label htmlFor={selectId} className="block text-xs uppercase tracking-[0.22em] text-zinc-500">
+    <div className="mt-5 max-w-md border-t border-zinc-800 pt-5">
+      <label htmlFor={selectId} className="block text-sm font-semibold text-zinc-300">
         Gear Ratio
       </label>
-      <select id={selectId} aria-label={`Gear ratio for Car ${carId}`}
+      <select
+        id={selectId}
+        aria-label={`Gear ratio for Car ${carId}`}
         value={config?.selected_ratio ?? ""}
         disabled={loading || !!error || !canChange || saving || pending !== null}
         onChange={(event) => {
@@ -56,7 +58,8 @@ export default function DashboardGearRatioSelector() {
           setSaveError("");
           setPending({ ratio, previous: config?.selected_ratio ?? null, version: config?.version ?? 0 });
         }}
-        className="mt-2 w-full min-w-0 rounded-lg border border-zinc-700 bg-[#14181d] px-2 py-2 text-xs font-semibold text-zinc-100 focus:outline-none focus:ring-2 focus:ring-red-600/50 disabled:cursor-default xl:-mx-3 xl:w-[calc(100%+1.5rem)] xl:px-1 xl:text-[11px] 2xl:mx-0 2xl:w-full 2xl:px-2 2xl:text-xs">
+        className="mt-2 w-full rounded-xl border border-zinc-700 bg-[#0d0f12] px-4 py-3 text-sm font-semibold text-zinc-100 outline-none focus:border-red-500 disabled:cursor-default disabled:opacity-60"
+      >
         <option value="" disabled>{loading ? "Loading…" : error ? "Unavailable" : "NOT SET"}</option>
         {(Object.keys(GEAR_RATIOS) as GearRatioType[]).map((ratio) => (
           <option key={ratio} value={ratio}>{gearRatioLabel(ratio)}</option>
@@ -66,10 +69,14 @@ export default function DashboardGearRatioSelector() {
         <p>{error}</p>
         <button type="button" className="mt-1 underline" onClick={() => void refresh()}>Retry</button>
       </div>}
-      <dialog ref={dialog} aria-labelledby={titleId} aria-describedby={descriptionId}
+      <dialog
+        ref={dialog}
+        aria-labelledby={titleId}
+        aria-describedby={descriptionId}
         onCancel={(event) => { if (saving) event.preventDefault(); }}
         onClose={() => { if (!dialog.current?.open && !saving) setPending(null); }}
-        className="fixed inset-0 m-auto max-h-[85dvh] w-[calc(100%-2rem)] max-w-sm overflow-y-auto rounded-2xl border border-zinc-700 bg-[#14181d] p-6 text-zinc-100 shadow-xl backdrop:bg-black/80">
+        className="fixed inset-0 m-auto max-h-[85dvh] w-[calc(100%-2rem)] max-w-sm overflow-y-auto rounded-2xl border border-zinc-700 bg-[#14181d] p-6 text-zinc-100 shadow-xl backdrop:bg-black/80"
+      >
         <h2 id={titleId} className="text-lg font-semibold">Change Gear Ratio?</h2>
         <p className="mt-4 text-sm text-zinc-400">Car {carId}</p>
         {pending && <p className="mt-2 text-lg font-semibold">
@@ -83,7 +90,9 @@ export default function DashboardGearRatioSelector() {
         </p>}
         <div className="mt-6 flex justify-end gap-2">
           <button type="button" autoFocus disabled={saving} onClick={() => setPending(null)}
-            className="rounded-xl border border-zinc-700 px-4 py-2 text-sm font-semibold hover:border-zinc-500 disabled:opacity-50">Cancel</button>
+            className="rounded-xl border border-zinc-700 px-4 py-2 text-sm font-semibold hover:border-zinc-500 disabled:opacity-50">
+            Cancel
+          </button>
           <button type="button" disabled={saving || stale || !!error || !canChange}
             onClick={() => void confirmChange()}
             className="rounded-xl bg-red-700 px-4 py-2 text-sm font-semibold hover:bg-red-600 disabled:opacity-50">

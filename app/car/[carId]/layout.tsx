@@ -33,7 +33,10 @@ export default function CarLayout({ children }: Props) {
   const router = useRouter();
   const params = useParams();
   const pathname = usePathname();
-  const isResponsivePage = pathname.endsWith("/post-event") || pathname.endsWith("/gear-ratio");
+  const isResponsivePage =
+    pathname.endsWith("/post-event") ||
+    pathname.endsWith("/gear-ratio") ||
+    /^\/car\/[^/]+\/job-list$/.test(pathname);
 
   const carId = String(params.carId ?? "");
   const numericCarId = Number(carId);

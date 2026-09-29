@@ -7,6 +7,7 @@ import { supabase } from "@/lib/supabase";
 import { getCurrentUserEmail } from "@/lib/authHelpers";
 import { hasPermission, isReadOnlyUser } from "@/lib/userAccess";
 import LogoutButton from "@/app/components/LogoutButton";
+import WorkshopGearRatioSelector from "@/app/components/WorkshopGearRatioSelector";
 
 type JobSection = "standard" | "special" | "personal";
 
@@ -1306,13 +1307,15 @@ export default function ChiefJobListEditorPage() {
         </div>
       </section>
 
-      <section className="mb-6 grid gap-6 xl:grid-cols-[1fr_420px]">
-        <div className="rounded-3xl border border-zinc-800 bg-[#14181d] p-6 shadow-xl">
+      <section className="mb-6 grid min-w-0 grid-cols-1 gap-6 xl:grid-cols-[minmax(0,1fr)_420px]">
+        <div className="min-w-0 rounded-3xl border border-zinc-800 bg-[#14181d] p-6 shadow-xl">
           <h2 className="text-2xl font-semibold">Workshop Job List</h2>
 
           <p className="mt-2 text-sm leading-6 text-zinc-500">
             Build the standard workshop list and add any extra jobs required.
           </p>
+
+          <WorkshopGearRatioSelector />
 
           <div className="mt-5">
             <button
