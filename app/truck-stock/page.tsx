@@ -9,6 +9,7 @@ import { supabase } from "@/lib/supabase";
 import {
   canAccessTruckStock,
   canCheckTruckStock,
+  canManageTruckStock,
   getLoginRedirect,
   isChiefMechanic,
 } from "@/lib/userAccess";
@@ -88,6 +89,7 @@ export default function TruckStockPage() {
   const [userEmail, setUserEmail] = useState("");
   const [canToggle, setCanToggle] = useState(false);
   const [canManage, setCanManage] = useState(false);
+  const [canReset, setCanReset] = useState(false);
   const [savingIds, setSavingIds] = useState<Set<string>>(new Set());
   const [itemDialog, setItemDialog] = useState<"add" | "edit" | null>(null);
   const [editingItem, setEditingItem] = useState<ChecklistItem | null>(null);
@@ -138,7 +140,8 @@ export default function TruckStockPage() {
         }
         setUserEmail(email);
         setCanToggle(canCheckTruckStock(email));
-        setCanManage(isChiefMechanic(email));
+        setCanManage(canManageTruckStock(email));
+        setCanReset(isChiefMechanic(email));
         await loadChecklist();
       } catch (caught) {
         if (mounted) setError(caught instanceof Error ? caught.message : "Unable to load the Truck Stock Checklist.");
@@ -333,18 +336,16 @@ export default function TruckStockPage() {
               <h1 className="mt-1.5 text-2xl font-semibold tracking-tight text-zinc-100 md:text-3xl">Event Preparation Checklist</h1>
             </div>
             <div className="flex items-center gap-2">
-              {canManage && (
-                <>
-                  <button type="button" onClick={openAddDialog} className="rounded-lg bg-red-700 px-3.5 py-2 text-sm font-semibold text-white transition hover:bg-red-600 focus:outline-none focus:ring-2 focus:ring-red-500/60">+ Add Item</button>
-                  <details className="relative">
-                    <summary className="grid h-9 w-9 cursor-pointer list-none place-items-center rounded-lg border border-zinc-700 text-zinc-400 transition hover:border-zinc-500 hover:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-red-500/50 [&::-webkit-details-marker]:hidden" aria-label="Checklist management actions">
-                      <svg viewBox="0 0 20 20" aria-hidden="true" className="h-4 w-4 fill-current"><circle cx="4" cy="10" r="1.5"/><circle cx="10" cy="10" r="1.5"/><circle cx="16" cy="10" r="1.5"/></svg>
-                    </summary>
-                    <div className="absolute right-0 z-30 mt-2 w-52 rounded-lg border border-zinc-700 bg-[#15191e] p-1.5 shadow-xl shadow-black/40">
-                      <button type="button" onClick={() => { setError(""); setMessage(""); setResetDialogOpen(true); }} disabled={!items.length} className="w-full rounded-md px-3 py-2 text-left text-sm text-zinc-300 transition hover:bg-zinc-800 hover:text-white disabled:opacity-40">Reset for Next Event</button>
-                    </div>
-                  </details>
-                </>
+              {canManage && <button type="button" onClick={openAddDialog} className="rounded-lg bg-red-700 px-3.5 py-2 text-sm font-semibold text-white transition hover:bg-red-600 focus:outline-none focus:ring-2 focus:ring-red-500/60">+ Add Item</button>}
+              {canReset && (
+                <details className="relative">
+                  <summary className="grid h-9 w-9 cursor-pointer list-none place-items-center rounded-lg border border-zinc-700 text-zinc-400 transition hover:border-zinc-500 hover:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-red-500/50 [&::-webkit-details-marker]:hidden" aria-label="Checklist management actions">
+                    <svg viewBox="0 0 20 20" aria-hidden="true" className="h-4 w-4 fill-current"><circle cx="4" cy="10" r="1.5"/><circle cx="10" cy="10" r="1.5"/><circle cx="16" cy="10" r="1.5"/></svg>
+                  </summary>
+                  <div className="absolute right-0 z-30 mt-2 w-52 rounded-lg border border-zinc-700 bg-[#15191e] p-1.5 shadow-xl shadow-black/40">
+                    <button type="button" onClick={() => { setError(""); setMessage(""); setResetDialogOpen(true); }} disabled={!items.length} className="w-full rounded-md px-3 py-2 text-left text-sm text-zinc-300 transition hover:bg-zinc-800 hover:text-white disabled:opacity-40">Reset for Next Event</button>
+                  </div>
+                </details>
               )}
               <Link href={backHref} className="rounded-lg border border-zinc-700 px-3.5 py-2 text-sm font-medium text-zinc-300 transition hover:border-zinc-500 hover:text-white">Back</Link>
               <LogoutButton />
