@@ -6,6 +6,7 @@ import { useParams, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import { hasPermission, isReadOnlyUser } from "@/lib/userAccess";
 import LogoutButton from "@/app/components/LogoutButton";
+import MechanicNoteButton from "@/app/components/MechanicNoteButton";
 
 type JobSection = "standard" | "special";
 
@@ -77,9 +78,7 @@ function StatusPill({
       </span>
 
       {notes?.trim() && (
-        <span className="rounded-full border border-red-900/60 bg-red-950/30 px-3 py-1 text-xs font-semibold text-red-300">
-          Has Note
-        </span>
+        <MechanicNoteButton note={notes} />
       )}
     </div>
   );
