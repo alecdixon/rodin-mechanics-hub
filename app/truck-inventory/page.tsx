@@ -300,23 +300,117 @@ export default function TruckInventoryPage() {
   }
 
   return (
-    <main className="min-h-screen bg-[#0d0f12] p-4 text-zinc-100 md:p-6">
-      <header className="mx-auto mb-6 max-w-[1500px] rounded-[2rem] border border-zinc-800 bg-gradient-to-br from-black via-[#111418] to-[#211014] p-6 shadow-2xl shadow-black/30 md:p-8">
+    <main className="truck-inventory-print-root min-h-screen bg-[#0d0f12] p-4 text-zinc-100 md:p-6">
+      <style>{`
+        @media print {
+          @page {
+            size: A4 landscape;
+            margin: 8mm;
+          }
+
+          body {
+            background: white !important;
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
+          }
+
+          .truck-inventory-no-print {
+            display: none !important;
+          }
+
+          .truck-inventory-print-root {
+            min-height: auto !important;
+            background: white !important;
+            color: #111827 !important;
+            padding: 0 !important;
+          }
+
+          .truck-inventory-print-header {
+            max-width: none !important;
+            margin: 0 0 5mm !important;
+            border: 0 !important;
+            border-bottom: 2px solid #111827 !important;
+            border-radius: 0 !important;
+            background: white !important;
+            box-shadow: none !important;
+            padding: 0 0 4mm !important;
+          }
+
+          .truck-inventory-print-header * {
+            color: #111827 !important;
+          }
+
+          .truck-inventory-print-area {
+            max-width: none !important;
+            border: 0 !important;
+            border-radius: 0 !important;
+            background: white !important;
+            box-shadow: none !important;
+            padding: 0 !important;
+          }
+
+          .truck-inventory-table-wrap {
+            overflow: visible !important;
+            border: 1px solid #9ca3af !important;
+            border-radius: 0 !important;
+          }
+
+          .truck-inventory-table {
+            border-collapse: collapse !important;
+            font-size: 8pt !important;
+            color: #111827 !important;
+          }
+
+          .truck-inventory-table thead,
+          .truck-inventory-table tbody {
+            background: white !important;
+          }
+
+          .truck-inventory-table tr {
+            break-inside: avoid !important;
+            page-break-inside: avoid !important;
+          }
+
+          .truck-inventory-table th,
+          .truck-inventory-table td {
+            border: 1px solid #d1d5db !important;
+            color: #111827 !important;
+            padding: 2mm !important;
+          }
+
+          .truck-inventory-table th {
+            background: #f3f4f6 !important;
+          }
+
+          .truck-inventory-table span,
+          .truck-inventory-table div {
+            color: #111827 !important;
+          }
+
+          .truck-inventory-table img,
+          .truck-inventory-table td:first-child > div {
+            width: 10mm !important;
+            height: 10mm !important;
+          }
+        }
+      `}</style>
+      <header className="truck-inventory-print-header mx-auto mb-6 max-w-[1500px] rounded-[2rem] border border-zinc-800 bg-gradient-to-br from-black via-[#111418] to-[#211014] p-6 shadow-2xl shadow-black/30 md:p-8">
         <div className="flex flex-col gap-6 md:flex-row md:items-center md:justify-between">
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.35em] text-red-400">Chief Mechanic</p>
             <h1 className="mt-3 text-3xl font-semibold tracking-tight text-white md:text-5xl">Truck Inventory</h1>
             <p className="mt-3 max-w-3xl text-sm leading-6 text-zinc-400">Manage the parts carried and audited in the truck. The 2025 quantity remains a historical baseline when targets change.</p>
           </div>
-          <div className="flex flex-wrap gap-3">
+          <div className="truck-inventory-no-print flex flex-wrap gap-3">
+            <button type="button" onClick={() => window.print()} className="rounded-xl border border-zinc-700 px-4 py-2 text-sm font-semibold hover:border-red-500">Print to PDF</button>
             <Link href="/dashboard" className="rounded-xl border border-zinc-700 px-4 py-2 text-sm font-semibold hover:border-red-500">Back to Dashboard</Link>
             <LogoutButton />
           </div>
         </div>
       </header>
 
-      <section className="mx-auto max-w-[1500px] rounded-3xl border border-zinc-800 bg-[#15191e] p-4 shadow-xl md:p-6">
-        <div className="grid gap-3 md:grid-cols-[minmax(220px,1fr)_minmax(180px,280px)_minmax(180px,240px)_auto]">
+      <section className="truck-inventory-print-area mx-auto max-w-[1500px] rounded-3xl border border-zinc-800 bg-[#15191e] p-4 shadow-xl md:p-6">
+        <div className="truck-inventory-no-print grid gap-3 md:grid-cols-[minmax(220px,1fr)_minmax(180px,280px)_minmax(180px,240px)_auto]">
           <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search part number or description" className="rounded-xl border border-zinc-700 bg-[#0d0f12] px-4 py-3 text-sm outline-none focus:border-red-500" />
           <select value={categoryFilter} onChange={(event) => setCategoryFilter(event.target.value)} className="rounded-xl border border-zinc-700 bg-[#0d0f12] px-4 py-3 text-sm">
             <option value="ALL">All categories</option>
@@ -330,13 +424,13 @@ export default function TruckInventoryPage() {
           <button type="button" onClick={openNew} className="rounded-xl bg-red-700 px-5 py-3 text-sm font-semibold hover:bg-red-600">Add Part</button>
         </div>
 
-        {error && !editorOpen && <p role="alert" className="mt-4 rounded-xl border border-red-800 bg-red-950/35 p-3 text-sm text-red-200">{error}</p>}
+        {error && !editorOpen && <p role="alert" className="truck-inventory-no-print mt-4 rounded-xl border border-red-800 bg-red-950/35 p-3 text-sm text-red-200">{error}</p>}
         <div className="mt-5 flex items-center justify-between text-xs uppercase tracking-[0.18em] text-zinc-500">
           <span>{visibleItems.length} items shown</span><span>{items.length} total records</span>
         </div>
 
-        <div className="mt-3 overflow-x-auto rounded-2xl border border-zinc-800">
-          <table className="min-w-full divide-y divide-zinc-800 text-left text-sm">
+        <div className="truck-inventory-table-wrap mt-3 overflow-x-auto rounded-2xl border border-zinc-800">
+          <table className="truck-inventory-table min-w-full divide-y divide-zinc-800 text-left text-sm">
             <thead className="bg-[#0d0f12] text-xs uppercase tracking-[0.14em] text-zinc-500">
               <tr><th className="px-4 py-3">Photo</th><th className="px-4 py-3">Part Number</th><th className="px-4 py-3">Description</th><th className="px-4 py-3">Target Qty</th><th className="px-4 py-3">Truck Qty</th><th className="px-4 py-3">Status</th><th className="px-4 py-3">Location</th></tr>
             </thead>
@@ -359,7 +453,7 @@ export default function TruckInventoryPage() {
       </section>
 
       {editorOpen && (
-        <div className="fixed inset-0 z-50 overflow-y-auto bg-black/75 p-3 backdrop-blur-sm md:p-8" role="dialog" aria-modal="true" aria-label={selected ? "Edit inventory item" : "Add inventory item"}>
+        <div className="truck-inventory-no-print fixed inset-0 z-50 overflow-y-auto bg-black/75 p-3 backdrop-blur-sm md:p-8" role="dialog" aria-modal="true" aria-label={selected ? "Edit inventory item" : "Add inventory item"}>
           <div className="mx-auto max-w-4xl rounded-3xl border border-zinc-700 bg-[#15191e] p-5 shadow-2xl md:p-8">
             <div className="flex items-start justify-between gap-4"><div><p className="text-xs font-semibold uppercase tracking-[0.3em] text-red-400">{selected ? "Inventory detail" : "Manual part"}</p><h2 className="mt-2 text-2xl font-semibold">{selected ? (selected.part_number || "Review item") : "Add a part"}</h2></div><button type="button" onClick={() => setEditorOpen(false)} className="rounded-lg border border-zinc-700 px-3 py-2 text-sm hover:border-red-500">Close</button></div>
 
