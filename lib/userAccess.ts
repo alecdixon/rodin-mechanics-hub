@@ -18,6 +18,8 @@ export type Permission =
   | "team_jobs:create"
   | "team_jobs:publish"
   | "team_jobs:complete"
+  | "truck_stock:view"
+  | "truck_stock:check"
   | "post_event:view"
   | "post_event:edit"
   | "clutch:view"
@@ -62,6 +64,8 @@ const ALL_PERMISSIONS: Permission[] = [
   "team_jobs:create",
   "team_jobs:publish",
   "team_jobs:complete",
+  "truck_stock:view",
+  "truck_stock:check",
   "post_event:view",
   "post_event:edit",
   "clutch:view",
@@ -102,6 +106,8 @@ const NUMBER1_MECHANIC_PERMISSIONS: Permission[] = [
   "evening_jobs:edit",
   "team_jobs:view",
   "team_jobs:complete",
+  "truck_stock:view",
+  "truck_stock:check",
   "post_event:view",
   "post_event:edit",
   "clutch:view",
@@ -120,6 +126,8 @@ const NUMBER1_MECHANIC_PERMISSIONS: Permission[] = [
 const NUMBER2_MECHANIC_PERMISSIONS: Permission[] = [
   "team_jobs:view",
   "team_jobs:complete",
+  "truck_stock:view",
+  "truck_stock:check",
   "drain_out:view",
   "drain_out:manage",
   "legality:view",
@@ -313,6 +321,14 @@ export function canCompleteTeamJobs(email: string | null | undefined): boolean {
 
 export function canManageTeamJobs(email: string | null | undefined): boolean {
   return canCreateTeamJobs(email) && canPublishTeamJobs(email);
+}
+
+export function canAccessTruckStock(email: string | null | undefined): boolean {
+  return hasPermission(email, "truck_stock:view");
+}
+
+export function canCheckTruckStock(email: string | null | undefined): boolean {
+  return canWrite(email, "truck_stock:check");
 }
 
 export function canAccessDrainOut(email: string | null | undefined): boolean {

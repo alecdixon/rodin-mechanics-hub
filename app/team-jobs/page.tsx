@@ -390,6 +390,13 @@ export default function TeamJobsPage() {
                 </Link>
 
                 <Link
+                  href="/truck-stock"
+                  className="rounded-xl border border-zinc-700 bg-[#1b2026] px-5 py-3 text-sm font-semibold text-zinc-100 transition hover:border-red-500 hover:bg-[#222832]"
+                >
+                  Truck Stock
+                </Link>
+
+                <Link
                   href={backHref()}
                   className="rounded-xl border border-neutral-700 bg-neutral-900 px-5 py-3 text-sm font-semibold text-neutral-200 transition hover:border-red-500 hover:text-red-300"
                 >

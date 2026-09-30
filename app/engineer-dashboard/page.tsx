@@ -28,6 +28,7 @@ const GLOBAL_LINKS = [
   { href: "/recorded-issues", title: "Recorded Issues", description: "Review known faults and add a new issue." },
   { href: "/sticker-list", title: "Sticker List", description: "Review sticker requirements and add new items." },
   { href: "/dashboard/team-jobs", title: "Team Jobs", description: "View team-wide jobs and create a draft job." },
+  { href: "/truck-stock", title: "Truck Stock", description: "View the shared event-preparation checklist." },
   { href: "/legality", title: "Surface Table Checks", description: "Open saved setup and legality checks in read-only mode." },
   { href: "/plank-legality", title: "Plank Legality", description: "Review plank measurements and historic reports." },
   { href: "/drain-out", title: "Drain Out", description: "Inspect drain-out figures and previous records." },

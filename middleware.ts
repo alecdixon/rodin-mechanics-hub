@@ -44,6 +44,15 @@ export function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
+  if (path.startsWith("/truck-stock")) {
+    if (!hasPermission(email, "truck_stock:view")) {
+      url.pathname = getLoginRedirect(email);
+      return NextResponse.redirect(url);
+    }
+
+    return NextResponse.next();
+  }
+
   if (path.startsWith("/dashboard")) {
     if (!hasPermission(email, "dashboard:view")) {
       url.pathname = getLoginRedirect(email);
@@ -95,5 +104,5 @@ export function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/dashboard/:path*", "/engineer-dashboard/:path*", "/car/:path*", "/recorded-issues", "/recorded-issues/:path*", "/truck-inventory", "/truck-inventory/:path*"],
+  matcher: ["/dashboard/:path*", "/engineer-dashboard/:path*", "/car/:path*", "/recorded-issues", "/recorded-issues/:path*", "/truck-inventory", "/truck-inventory/:path*", "/truck-stock", "/truck-stock/:path*"],
 };

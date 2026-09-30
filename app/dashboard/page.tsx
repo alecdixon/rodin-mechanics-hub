@@ -891,7 +891,7 @@ export default function DashboardPage() {
         </div>
 
         <div className="bg-[#0d0f12]/80 p-4">
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-8">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-9">
             <QuickLink
               href="/drain-out"
               title="Drain Out"
@@ -926,6 +926,12 @@ export default function DashboardPage() {
               href="/dashboard/team-jobs"
               title="Team Jobs"
               description="Create and publish team-wide jobs"
+            />
+
+            <QuickLink
+              href="/truck-stock"
+              title="Truck Stock"
+              description="Shared event-preparation checklist"
             />
 
             {getUserRole(userEmail) === "chief_mechanic" && (

@@ -460,6 +460,13 @@ export default function DrainOutPage() {
               </Link>
 
               <Link
+                href="/truck-stock"
+                className="rounded-xl border border-zinc-700 bg-[#1b2026] px-5 py-3 text-sm font-semibold text-zinc-200 transition hover:border-red-500 hover:text-red-300"
+              >
+                Truck Stock
+              </Link>
+
+              <Link
                 href="/recorded-issues"
                 className="rounded-xl border border-zinc-700 bg-[#1b2026] px-5 py-3 text-sm font-semibold text-zinc-200 transition hover:border-red-500 hover:text-red-300"
               >

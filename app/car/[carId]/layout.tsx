@@ -117,6 +117,11 @@ export default function CarLayout({ children }: Props) {
         description: "Team-wide jobs",
       },
       {
+        name: "Truck Stock",
+        href: "/truck-stock",
+        description: "Shared event-preparation checklist",
+      },
+      {
         name: "Sticker List",
         href: "/sticker-list",
         description: "Create and print sticker requirements",
@@ -172,6 +177,10 @@ export default function CarLayout({ children }: Props) {
       {
         name: "Manage Team Jobs",
         href: "/dashboard/team-jobs",
+      },
+      {
+        name: "Truck Stock",
+        href: "/truck-stock",
       },
       {
         name: "Legality",
