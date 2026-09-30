@@ -16,8 +16,8 @@ import {
 type ChecklistItem = {
   id: string;
   label: string;
+  category_id: string;
   sort_order: number;
-  baseline_source_key: string | null;
   is_active: boolean;
   is_checked: boolean;
   checked_at: string | null;
@@ -33,54 +33,11 @@ type ChecklistState = {
   last_reset_by: string | null;
 };
 
-const CHECKLIST_SECTIONS = [
-  { key: "consumables", label: "Consumables" },
-  { key: "fluids", label: "Fluids / Chemicals" },
-  { key: "tyre", label: "Tyre / Wheel" },
-  { key: "workshop", label: "Workshop / Hardware" },
-  { key: "garage", label: "Garage / General" },
-  { key: "other", label: "Other" },
-] as const;
-
-type ChecklistSectionKey = (typeof CHECKLIST_SECTIONS)[number]["key"];
-
-const BASELINE_SECTIONS: Record<string, ChecklistSectionKey> = {
-  "01": "consumables",
-  "02": "consumables",
-  "03": "consumables",
-  "04": "consumables",
-  "05": "consumables",
-  "06": "consumables",
-  "07": "fluids",
-  "08": "consumables",
-  "09": "fluids",
-  "10": "garage",
-  "11": "garage",
-  "12": "workshop",
-  "13": "fluids",
-  "14": "fluids",
-  "15": "fluids",
-  "16": "fluids",
-  "17": "garage",
-  "18": "tyre",
-  "19": "tyre",
-  "20": "tyre",
-  "21": "tyre",
-  "22": "workshop",
-  "23": "workshop",
-  "24": "workshop",
-  "25": "workshop",
-  "26": "garage",
-  "27": "garage",
-  "28": "fluids",
-  "29": "workshop",
-  "30": "garage",
+type ChecklistCategory = {
+  id: string;
+  name: string;
+  sort_order: number;
 };
-
-function getItemSection(item: ChecklistItem): ChecklistSectionKey {
-  const sourceKey = item.baseline_source_key?.split(":").at(-1);
-  return (sourceKey && BASELINE_SECTIONS[sourceKey]) || "other";
-}
 
 function formatCompactDate(value: string) {
   return new Intl.DateTimeFormat("en-GB", {
@@ -126,6 +83,7 @@ export default function TruckStockPage() {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
   const [items, setItems] = useState<ChecklistItem[]>([]);
+  const [categories, setCategories] = useState<ChecklistCategory[]>([]);
   const [checklistState, setChecklistState] = useState<ChecklistState | null>(null);
   const [userEmail, setUserEmail] = useState("");
   const [canToggle, setCanToggle] = useState(false);
@@ -134,6 +92,8 @@ export default function TruckStockPage() {
   const [itemDialog, setItemDialog] = useState<"add" | "edit" | null>(null);
   const [editingItem, setEditingItem] = useState<ChecklistItem | null>(null);
   const [itemText, setItemText] = useState("");
+  const [categorySelection, setCategorySelection] = useState("");
+  const [newCategoryName, setNewCategoryName] = useState("");
   const [savingItem, setSavingItem] = useState(false);
   const [resetDialogOpen, setResetDialogOpen] = useState(false);
   const [resetting, setResetting] = useState(false);
@@ -141,11 +101,15 @@ export default function TruckStockPage() {
   const [error, setError] = useState("");
 
   const loadChecklist = useCallback(async () => {
-    const [itemsResult, stateResult] = await Promise.all([
+    const [itemsResult, categoriesResult, stateResult] = await Promise.all([
       supabase
         .from("truck_stock_checklist_items")
-        .select("id,label,sort_order,baseline_source_key,is_active,is_checked,checked_at,checked_by,created_at,created_by,updated_at,updated_by")
+        .select("id,label,category_id,sort_order,is_active,is_checked,checked_at,checked_by,created_at,created_by,updated_at,updated_by")
         .eq("is_active", true)
+        .order("sort_order", { ascending: true }),
+      supabase
+        .from("truck_stock_checklist_categories")
+        .select("id,name,sort_order")
         .order("sort_order", { ascending: true }),
       supabase
         .from("truck_stock_checklist_state")
@@ -155,8 +119,10 @@ export default function TruckStockPage() {
     ]);
 
     if (itemsResult.error) throw itemsResult.error;
+    if (categoriesResult.error) throw categoriesResult.error;
     if (stateResult.error) throw stateResult.error;
     setItems((itemsResult.data ?? []) as ChecklistItem[]);
+    setCategories((categoriesResult.data ?? []) as ChecklistCategory[]);
     setChecklistState((stateResult.data as ChecklistState | null) ?? null);
   }, []);
 
@@ -199,6 +165,16 @@ export default function TruckStockPage() {
           }, 100);
         },
       )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "truck_stock_checklist_categories" },
+        () => {
+          if (refreshTimer) clearTimeout(refreshTimer);
+          refreshTimer = setTimeout(() => {
+            loadChecklist().catch(() => setError("The checklist changed, but the page could not refresh."));
+          }, 100);
+        },
+      )
       .subscribe();
     return () => {
       if (refreshTimer) clearTimeout(refreshTimer);
@@ -208,10 +184,10 @@ export default function TruckStockPage() {
 
   const completed = useMemo(() => items.filter((item) => item.is_checked).length, [items]);
   const progress = items.length ? Math.round((completed / items.length) * 100) : 0;
-  const groupedItems = useMemo(() => CHECKLIST_SECTIONS.map((section) => ({
-    ...section,
-    items: items.filter((item) => getItemSection(item) === section.key),
-  })).filter((section) => section.items.length > 0), [items]);
+  const groupedItems = useMemo(() => categories.map((category) => ({
+    ...category,
+    items: items.filter((item) => item.category_id === category.id),
+  })).filter((section) => section.items.length > 0), [categories, items]);
   const orderedItems = useMemo(() => groupedItems.flatMap((section) => section.items), [groupedItems]);
   const lastUpdatedItem = useMemo(() => items.reduce<ChecklistItem | null>((latest, item) => (
     !latest || new Date(item.updated_at) > new Date(latest.updated_at) ? item : latest
@@ -250,6 +226,8 @@ export default function TruckStockPage() {
   function openAddDialog() {
     setEditingItem(null);
     setItemText("");
+    setCategorySelection(categories[0]?.id ?? "");
+    setNewCategoryName("");
     setItemDialog("add");
     setError("");
     setMessage("");
@@ -258,6 +236,8 @@ export default function TruckStockPage() {
   function openEditDialog(item: ChecklistItem) {
     setEditingItem(item);
     setItemText(item.label);
+    setCategorySelection(item.category_id);
+    setNewCategoryName("");
     setItemDialog("edit");
     setError("");
     setMessage("");
@@ -266,20 +246,43 @@ export default function TruckStockPage() {
   async function saveDefinition() {
     if (savingItem) return;
     const cleanText = itemText.trim();
-    if (!cleanText) return setError("Item text is required.");
+    if (!cleanText) return setError("Item name is required.");
+    if (!categorySelection) return setError("Category is required.");
+    if (categorySelection === "__new__" && !newCategoryName.trim()) {
+      return setError("New category name is required.");
+    }
     setSavingItem(true);
     setError("");
+
+    let selectedCategoryId = categorySelection;
+    if (categorySelection === "__new__") {
+      const categoryResult = await supabase.rpc("create_truck_stock_category", {
+        p_name: newCategoryName.trim(),
+      });
+      if (categoryResult.error) {
+        setSavingItem(false);
+        return setError(categoryResult.error.message);
+      }
+      selectedCategoryId = (categoryResult.data as ChecklistCategory).id;
+    }
+
     const result = itemDialog === "edit" && editingItem
-      ? await supabase.rpc("rename_truck_stock_checklist_item", {
+      ? await supabase.rpc("update_truck_stock_checklist_item", {
           p_item_id: editingItem.id,
-          p_label: cleanText,
+          p_item_name: cleanText,
+          p_category_id: selectedCategoryId,
         })
-      : await supabase.rpc("add_truck_stock_checklist_item", { p_label: cleanText });
+      : await supabase.rpc("create_truck_stock_checklist_item", {
+          p_item_name: cleanText,
+          p_category_id: selectedCategoryId,
+        });
     setSavingItem(false);
     if (result.error) return setError(result.error.message);
     setItemDialog(null);
     setEditingItem(null);
     setItemText("");
+    setCategorySelection("");
+    setNewCategoryName("");
     setMessage(itemDialog === "edit" ? "Checklist item updated." : "Checklist item added.");
     try { await loadChecklist(); } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Saved, but the checklist could not refresh.");
@@ -379,16 +382,16 @@ export default function TruckStockPage() {
         <section className="mt-6" aria-label="Truck Stock Checklist items">
           {orderedItems.map((item, index) => {
             const saving = savingIds.has(item.id);
-            const sectionKey = getItemSection(item);
-            const previousSectionKey = index > 0 ? getItemSection(orderedItems[index - 1]!) : null;
-            const section = CHECKLIST_SECTIONS.find((candidate) => candidate.key === sectionKey);
-            const sectionItems = groupedItems.find((candidate) => candidate.key === sectionKey)?.items ?? [];
+            const sectionKey = item.category_id;
+            const previousSectionKey = index > 0 ? orderedItems[index - 1]!.category_id : null;
+            const section = categories.find((candidate) => candidate.id === sectionKey);
+            const sectionItems = groupedItems.find((candidate) => candidate.id === sectionKey)?.items ?? [];
             const sectionComplete = sectionItems.filter((candidate) => candidate.is_checked).length;
             return (
               <div key={item.id}>
                 {sectionKey !== previousSectionKey && (
                   <div className={`${index ? "mt-7" : ""} mb-1.5 flex items-center justify-between border-b border-zinc-800 px-1 pb-2`}>
-                    <h2 className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">{section?.label}</h2>
+                    <h2 className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">{section?.name}</h2>
                     <span className="text-xs tabular-nums text-zinc-600">{sectionComplete} / {sectionItems.length}</span>
                   </div>
                 )}
@@ -425,7 +428,23 @@ export default function TruckStockPage() {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4 backdrop-blur-sm" role="dialog" aria-modal="true" aria-label={itemDialog === "add" ? "Add Truck Stock Item" : "Edit Truck Stock Item"}>
           <div className="w-full max-w-md rounded-xl border border-zinc-700 bg-[#15191e] p-5 shadow-2xl">
             <h2 className="text-lg font-semibold">{itemDialog === "add" ? "Add Truck Stock Item" : "Edit Truck Stock Item"}</h2>
-            <label className="mt-5 block text-sm text-zinc-400">Item<input autoFocus value={itemText} onChange={(event) => setItemText(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") saveDefinition(); }} className="mt-2 w-full rounded-lg border border-zinc-700 bg-[#0d0f12] px-3 py-2.5 text-sm text-zinc-100 outline-none focus:border-red-500" /></label>
+            <label className="mt-5 block text-sm text-zinc-400">
+              Category
+              <select value={categorySelection} onChange={(event) => { setCategorySelection(event.target.value); setError(""); }} className="mt-2 w-full rounded-lg border border-zinc-700 bg-[#0d0f12] px-3 py-2.5 text-sm text-zinc-100 outline-none focus:border-red-500">
+                {categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}
+                <option value="__new__">+ New category</option>
+              </select>
+            </label>
+            {categorySelection === "__new__" && (
+              <label className="mt-4 block text-sm text-zinc-400">
+                New Category
+                <input autoFocus value={newCategoryName} onChange={(event) => setNewCategoryName(event.target.value)} className="mt-2 w-full rounded-lg border border-zinc-700 bg-[#0d0f12] px-3 py-2.5 text-sm text-zinc-100 outline-none focus:border-red-500" />
+              </label>
+            )}
+            <label className="mt-4 block text-sm text-zinc-400">
+              Item Name
+              <input autoFocus={categorySelection !== "__new__"} value={itemText} onChange={(event) => setItemText(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") saveDefinition(); }} className="mt-2 w-full rounded-lg border border-zinc-700 bg-[#0d0f12] px-3 py-2.5 text-sm text-zinc-100 outline-none focus:border-red-500" />
+            </label>
             {error && <p role="alert" className="mt-4 text-sm text-red-300">{error}</p>}
             <div className="mt-5 flex justify-end gap-2">
               <button type="button" onClick={() => setItemDialog(null)} className="rounded-lg border border-zinc-700 px-3.5 py-2 text-sm font-medium text-zinc-300 hover:border-zinc-500">Cancel</button>
