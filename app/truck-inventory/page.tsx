@@ -338,7 +338,7 @@ export default function TruckInventoryPage() {
         <div className="mt-3 overflow-x-auto rounded-2xl border border-zinc-800">
           <table className="min-w-full divide-y divide-zinc-800 text-left text-sm">
             <thead className="bg-[#0d0f12] text-xs uppercase tracking-[0.14em] text-zinc-500">
-              <tr><th className="px-4 py-3">Photo</th><th className="px-4 py-3">Part Number</th><th className="px-4 py-3">Description</th><th className="px-4 py-3">Target Qty</th><th className="px-4 py-3">2025 Qty</th><th className="px-4 py-3">Status</th><th className="px-4 py-3">Location</th></tr>
+              <tr><th className="px-4 py-3">Photo</th><th className="px-4 py-3">Part Number</th><th className="px-4 py-3">Description</th><th className="px-4 py-3">Target Qty</th><th className="px-4 py-3">Truck Qty</th><th className="px-4 py-3">Status</th><th className="px-4 py-3">Location</th></tr>
             </thead>
             <tbody className="divide-y divide-zinc-800 bg-[#15191e]">
               {visibleItems.map((item) => (
