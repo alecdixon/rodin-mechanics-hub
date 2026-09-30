@@ -1,10 +1,12 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { useParams } from "next/navigation";
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
 import { supabase } from "@/lib/supabase";
-import { canEditClutch } from "@/lib/userAccess";
+import { setCarDefaultClutch } from "@/lib/clutchAllocation";
+import { normaliseClutchSerial } from "@/lib/clutchSerial";
+import { canAllocateClutchForCar, canEditClutch } from "@/lib/userAccess";
 
 type PlateRow = {
   no: number;
@@ -387,6 +389,17 @@ export default function ClutchMeasurementPage() {
   const [message, setMessage] = useState("");
   const [saving, setSaving] = useState(false);
   const [canSaveMeasurement, setCanSaveMeasurement] = useState(false);
+  const [canAllocateDefault, setCanAllocateDefault] = useState(false);
+  const [pendingDefaultChange, setPendingDefaultChange] = useState<{
+    carId: number;
+    clutchId: string;
+    currentSerial: string | null;
+    enteredSerial: string;
+  } | null>(null);
+  const [updatingDefault, setUpdatingDefault] = useState(false);
+  const defaultDialog = useRef<HTMLDialogElement>(null);
+  const defaultDialogTitleId = useId();
+  const defaultDialogDescriptionId = useId();
 
   const sortedClutchInventory = useMemo(
     () => sortClutchesForCar(clutchInventory, carId),
@@ -561,8 +574,14 @@ export default function ClutchMeasurementPage() {
   useEffect(() => {
     void supabase.auth.getUser().then(({ data }) => {
       setCanSaveMeasurement(canEditClutch(data.user?.email));
+      setCanAllocateDefault(canAllocateClutchForCar(data.user?.email, carId));
     });
-  }, []);
+  }, [carId]);
+
+  useEffect(() => {
+    if (pendingDefaultChange) defaultDialog.current?.showModal();
+    else defaultDialog.current?.close();
+  }, [pendingDefaultChange]);
 
   useEffect(() => {
     if (!selectedClutch) {
@@ -619,6 +638,7 @@ export default function ClutchMeasurementPage() {
   }
 
   async function saveMeasurementAndPdf() {
+    if (saving) return;
     setMessage("");
 
     const { data: accessUserData } = await supabase.auth.getUser();
@@ -651,6 +671,15 @@ export default function ClutchMeasurementPage() {
       setMessage("Please enter at least one plate measurement so Present can be calculated.");
       return;
     }
+
+    const savedClutchId = selectedClutch ? String(selectedClutch.id) : "";
+    const savedSerial = serialNo.trim();
+    const defaultSerial = allocatedClutch?.serial_no ?? null;
+    const shouldOfferDefaultChange = Boolean(
+      canAllocateDefault &&
+      savedClutchId &&
+      normaliseClutchSerial(savedSerial) !== normaliseClutchSerial(defaultSerial),
+    );
 
     setSaving(true);
 
@@ -742,10 +771,44 @@ export default function ClutchMeasurementPage() {
       setMessage("Clutch measurement saved and PDF generated.");
       resetForm();
       await loadRows();
+      if (shouldOfferDefaultChange) {
+        setPendingDefaultChange({
+          carId,
+          clutchId: savedClutchId,
+          currentSerial: defaultSerial,
+          enteredSerial: savedSerial,
+        });
+      }
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Something went wrong.");
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function confirmDefaultClutchChange() {
+    if (!pendingDefaultChange || updatingDefault) return;
+
+    const pending = pendingDefaultChange;
+    setUpdatingDefault(true);
+
+    try {
+      await setCarDefaultClutch(pending.carId, pending.clutchId);
+      await loadCarAndClutches();
+      setPendingDefaultChange(null);
+      setMessage(
+        `Clutch measurement saved and ${pending.enteredSerial} is now the default clutch for Car ${pending.carId}.`,
+      );
+    } catch (cause) {
+      const detail = cause instanceof Error ? cause.message : "Unknown allocation error";
+      setPendingDefaultChange(null);
+      setMessage(
+        /currently assigned to another car/i.test(detail)
+          ? `Measurement saved, but clutch ${pending.enteredSerial} is currently assigned to another car and cannot be made the default.`
+          : `Measurement saved, but default clutch could not be updated: ${detail}`,
+      );
+    } finally {
+      setUpdatingDefault(false);
     }
   }
 
@@ -896,9 +959,9 @@ export default function ClutchMeasurementPage() {
 
                 {selectedClutch && !selectedClutchIsDefault && (
                   <div className="mt-4 rounded-xl border border-yellow-500/30 bg-yellow-950/20 p-4 text-sm text-yellow-100">
-                    You are overriding the allocated clutch for this measurement. This is fine if the
-                    car has physically been fitted with this clutch, but check Manage Cars afterwards
-                    if the allocation should be changed permanently.
+                    You are recording a different clutch for this measurement. {canAllocateDefault
+                      ? "After saving, you can choose whether to make it the default clutch for this car."
+                      : "The car's default clutch allocation will remain unchanged."}
                   </div>
                 )}
               </div>
@@ -1154,6 +1217,55 @@ export default function ClutchMeasurementPage() {
             </table>
           </div>
         </section>
+
+        <dialog
+          ref={defaultDialog}
+          aria-labelledby={defaultDialogTitleId}
+          aria-describedby={defaultDialogDescriptionId}
+          onCancel={(event) => {
+            if (updatingDefault) event.preventDefault();
+          }}
+          onClose={() => {
+            if (!defaultDialog.current?.open && !updatingDefault) {
+              setPendingDefaultChange(null);
+            }
+          }}
+          className="fixed inset-0 m-auto max-h-[85dvh] w-[calc(100%-2rem)] max-w-md overflow-y-auto rounded-2xl border border-zinc-700 bg-[#14181d] p-6 text-zinc-100 shadow-xl backdrop:bg-black/80"
+        >
+          <h2 id={defaultDialogTitleId} className="text-xl font-semibold">
+            Clutch Change Detected
+          </h2>
+          {pendingDefaultChange && <div id={defaultDialogDescriptionId} className="mt-4 space-y-3 text-sm text-zinc-300">
+            {pendingDefaultChange.currentSerial ? (
+              <p>Current clutch: <strong className="text-zinc-100">{pendingDefaultChange.currentSerial}</strong></p>
+            ) : (
+              <p>No default clutch is currently assigned to this car.</p>
+            )}
+            <p>Entered clutch: <strong className="text-zinc-100">{pendingDefaultChange.enteredSerial}</strong></p>
+            <p className="pt-1 text-base text-zinc-100">
+              Make {pendingDefaultChange.enteredSerial} the default clutch for Car {pendingDefaultChange.carId}?
+            </p>
+          </div>}
+          <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+            <button
+              type="button"
+              autoFocus
+              disabled={updatingDefault}
+              onClick={() => setPendingDefaultChange(null)}
+              className="rounded-xl border border-zinc-700 px-4 py-3 text-sm font-semibold hover:border-zinc-500 disabled:opacity-50"
+            >
+              No, keep current
+            </button>
+            <button
+              type="button"
+              disabled={updatingDefault}
+              onClick={() => void confirmDefaultClutchChange()}
+              className="rounded-xl bg-red-700 px-4 py-3 text-sm font-semibold text-white hover:bg-red-600 disabled:opacity-50"
+            >
+              {updatingDefault ? "Updating…" : "Yes, update default"}
+            </button>
+          </div>
+        </dialog>
       </div>
 
       <style jsx>{`

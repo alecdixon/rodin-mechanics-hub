@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import LogoutButton from "@/app/components/LogoutButton";
+import { setCarDefaultClutch } from "@/lib/clutchAllocation";
 import { supabase } from "@/lib/supabase";
 import { getCurrentUserEmail } from "@/lib/authHelpers";
 import {
@@ -684,28 +685,26 @@ export default function DashboardPage() {
     setSavingClutchId(clutchId);
 
     if (carId !== null) {
-      const { error: clearError } = await supabase
-        .from("clutch_inventory")
-        .update({ current_car_id: null })
-        .eq("current_car_id", carId)
-        .neq("id", clutchId);
-
-      if (clearError) {
-        setErrorMessage(clearError.message);
+      try {
+        await setCarDefaultClutch(carId, clutchId);
+      } catch (cause) {
+        setErrorMessage(
+          cause instanceof Error ? cause.message : "Unable to allocate that clutch.",
+        );
         setSavingClutchId(null);
         return;
       }
-    }
+    } else {
+      const { error } = await supabase
+        .from("clutch_inventory")
+        .update({ current_car_id: null })
+        .eq("id", clutchId);
 
-    const { error } = await supabase
-      .from("clutch_inventory")
-      .update({ current_car_id: carId })
-      .eq("id", clutchId);
-
-    if (error) {
-      setErrorMessage(error.message);
-      setSavingClutchId(null);
-      return;
+      if (error) {
+        setErrorMessage(error.message);
+        setSavingClutchId(null);
+        return;
+      }
     }
 
     setSavingClutchId(null);

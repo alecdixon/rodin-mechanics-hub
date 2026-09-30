@@ -22,6 +22,7 @@ export type Permission =
   | "post_event:edit"
   | "clutch:view"
   | "clutch:edit"
+  | "clutch:allocate_assigned"
   | "calendar:view"
   | "calendar:manage"
   | "drain_out:view"
@@ -65,6 +66,7 @@ const ALL_PERMISSIONS: Permission[] = [
   "post_event:edit",
   "clutch:view",
   "clutch:edit",
+  "clutch:allocate_assigned",
   "calendar:view",
   "calendar:manage",
   "drain_out:view",
@@ -104,6 +106,7 @@ const NUMBER1_MECHANIC_PERMISSIONS: Permission[] = [
   "post_event:edit",
   "clutch:view",
   "clutch:edit",
+  "clutch:allocate_assigned",
   "drain_out:view",
   "drain_out:manage",
   "legality:view",
@@ -381,6 +384,18 @@ export function canAccessClutch(email: string | null | undefined): boolean {
 
 export function canEditClutch(email: string | null | undefined): boolean {
   return canWrite(email, "clutch:edit");
+}
+
+export function canAllocateClutchForCar(
+  email: string | null | undefined,
+  carId: number,
+): boolean {
+  const access = getUserAccess(email);
+
+  if (!canWrite(email, "clutch:allocate_assigned")) return false;
+  if (access.role === "chief_mechanic") return true;
+
+  return access.role === "number1_mechanic" && access.assignedCar === carId;
 }
 
 export function canAccessPostEvent(email: string | null | undefined): boolean {
