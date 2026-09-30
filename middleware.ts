@@ -35,6 +35,15 @@ export function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
+  if (path.startsWith("/truck-inventory")) {
+    if (role !== "chief_mechanic") {
+      url.pathname = getLoginRedirect(email);
+      return NextResponse.redirect(url);
+    }
+
+    return NextResponse.next();
+  }
+
   if (path.startsWith("/dashboard")) {
     if (!hasPermission(email, "dashboard:view")) {
       url.pathname = getLoginRedirect(email);
@@ -86,5 +95,5 @@ export function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/dashboard/:path*", "/engineer-dashboard/:path*", "/car/:path*", "/recorded-issues", "/recorded-issues/:path*"],
+  matcher: ["/dashboard/:path*", "/engineer-dashboard/:path*", "/car/:path*", "/recorded-issues", "/recorded-issues/:path*", "/truck-inventory", "/truck-inventory/:path*"],
 };

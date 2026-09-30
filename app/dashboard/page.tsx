@@ -891,7 +891,7 @@ export default function DashboardPage() {
         </div>
 
         <div className="bg-[#0d0f12]/80 p-4">
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-7">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-8">
             <QuickLink
               href="/drain-out"
               title="Drain Out"
@@ -927,6 +927,14 @@ export default function DashboardPage() {
               title="Team Jobs"
               description="Create and publish team-wide jobs"
             />
+
+            {getUserRole(userEmail) === "chief_mechanic" && (
+              <QuickLink
+                href="/truck-inventory"
+                title="Truck Inventory"
+                description="Manage tracked truck parts and targets"
+              />
+            )}
 
             {!readOnly && (
               <button
